@@ -1,0 +1,30 @@
+{
+  "manifestVersion": 2,
+  "id": "agent-pool",
+  "name": "Agent Pool & Test Queue",
+  "version": "1.0.0",
+  "description": "An agent pool and a test queue for any language: reserve agent slots by quota, run tests one at a time per resource, and configure everything from a panel.",
+  "license": "MIT",
+  "engines": {
+    "orca": ">=1.4.246"
+  },
+  "execution": "trusted-worker",
+  "pluginApi": 1,
+  "main": "src/worker/main.ts",
+  "capabilities": [
+    {
+      "kind": "storage:own"
+    }
+  ],
+  "contributes": {
+    "panels": [
+      {
+        "id": "pool",
+        "title": "Agent Pool",
+        "icon": "gauge",
+        "entry": "src/panel/panel.tsx",
+        "ui": "components"
+      }
+    ]
+  }
+}

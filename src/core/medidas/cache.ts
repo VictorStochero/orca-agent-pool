@@ -1,0 +1,65 @@
+import { createHash, randomUUID } from 'node:crypto'
+import { mkdirSync, readFileSync, writeFileSync, renameSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import type { Config, Conta, Medida, OrcaCli } from '../tipos.ts'
+import type { Paths } from '../paths.ts'
+import { medirClaude, type DependenciasMedida } from './claude.ts'
+import { medirOrca, type CotaOrca } from './orca.ts'
+
+function chave(conta: Conta): string {
+  return createHash('sha256').update(JSON.stringify([conta.nome, conta.agente, conta.config, conta.origem])).digest('hex')
+}
+
+function ler(medida: Medida | undefined, conta: Conta, agora: number, cacheMin: number): Medida | null {
+  try {
+    if (!medida || medida.conta !== conta.nome || !Number.isFinite(medida.medidaTs) || medida.medidaTs > agora || agora - medida.medidaTs >= cacheMin * 60_000) return null
+    if (!['ok', 'erro', 'sem_login', 'sem_medida'].includes(medida.estado)) return null
+    if (![medida.curta, medida.longa].every(n => n === null || typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 100)) return null
+    if (medida.resetLongaTs !== null && !Number.isFinite(medida.resetLongaTs)) return null
+    return medida
+  } catch { return null }
+}
+
+export async function medirTodas(c: Config, p: Paths, orca: OrcaCli, d: DependenciasMedida, cacheMin = 5): Promise<Medida[]> {
+  let nativas: Map<string, CotaOrca> | undefined
+  let falhouOrca = false
+  const medidas: Medida[] = []
+  const destino = join(p.medidas, 'contas.json')
+  let anteriores: Record<string, Medida> = {}
+  try {
+    const json = JSON.parse(readFileSync(destino, 'utf8'))
+    if (json && typeof json === 'object' && !Array.isArray(json)) anteriores = json
+  } catch { /* Cache ausente ou ilegível exige coleta nova. */ }
+  const atualizadas: Record<string, Medida> = {}
+  let mudou = false
+  for (const conta of c.pool.contas) {
+    const id = chave(conta)
+    const cache = ler(anteriores[id], conta, d.agora, cacheMin)
+    if (cache) { medidas.push(cache); atualizadas[id] = cache; continue }
+    let medida: Medida
+    if (conta.agente === 'claude' && conta.origem === 'manual') {
+      medida = await medirClaude(conta, d)
+    } else {
+      if (!nativas && !falhouOrca) {
+        try { nativas = await medirOrca(orca) } catch { falhouOrca = true }
+      }
+      medida = {
+        conta: conta.nome, medidaTs: d.agora, curta: null, longa: null, resetLongaTs: null,
+        estado: falhouOrca ? 'erro' : 'sem_medida',
+        ...(nativas?.get(conta.agente)),
+      }
+    }
+    atualizadas[id] = medida
+    medidas.push(medida)
+    mudou = true
+  }
+  if (mudou) {
+    mkdirSync(p.medidas, { recursive: true })
+    const temporario = `${destino}.${randomUUID()}.tmp`
+    try {
+      writeFileSync(temporario, JSON.stringify(atualizadas), { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+      renameSync(temporario, destino)
+    } finally { rmSync(temporario, { force: true }) }
+  }
+  return medidas
+}

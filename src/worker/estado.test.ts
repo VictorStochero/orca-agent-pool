@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { test } from 'node:test'
+import { PADRAO } from '../core/config.ts'
+import { paths } from '../core/paths.ts'
+import type { Medida } from '../core/tipos.ts'
+import { AMBIENTE_VAZIO, montarEstado } from './estado.ts'
+
+test('cota: medidaTs em ms (unidade do pool) dá "há N min" e marca medida antiga', () => {
+  const home = mkdtempSync(join(tmpdir(), 'estado-'))
+  try {
+    const c = structuredClone(PADRAO)
+    c.pool.contas.push({ nome: 'a', agente: 'claude', config: null, comando: null, vagas: 1, peso: 1, papeis: [], ativo: true, origem: 'manual' })
+    const agora = 1_800_000_000_000
+    const m = (min: number): Medida => ({ conta: 'a', curta: 90, longa: 10, resetLongaTs: null, estado: 'ok', medidaTs: agora - min * 60_000 })
+    const nova = montarEstado(paths(home), c, null, { ...AMBIENTE_VAZIO, medidas: [m(2)] }, agora).pool.contas[0].cota
+    assert.equal(nova?.medida_ha_min, 2)
+    assert.equal(nova?.estado, 'ok')
+    assert.equal(nova?.alerta_curta, true)
+    assert.equal(nova?.alerta_longa, false)
+    const velha = montarEstado(paths(home), c, null, { ...AMBIENTE_VAZIO, medidas: [m(40)] }, agora).pool.contas[0].cota
+    assert.equal(velha?.estado, 'antiga')
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})

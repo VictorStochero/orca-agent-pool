@@ -1,0 +1,17 @@
+{
+  "name": "orca-agent-pool",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Agent Pool & Test Queue for Orca: an agent pool and a test queue for any language.",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --experimental-strip-types --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "check": "node scripts/check.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}

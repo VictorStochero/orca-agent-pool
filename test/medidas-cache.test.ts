@@ -1,0 +1,68 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { paths } from '../src/core/paths.ts'
+import type { Config } from '../src/core/tipos.ts'
+import { medirTodas } from '../src/core/medidas/cache.ts'
+import { envCasa } from './helpers/casa.ts'
+
+test('cache por conta dura cinco minutos, renova sem cota velha e nunca contém token', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'cache-medidas-'))
+  try {
+    const token = 'TOKEN_SECRETO_DE_TESTE'
+    mkdirSync(join(home, '.claude'))
+    writeFileSync(join(home, '.claude', '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: token, expiresAt: 999999999 } }))
+    const c: Config = { versao: 1, pool: { teto: 0, ramMinGb: 0, escolha: 'ritmo', contas: [
+      { nome: '../conta', agente: 'claude', config: null, comando: null, vagas: 1, peso: 1, papeis: [], ativo: true, origem: 'manual' },
+      { nome: 'codex', agente: 'codex', config: null, comando: null, vagas: 1, peso: 1, papeis: [], ativo: true, origem: 'orca' },
+    ] }, fila: { modo: 'banco', vagas: 2, vagasPorProjeto: 1, teto: 3, processos: 8, esperaMaxS: 300 } }
+    let chamadas = 0
+    const orca = { run: async () => { chamadas++; return { code: 0, stderr: '', stdout: JSON.stringify({ ok: true, result: { rateLimits: { codex: { provider: 'codex', status: 'ok', session: { usedPercent: 30 } } } } }) } } }
+    const d = { home, agora: 1_000_000, executarUsage: async () => 'Not logged in', executarStatus: async () => '', fetch: (async () => Response.json({ five_hour: { utilization: 12 }, seven_day: { utilization: 45 } })) as typeof fetch }
+    const p = paths(home)
+    const primeira = await medirTodas(c, p, orca, d)
+    assert.equal(primeira[0].longa, 45)
+    assert.deepEqual(await medirTodas(c, p, orca, { ...d, agora: 1_299_000 }), primeira)
+    assert.equal(chamadas, 1)
+    const renovada = await medirTodas(c, p, { run: async () => { throw new Error(token) } }, { ...d, agora: 1_300_000, fetch: async () => new Response(token, { status: 401 }) })
+    assert.equal(renovada[0].estado, 'sem_login')
+    assert.equal(renovada[0].longa, null)
+    assert.equal(renovada[1].estado, 'erro')
+    for (const arquivo of readdirSync(p.medidas)) {
+      assert.equal(readFileSync(join(p.medidas, arquivo), 'utf8').includes(token), false)
+      assert.ok(arquivo.endsWith('.json'))
+    }
+    assert.equal(JSON.stringify(renovada).includes(token), false)
+    const filho = spawnSync(process.execPath, ['--experimental-strip-types', '--input-type=module', '-e', `
+      import { medirClaude } from './src/core/medidas/claude.ts';
+      const medida = await medirClaude(${JSON.stringify(c.pool.contas[0])}, { home: ${JSON.stringify(home)}, agora: 1_000_000, fetch: async () => { throw new Error(${JSON.stringify(token)}) }, executarUsage: async () => { throw new Error(${JSON.stringify(token)}) } });
+      console.log(JSON.stringify(medida));
+    `], { encoding: 'utf8', cwd: process.cwd(), env: envCasa(home) })
+    assert.equal(filho.status, 0)
+    assert.equal((filho.stdout + filho.stderr).includes(token), false)
+  } finally { rmSync(home, { recursive: true, force: true }) }
+})
+
+test('a chamada publica as medidas juntas depois de concluir a coleta', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'cache-medidas-'))
+  try {
+    mkdirSync(join(home, '.claude'))
+    writeFileSync(join(home, '.claude', '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: 'falso', expiresAt: 999999999 } }))
+    const conta = { agente: 'claude', config: null, comando: null, vagas: 1, peso: 1, papeis: [], ativo: true, origem: 'manual' as const }
+    const c: Config = { versao: 1, pool: { teto: 0, ramMinGb: 0, escolha: 'ritmo', contas: [{ ...conta, nome: 'a' }, { ...conta, nome: 'b' }] }, fila: { modo: 'banco', vagas: 2, vagasPorProjeto: 1, teto: 3, processos: 8, esperaMaxS: 300 } }
+    const p = paths(home)
+    const orca = { run: async () => ({ code: 0, stdout: '{}', stderr: '' }) }
+    await medirTodas(c, p, orca, { home, agora: 1_000_000, fetch: async () => Response.json({ seven_day: { utilization: 10 } }) })
+    let chamadas = 0
+    let parcial = false
+    const novas = await medirTodas(c, p, orca, { home, agora: 1_300_000, fetch: async () => {
+      if (++chamadas === 2) parcial = readdirSync(p.medidas).some(f => readFileSync(join(p.medidas, f), 'utf8').includes('"medidaTs":1300'))
+      return Response.json({ seven_day: { utilization: 20 } })
+    } })
+    assert.equal(parcial, false)
+    assert.deepEqual(novas.map(m => m.longa), [20, 20])
+  } finally { rmSync(home, { recursive: true, force: true }) }
+})
