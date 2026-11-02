@@ -130,7 +130,12 @@ for (const [locale, fila, pool, config, imposicao, remover, reinstalar, ausencia
     assert.equal(view.rowsOf({ label: fila }).length, 3)
     assert.equal(view.rowsOf({ label: pool }).length, 3)
     assert.ok(view.find({ type: 'Collapsible', label: config }))
-    assert.ok(view.find({ type: 'Card', label: imposicao }))
+    assert.equal(view.find({ type: 'Card', label: imposicao }), null) // o bloco solto saiu do corpo
+    assert.ok(view.find({ type: 'Card', text: new RegExp(config) })) // Configurações ganha o cartão das outras seções
+    assert.equal(view.find({ type: 'Button', text: reinstalar }), null) // recolhida: a imposição só aparece dentro dela
+    await view.toggle({ label: config })
+    await view.select({ label: t.configuracoes.assuntos }, 'imposicao')
+    assert.ok(view.find({ text: t.imposicao.descricao }))
   })
 
   test(`${locale}: imposição remove e reinstala por agente com estado atualizado`, async () => {
@@ -148,6 +153,8 @@ for (const [locale, fila, pool, config, imposicao, remover, reinstalar, ausencia
         return [{ agente: 'claude', estado: 'instalado' }]
       }
     } }) })
+    await view.toggle({ label: config })
+    await view.select({ label: t.configuracoes.assuntos }, 'imposicao')
     assert.ok(view.find({ text: 'JSON inválido' }))
     await view.press({ type: 'Button', text: remover })
     assert.ok(view.find({ text: ausencia }))
@@ -199,6 +206,7 @@ test('falha na imposição preserva o estado e permite tentar de novo', async ()
       return [{ agente: 'codex', estado: 'ausente' }]
     }
   } }) })
+  await abrir(view, 'imposicao')
   await view.press({ type: 'Button', text: 'Remover imposição' })
   assert.ok(view.find({ text: 'Arquivo inválido' }))
   assert.ok(view.find({ text: 'Instalado' }))
@@ -250,6 +258,7 @@ test('erro de leitura dos hooks aparece sem ocultar fila e pool e recupera no re
       return [{ agente: 'codex', estado: 'instalado' }]
     }
   } }) })
+  await abrir(view, 'imposicao')
   assert.ok(view.find({ text: 'Não foi possível ler a imposição.' }))
   assert.equal(view.rowsOf(POOL).length, 3)
   falha = false
@@ -345,9 +354,9 @@ test('medida antiga: a conta manual com medida de mais de 30 min ganha aviso no 
   assert.equal(view.find({ type: 'Table', text: /Medida antiga/ }), null)
 })
 
-test('Configurações: seção recolhida no fim, com abas Fila · Pool · Contas · Painel e a linha do que cada uma muda', async () => {
+test('Configurações: seção recolhida no fim, com abas Fila · Pool · Contas · Imposição · Painel e a linha do que cada uma muda', async () => {
   view = await mount(panel, { host: hostCom() })
-  assert.ok(view.find({ type: 'Collapsible', label: 'Configurações', text: /Fila, pool, contas e painel/ }))
+  assert.ok(view.find({ type: 'Collapsible', label: 'Configurações', text: /Fila, pool, contas, imposição e painel/ }))
   assert.equal(view.find({ label: 'Modo da fila: Global' }), null) // recolhida: nada de formulário à mostra
   await abrir(view)
   assert.ok(view.find({ type: 'Tabs', label: 'Assuntos das configurações' }))
@@ -356,6 +365,8 @@ test('Configurações: seção recolhida no fim, com abas Fila · Pool · Contas
   assert.ok(view.find({ text: /^Limites da máquina e como o escritor é escolhido — ~\/\.agents\/agent-pool\/config\.json/ }))
   await view.select({ label: 'Assuntos das configurações' }, 'contas')
   assert.ok(view.find({ text: /^Vagas, peso, papéis e ordem de cada conta — ~\/\.agents\/agent-pool\/config\.json\. As contas detectadas pelo Orca entram no pool sozinhas; as manuais são CLIs personalizados/ }))
+  await view.select({ label: 'Assuntos das configurações' }, 'imposicao')
+  assert.ok(view.find({ text: 'Hooks orientam os agentes a usar a fila de testes.' }))
   await view.select({ label: 'Assuntos das configurações' }, 'painel')
   assert.ok(view.find({ text: /^Este painel — guardado no Orca/ }))
 })

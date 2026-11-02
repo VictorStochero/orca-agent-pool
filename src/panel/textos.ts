@@ -78,9 +78,9 @@ export const pt = {
   dicaLinha: 'Clique numa linha para ver os detalhes.',
   configuracoes: {
     titulo: 'Configurações',
-    descricao: 'Fila, pool, contas e painel',
+    descricao: 'Fila, pool, contas, imposição e painel',
     assuntos: 'Assuntos das configurações',
-    abas: { fila: 'Fila', pool: 'Pool', contas: 'Contas', painel: 'Painel' },
+    abas: { fila: 'Fila', pool: 'Pool', contas: 'Contas', imposicao: 'Imposição', painel: 'Painel' },
     contasAbas: { assuntos: 'Assuntos das contas', configurar: 'Configurar', cadastrar: 'Cadastrar' },
     linhas: {
       fila: 'Como os testes esperam a vez — ~/.agents/agent-pool/config.json',
@@ -282,8 +282,8 @@ export const en: typeof pt = {
   },
   dicaLinha: 'Click a row to see details.',
   configuracoes: {
-    titulo: 'Settings', descricao: 'Queue, pool, accounts and panel', assuntos: 'Settings sections',
-    abas: { fila: 'Queue', pool: 'Pool', contas: 'Accounts', painel: 'Panel' },
+    titulo: 'Settings', descricao: 'Queue, pool, accounts, enforcement and panel', assuntos: 'Settings sections',
+    abas: { fila: 'Queue', pool: 'Pool', contas: 'Accounts', imposicao: 'Enforcement', painel: 'Panel' },
     contasAbas: { assuntos: 'Account sections', configurar: 'Configure', cadastrar: 'Add' },
     linhas: {
       fila: 'How tests wait for a slot — ~/.agents/agent-pool/config.json',

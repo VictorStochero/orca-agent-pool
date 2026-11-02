@@ -6,6 +6,7 @@ import { afterEach, assert, mountWorker as montarWorker, test } from 'orca/testi
 import { guardarCasaReal } from '../../test/helpers/casa.ts'
 import * as main from './main.ts'
 import { criarCiclo, intervaloMs } from './ciclo.ts'
+import { versao } from '../core/index.ts'
 import { criarRequisitos, versaoAtende } from './requisitos.ts'
 
 guardarCasaReal()
@@ -65,7 +66,7 @@ test('estado.ler sem config devolve o padrão, sem contas e com a versão do plu
   novaCasa()
   const w = await mountWorker(main)
   const e = await w.request('estado.ler')
-  assert.equal(e.saude.plugin_versao, '1.0.0')
+  assert.equal(e.saude.plugin_versao, versao)
   assert.deepEqual(e.pool.contas, [])
   assert.equal(e.fila.modo, 'banco')
   assert.equal(e.fila.config.vagas, 2)

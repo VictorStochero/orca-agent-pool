@@ -673,6 +673,17 @@ function ConfigContas({ e }: { e: Estado }) {
   )
 }
 
+function ConfigImposicao() {
+  return (
+    <Stack gap="sm">
+      <Text muted size="xs">
+        {t.imposicao.descricao}
+      </Text>
+      <CorpoImposicao />
+    </Stack>
+  )
+}
+
 function ConfigPainel() {
   return (
     <Stack gap="sm">
@@ -695,18 +706,21 @@ function SecaoConfiguracoes({ e }: { e: Estado }) {
     { id: 'fila', corpo: <ConfigFila e={e} /> },
     { id: 'pool', corpo: <ConfigPool e={e} /> },
     { id: 'contas', corpo: <ConfigContas e={e} /> },
+    { id: 'imposicao', corpo: <ConfigImposicao /> },
     { id: 'painel', corpo: <ConfigPainel /> }
   ] as const
   return (
-    <Collapsible title={t.configuracoes.titulo} description={t.configuracoes.descricao}>
-      <Tabs label={t.configuracoes.assuntos} defaultValue="fila">
-        {abas.map((a) => (
-          <Tab key={a.id} value={a.id} label={t.configuracoes.abas[a.id]}>
-            {a.corpo}
-          </Tab>
-        ))}
-      </Tabs>
-    </Collapsible>
+    <Card>
+      <Collapsible title={t.configuracoes.titulo} description={t.configuracoes.descricao}>
+        <Tabs label={t.configuracoes.assuntos} defaultValue="fila">
+          {abas.map((a) => (
+            <Tab key={a.id} value={a.id} label={t.configuracoes.abas[a.id]}>
+              {a.corpo}
+            </Tab>
+          ))}
+        </Tabs>
+      </Collapsible>
+    </Card>
   )
 }
 
@@ -756,9 +770,9 @@ function SecaoRequisitos({ r }: { r: Requisitos }) {
   )
 }
 
-function SecaoImposicao() {
+function CorpoImposicao() {
   return (
-    <Card title={t.imposicao.titulo} description={t.imposicao.descricao}>
+    <Stack gap="sm">
       {read(erroHooks) ? <Text tone="danger">{t.imposicao.indisponivel}</Text> : null}
       {read(hooks).map((h) => (
         <Stack key={h.agente} gap="xs">
@@ -778,6 +792,15 @@ function SecaoImposicao() {
         </Stack>
       ))}
       <Mensagem secao="hooks" />
+    </Stack>
+  )
+}
+
+/** Sem requisitos o painel não mostra Configurações: a imposição fica solta aqui para poder reinstalar os hooks. */
+function SecaoImposicao() {
+  return (
+    <Card title={t.imposicao.titulo} description={t.imposicao.descricao}>
+      <CorpoImposicao />
     </Card>
   )
 }
@@ -825,7 +848,6 @@ export default function Painel() {
           </Text>
           <SecaoFila e={e} />
           <SecaoPool e={e} />
-          <SecaoImposicao />
           <SecaoConfiguracoes e={e} />
         </Stack>
       )}

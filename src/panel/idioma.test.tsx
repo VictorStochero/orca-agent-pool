@@ -72,6 +72,8 @@ test('en: erro do worker com código vira texto do idioma, sem a frase do worker
     locale: 'en',
     host: hostCom(e, { 'hooks.estado': () => [{ agente: 'claude', estado: 'ausente' }], 'hooks.reinstalar': () => { throw Object.assign(new Error('x'), { code: 'hooks_falhou' }) } })
   })
+  await view.toggle({ label: 'Settings' })
+  await view.select({ label: 'Settings sections' }, 'imposicao')
   await view.press({ type: 'Button', text: 'Reinstall' })
   assert.equal(view.find({ text: /^x$/ }), null)
   assert.ok(view.find({ text: /Could not change/ }))
@@ -82,6 +84,8 @@ test('en: códigos de hook e do orca embutidos na mensagem saem em inglês, sem 
     locale: 'en',
     host: hostCom(estadoReal(), { 'hooks.estado': () => [{ agente: 'claude', estado: 'ausente' }], 'hooks.reinstalar': () => { throw Object.assign(new Error('/c/settings.json: raiz_invalida; orca_saiu:3'), { code: 'hooks_falhou' }) } })
   })
+  await view.toggle({ label: 'Settings' })
+  await view.select({ label: 'Settings sections' }, 'imposicao')
   await view.press({ type: 'Button', text: 'Reinstall' })
   assert.ok(view.find({ text: /root is not an object.*orca exited with code 3/ }))
   assert.equal(view.find({ text: /raiz|saiu|inválid/ }), null)
