@@ -1,4 +1,4 @@
-import type { Medida, OrcaCli } from '../tipos.ts'
+import type { Limite, Medida, OrcaCli } from '../tipos.ts'
 
 export type CotaOrca = Omit<Medida, 'conta' | 'medidaTs'>
 
@@ -16,13 +16,22 @@ export async function medirOrca(orca: OrcaCli): Promise<Map<string, CotaOrca>> {
   const medidas = new Map<string, CotaOrca>()
   for (const [chave, valor] of Object.entries(dados.rateLimits ?? {})) {
     if (!valor || typeof valor !== 'object' || !('provider' in valor)) continue
-    const r = valor as { provider: string; status?: string; error?: string; session?: { usedPercent?: number }; weekly?: { usedPercent?: number; resetsAt?: number }; usageMetadata?: { failureKind?: string } }
+    const r = valor as { provider: string; status?: string; error?: string; session?: { usedPercent?: number }; weekly?: { usedPercent?: number; resetsAt?: number }; buckets?: { group?: string; usedPercent?: number; windowMinutes?: number }[]; usageMetadata?: { failureKind?: string } }
     const ok = r.status === 'ok'
     const percentual = (n: unknown) => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 100 ? n : null
     const curta = ok ? percentual(r.session?.usedPercent) : null
     const longa = ok ? percentual(r.weekly?.usedPercent) : null
+    // Um grupo só repete a linha da conta: só monta a lista com 2 ou mais.
+    const grupos = new Map<string, Limite>()
+    for (const b of ok && Array.isArray(r.buckets) ? r.buckets : []) {
+      if (typeof b?.group !== 'string' || !b.group || (b.windowMinutes !== 300 && b.windowMinutes !== 10080)) continue
+      const g = grupos.get(b.group) ?? { nome: b.group, curta: null, longa: null }
+      g[b.windowMinutes === 300 ? 'curta' : 'longa'] = percentual(b.usedPercent)
+      grupos.set(b.group, g)
+    }
     medidas.set(r.provider || chave, {
       curta, longa,
+      ...(grupos.size >= 2 ? { limites: [...grupos.values()] } : {}),
       resetLongaTs: ok && typeof r.weekly?.resetsAt === 'number' && Number.isFinite(r.weekly.resetsAt) ? r.weekly.resetsAt : null,
       estado: ok ? (curta === null && longa === null ? 'sem_medida' : 'ok') : r.usageMetadata?.failureKind === 'missing-credentials' || typeof r.error === 'string' && /not (?:signed|logged) in|credentials not found|no .+sign-in|credentials.+not configured/i.test(r.error) ? 'sem_login' : 'erro',
     })

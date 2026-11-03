@@ -142,3 +142,17 @@ test('conta ilimitada (vagas 0) com ocupação aparece como N/∞', async () => 
   view = await mount(panel, { locale: 'pt-BR', host: hostCom(e) })
   assert.ok(view.find({ type: 'Table', label: 'Contas do pool', text: /2\/∞/ }))
 })
+
+for (const [locale, tabela, esperado] of [['pt-BR', 'Contas do pool', ['Gemini Models', '5h 0% · semana 0%', 'Gemini 4 Argon', 'semana 53%']], ['en', 'Pool accounts', ['Gemini Models', '5h 0% · week 0%', 'Gemini 4 Argon', 'week 53%']]] as const) {
+  test(`${locale}: detalhes da conta listam um item por limite separado, só com as janelas que existem`, async () => {
+    const limites = [{ nome: 'Gemini Models', curta: 0, longa: 0 }, { nome: 'Gemini 4 Argon', curta: null, longa: 53 }]
+    const e = estadoReal({ medidas: [medida('alfa', { estado: 'ok', curta: 0, longa: 0, limites }), medida('beta', { estado: 'ok', curta: 1, longa: 1 })] })
+    view = await mount(panel, { locale, host: hostCom(e) })
+    await view.selectRows({ label: tabela }, ['alfa'])
+    for (const texto of esperado) assert.ok(view.find({ type: 'Table', label: tabela, text: new RegExp(texto) }), texto)
+    assert.equal(view.find({ type: 'Table', label: tabela, text: /Argon.*5h -/ }), null)
+    await view.selectRows({ label: tabela }, ['alfa'])
+    await view.selectRows({ label: tabela }, ['beta'])
+    assert.equal(view.find({ type: 'Table', label: tabela, text: /Gemini Models/ }), null)
+  })
+}

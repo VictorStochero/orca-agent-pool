@@ -14,7 +14,9 @@ function formaValida(medida: Medida | undefined): medida is Medida {
   try {
     if (!medida || !Number.isFinite(medida.medidaTs)) return false
     if (!['ok', 'erro', 'sem_login', 'sem_medida'].includes(medida.estado)) return false
-    if (![medida.curta, medida.longa].every(n => n === null || typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 100)) return false
+    const percentual = (n: unknown) => n === null || typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 100
+    if (![medida.curta, medida.longa].every(percentual)) return false
+    if (medida.limites !== undefined && !(Array.isArray(medida.limites) && medida.limites.every(l => typeof l?.nome === 'string' && l.nome !== '' && percentual(l.curta) && percentual(l.longa)))) return false
     return medida.resetLongaTs === null || Number.isFinite(medida.resetLongaTs)
   } catch { return false }
 }

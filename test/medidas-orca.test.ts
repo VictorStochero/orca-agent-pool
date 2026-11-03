@@ -32,3 +32,23 @@ test('falhas do CLI e JSON inválido não viram medidas antigas', async () => {
     await assert.rejects(medirOrca({ run: async () => ({ code: 0, stdout, stderr: 'SECRET' }) }), /orca/)
   }
 })
+
+const orcaCom = (buckets?: unknown) => ({ run: async () => ({ code: 0, stderr: '', stdout: JSON.stringify({ ok: true, result: { rateLimits: { antigravity: { provider: 'antigravity', status: 'ok', session: { usedPercent: 0 }, weekly: { usedPercent: 0 }, ...(buckets ? { buckets } : {}) } } } }) }) })
+const b = (group: string, windowMinutes: number, usedPercent: number) => ({ name: `${group} ${windowMinutes}`, group, windowName: 'w', usedPercent, windowMinutes, resetsAt: 1 })
+
+test('limites separados: buckets agrupados por group viram curta (300) e longa (10080)', async () => {
+  const buckets = [b('Gemini Models', 300, 0), b('Gemini Models', 10080, 0), b('Claude and GPT models', 300, 0), b('Claude and GPT models', 10080, 0), b('Gemini 4 Argon', 10080, 53), b('Gemini 4 Argon', 60, 99)]
+  const m = (await medirOrca(orcaCom(buckets))).get('antigravity')
+  assert.deepEqual(m?.limites, [
+    { nome: 'Gemini Models', curta: 0, longa: 0 },
+    { nome: 'Claude and GPT models', curta: 0, longa: 0 },
+    { nome: 'Gemini 4 Argon', curta: null, longa: 53 },
+  ])
+})
+
+test('limites separados: um grupo só, buckets ausentes ou percentual inválido', async () => {
+  assert.equal('limites' in ((await medirOrca(orcaCom([b('A', 300, 1), b('A', 10080, 2)]))).get('antigravity') ?? {}), false)
+  assert.equal('limites' in ((await medirOrca(orcaCom())).get('antigravity') ?? {}), false)
+  const m = (await medirOrca(orcaCom([b('A', 300, 150), b('B', 10080, 7)]))).get('antigravity')
+  assert.deepEqual(m?.limites, [{ nome: 'A', curta: null, longa: null }, { nome: 'B', curta: null, longa: 7 }])
+})

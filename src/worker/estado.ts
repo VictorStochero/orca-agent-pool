@@ -27,6 +27,7 @@ function cota(m: Medida | undefined, agoraMs: number): Cota | null {
     medida_ha_min: min,
     alerta_curta: (m.curta ?? 0) >= TETO_ALERTA,
     alerta_longa: (m.longa ?? 0) >= TETO_ALERTA,
+    limites: m.limites ?? [],
     estado,
     acao: m.acao ?? null,
     erro: m.erro ?? null

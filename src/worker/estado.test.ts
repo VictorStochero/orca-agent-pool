@@ -40,3 +40,19 @@ test('cota: medidaTs em ms (unidade do pool) dá "há N min" e marca medida anti
     rmSync(home, { recursive: true, force: true })
   }
 })
+
+test('cota: limites separados passam para a cota; ausentes viram lista vazia', () => {
+  const home = mkdtempSync(join(tmpdir(), 'estado-'))
+  try {
+    const c = structuredClone(PADRAO)
+    c.pool.contas.push({ nome: 'a', agente: 'antigravity', config: null, comando: null, vagas: 1, peso: 1, papeis: [], ativo: true, origem: 'orca' })
+    const limites = [{ nome: 'Gemini', curta: 80, longa: 10 }, { nome: 'Argon', curta: null, longa: 79 }]
+    const m: Medida = { conta: 'a', curta: 0, longa: 0, resetLongaTs: null, estado: 'ok', medidaTs: 1, limites }
+    const cota = montarEstado(paths(home), c, null, { ...AMBIENTE_VAZIO, medidas: [m] }, 1).pool.contas[0].cota
+    assert.deepEqual(cota?.limites, limites)
+    delete m.limites
+    assert.deepEqual(montarEstado(paths(home), c, null, { ...AMBIENTE_VAZIO, medidas: [m] }, 1).pool.contas[0].cota?.limites, [])
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})

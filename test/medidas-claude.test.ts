@@ -130,3 +130,34 @@ test('executor real: saída de conta deslogada com código 1 ainda chega à medi
     assert.match(porUsage.acao ?? '', /claude auth login/)
   } finally { rmSync(home, { recursive: true, force: true }) }
 })
+
+test('limites separados: weekly_scoped da API vira limite com o nome do modelo; sem eles, sem o campo', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'medida-'))
+  try {
+    mkdirSync(join(home, '.claude-work'))
+    writeFileSync(join(home, '.claude-work', '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: token, expiresAt: 2000000 } }))
+    const base = { five_hour: { utilization: 10 }, seven_day: { utilization: 40 } }
+    const limits = [
+      { kind: 'session', group: 'session', percent: 10, scope: null, is_active: true },
+      { kind: 'weekly_all', group: 'weekly', percent: 40, scope: null, is_active: true },
+      { kind: 'weekly_scoped', group: 'weekly', percent: 29, scope: { model: { id: null, display_name: 'Fable' }, surface: null }, is_active: true },
+      { kind: 'weekly_scoped', group: 'weekly', percent: 5, scope: { model: null, surface: null }, is_active: true },
+    ]
+    const com = await medirClaude(conta, { home, agora: 1_000_000, fetch: async () => Response.json({ ...base, limits }) })
+    assert.deepEqual(com.limites, [{ nome: 'Fable', curta: null, longa: 29 }])
+    const sem = await medirClaude(conta, { home, agora: 1_000_000, fetch: async () => Response.json({ ...base, limits: limits.slice(0, 2) }) })
+    assert.equal('limites' in sem, false)
+  } finally { rmSync(home, { recursive: true, force: true }) }
+})
+
+test('limites separados: a linha "Current week (Fable)" do /usage vira limite; "all models" não', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'medida-'))
+  try {
+    mkdirSync(join(home, '.claude-work'))
+    const usage = async () => 'Current session: 12% used\nCurrent week (all models): 49% used\nCurrent week (Fable): 29% used · resets Nov 6'
+    const medida = await medirClaude(conta, { home, agora: 1_000_000, executarUsage: usage, fetch: async () => { throw new Error('sem rede') } })
+    assert.deepEqual(medida.limites, [{ nome: 'Fable', curta: null, longa: 29 }])
+    const sem = await medirClaude(conta, { home, agora: 1_000_000, executarUsage: async () => 'Current session: 12% used\nCurrent week (all models): 49% used', fetch: async () => { throw new Error('sem rede') } })
+    assert.equal('limites' in sem, false)
+  } finally { rmSync(home, { recursive: true, force: true }) }
+})

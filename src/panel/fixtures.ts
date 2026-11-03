@@ -42,9 +42,9 @@ export const estadoExemplo: Estado = {
         config: null,
         comando: null,
         ativo: true,
-        cota: { curta: 90, longa: 25, medida_ha_min: 45, alerta_curta: true, alerta_longa: false, estado: 'antiga' }
+        cota: { curta: 90, longa: 25, medida_ha_min: 45, limites: [], alerta_curta: true, alerta_longa: false, estado: 'antiga' }
       },
-      { nome: 'codex', agente: 'codex', vagas: 1, usadas: 0, peso: 1, papeis: [], ocupantes: [], cota: { curta: 24, longa: 42, medida_ha_min: 1, alerta_curta: false, alerta_longa: false, estado: 'ok' }, origem: 'orca', rotulo: 'eu@exemplo.com', config: null, comando: null, ativo: true },
+      { nome: 'codex', agente: 'codex', vagas: 1, usadas: 0, peso: 1, papeis: [], ocupantes: [], cota: { curta: 24, longa: 42, medida_ha_min: 1, limites: [], alerta_curta: false, alerta_longa: false, estado: 'ok' }, origem: 'orca', rotulo: 'eu@exemplo.com', config: null, comando: null, ativo: true },
       { nome: 'claude-abcdef12', agente: 'claude', vagas: 1, usadas: 0, peso: 1, papeis: [], ocupantes: [], cota: null, origem: 'orca', rotulo: 'gerenciada@exemplo.com', config: null, comando: null, ativo: false }
     ]
   }
@@ -64,12 +64,12 @@ export const estadoComAlertas: Estado = {
     ...estadoExemplo.pool,
     contas: [
       ...estadoExemplo.pool.contas.slice(0, 1),
-      { ...estadoExemplo.pool.contas[1], cota: { curta: null, longa: null, medida_ha_min: null, alerta_curta: false, alerta_longa: false, estado: 'erro', erro: 'token expirado' } },
+      { ...estadoExemplo.pool.contas[1], cota: { curta: null, longa: null, medida_ha_min: null, limites: [], alerta_curta: false, alerta_longa: false, estado: 'erro', erro: 'token expirado' } },
       {
         ...estadoExemplo.pool.contas[0],
         nome: 'work',
         ativo: true,
-        cota: { curta: null, longa: null, medida_ha_min: 1400, alerta_curta: false, alerta_longa: false, estado: 'sem_login', acao: 'CLAUDE_CONFIG_DIR=~/.claude-work claude auth login' }
+        cota: { curta: null, longa: null, medida_ha_min: 1400, limites: [], alerta_curta: false, alerta_longa: false, estado: 'sem_login', acao: 'CLAUDE_CONFIG_DIR=~/.claude-work claude auth login' }
       }
     ]
   }

@@ -441,6 +441,7 @@ function SecaoPool({ e }: { e: Estado }) {
       [t.pool.peso, c.peso],
       [t.pool.papeis, c.papeis.map((p) => t.pool.nomesPapel[p] ?? p).join(', ') || '-'],
       [t.pool.janelas, c.cota && (c.cota.estado === 'ok' || c.cota.estado === 'antiga') ? t.pool.janelasValor(c.cota.curta, c.cota.longa) : t.pool.semMedida],
+      ...(c.cota && (c.cota.estado === 'ok' || c.cota.estado === 'antiga') ? c.cota.limites.map((l): [string, string] => [l.nome, t.pool.limiteValor(l.curta, l.longa)]) : []),
       [t.pool.medidaHa, c.cota?.medida_ha_min != null ? t.pool.minutos(c.cota.medida_ha_min) : '-'],
       ...(c.cota?.estado === 'antiga' && c.cota.medida_ha_min != null ? ([[t.pool.aviso, t.pool.medidaAntiga(c.cota.medida_ha_min)]] as [string, string][]) : []),
       [t.pool.vagasEmUso, c.ocupantes.map((o) => o.dispatch ?? '?').join(', ') || t.pool.nenhuma]

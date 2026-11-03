@@ -28,12 +28,16 @@ export type Config = {
   fila: ConfigFila
 }
 
+export type Limite = { nome: string; curta: number | null; longa: number | null }
+
 export type Medida = {
   conta: string
   curta: number | null
   longa: number | null
   resetLongaTs: number | null
   estado: 'ok' | 'sem_login' | 'erro' | 'sem_medida'
+  /** Limites separados da conta (ex.: Fable, grupos do antigravity); ausente quando não há. */
+  limites?: Limite[]
   acao?: string
   erro?: string
   medidaTs: number

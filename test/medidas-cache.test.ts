@@ -80,3 +80,20 @@ test('medidasGravadas devolve o que está em disco sem limite de idade e descart
     assert.deepEqual(medidasGravadas(p), [])
   } finally { rmSync(home, { recursive: true, force: true }) }
 })
+
+test('limites separados: válidos sobrevivem à gravação; inválidos invalidam a medida; cache sem limites segue válido', () => {
+  const home = mkdtempSync(join(tmpdir(), 'cache-limites-'))
+  try {
+    const p = paths(home)
+    mkdirSync(p.medidas, { recursive: true })
+    const m = (conta: string, extra: object) => ({ conta, curta: 1, longa: 2, resetLongaTs: null, estado: 'ok', medidaTs: 1, ...extra })
+    writeFileSync(join(p.medidas, 'contas.json'), JSON.stringify({
+      a: m('a', { limites: [{ nome: 'Fable', curta: null, longa: 29 }] }),
+      b: m('b', {}),
+      c: m('c', { limites: [{ nome: 'X', curta: null, longa: 101 }] }),
+      d: m('d', { limites: [{ nome: '', curta: 1, longa: 1 }] }),
+      e: m('e', { limites: 'x' }),
+    }))
+    assert.deepEqual(medidasGravadas(p).map((x) => x.conta), ['a', 'b'])
+  } finally { rmSync(home, { recursive: true, force: true }) }
+})

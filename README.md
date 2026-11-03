@@ -27,7 +27,7 @@ An [Orca](https://github.com/stablyai/orca) plugin that lets many coding agents 
 
 ## Install
 1. In Orca, open **Settings → Plugins** and install **Agent Pool & Test Queue** from the catalog.
-   Not listed yet? Choose **Add plugin → From a Git URL…** and paste `https://github.com/VictorStochero/orca-agent-pool#v1.0.4`.
+   Not listed yet? Choose **Add plugin → From a Git URL…** and paste `https://github.com/VictorStochero/orca-agent-pool#v1.0.5`.
 2. Approve the access it asks for (a trusted worker and its own storage).
 3. Open the **Agent Pool** panel. On first activation the plugin:
    1. creates `~/.agents/agent-pool/` (`config.json` and `state/`);
@@ -176,6 +176,7 @@ orca plugin dev load . # load this folder into Orca (the real install)
 - Tests isolate `HOME` and `USERPROFILE`, and a guard fails the suite if it touches your real home.
 
 ## Changelog
+- **1.0.5**: an account's details list its separate limits: per-model weekly limits of Claude accounts (such as Fable) and the quota groups Orca reports for an agent (such as Antigravity's Gemini, Claude/GPT and Gemini 4 Argon).
 - **1.0.4**: the panel no longer shows a false "Orca unavailable" and empty quotas when Orca restarts the idle worker (it shows the recorded quotas and "checking" until the first collection); a Claude account with an expired token is no longer reported as "usage unavailable" when `claude /usage` is slow (45 s timeout, then the usage endpoint with the renewed token).
 - **1.0.3**: README with screenshots, usage flow, configuration reference, troubleshooting and uninstall.
 - **1.0.2** (not published): version numbers aligned in every manifest (the `v1.0.1` tag shipped manifests still saying 1.0.0).
@@ -191,6 +192,6 @@ orca plugin dev load . # load this folder into Orca (the real install)
 
 Plugin do Orca que deixa vários agentes de código dividirem uma máquina com segurança: **pool de agentes** (contas com vagas, peso e papéis; o escritor de cada tarefa é a conta com mais cota sobrando × peso, ou a primeira da sua ordem), **fila de testes** para qualquer linguagem (por máquina e por recurso disputado, como o mesmo banco de testes), **imposição** opcional por hook no Claude Code e no Codex, e um **painel** no Orca, em português ou inglês conforme o idioma do Orca, com tudo configurável.
 
-**Instalação:** pelo catálogo de plugins do Orca (Configurações → Plugins) ou por **Add plugin → From a Git URL…** com `https://github.com/VictorStochero/orca-agent-pool#v1.0.4`; aprove o acesso e abra o painel **Agent Pool**. O plugin grava só em `~/.agents/` (configuração, lançador `~/.agents/bin/agent-pool` e a skill) e instala o hook de imposição no Claude Code e no Codex, com backup antes e remoção em Configurações → Imposição.
+**Instalação:** pelo catálogo de plugins do Orca (Configurações → Plugins) ou por **Add plugin → From a Git URL…** com `https://github.com/VictorStochero/orca-agent-pool#v1.0.5`; aprove o acesso e abra o painel **Agent Pool**. O plugin grava só em `~/.agents/` (configuração, lançador `~/.agents/bin/agent-pool` e a skill) e instala o hook de imposição no Claude Code e no Codex, com backup antes e remoção em Configurações → Imposição.
 
 **Uso pelos agentes:** `~/.agents/bin/agent-pool writer --reserve <tag>` antes do `worker-start`, `slot swap` para o dispatch real, `agent-pool test -- <comando>` para todo teste e `slot release` no fim. Contas Claude personalizadas são medidas com a credencial da própria conta, enviada só à API da Anthropic e nunca gravada ou exibida. Problemas: `~/.agents/bin/agent-pool doctor`. Os detalhes de modos da fila, executores, configuração e comandos estão nas seções em inglês acima.

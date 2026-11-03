@@ -24,6 +24,8 @@ export type Cota = {
   /** Janela no limite de alerta: a regra fica só no worker. */
   alerta_curta: boolean
   alerta_longa: boolean
+  /** Limites separados (ex.: Fable, grupos do antigravity); vazio quando não há. */
+  limites: { nome: string; curta: number | null; longa: number | null }[]
   /** `sem_login` e `erro` pedem ação do usuário; `antiga` = medida com mais de 30 min; `sem_medida` = nada lido. */
   estado: 'ok' | 'sem_login' | 'erro' | 'antiga' | 'sem_medida'
   /** Comando que resolve (`sem_login`), quando houver. */

@@ -60,13 +60,17 @@ export async function medirClaude(conta: Conta, d: DependenciasMedida): Promise<
         signal: AbortSignal.timeout(10000),
       })
       if (resposta.ok) {
-        const json = await resposta.json() as { five_hour?: { utilization?: number }; seven_day?: { utilization?: number; resets_at?: string } }
+        const json = await resposta.json() as { five_hour?: { utilization?: number }; seven_day?: { utilization?: number; resets_at?: string }; limits?: { kind?: string; percent?: number; scope?: { model?: { display_name?: string } | null } | null }[] }
         const pct = (n: unknown) => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 100 ? Math.round(n) : null
         const curta = pct(json.five_hour?.utilization)
         const longa = pct(json.seven_day?.utilization)
         if (curta !== null || longa !== null) {
           const reset = Date.parse(json.seven_day?.resets_at ?? '')
-          return { ...base, curta, longa, resetLongaTs: Number.isFinite(reset) ? reset : null, estado: 'ok' }
+          const limites = (Array.isArray(json.limits) ? json.limits : []).flatMap((l) => {
+            const nome = l?.kind === 'weekly_scoped' ? l.scope?.model?.display_name : null
+            return typeof nome === 'string' && nome ? [{ nome, curta: null, longa: pct(l.percent) }] : []
+          })
+          return { ...base, curta, longa, resetLongaTs: Number.isFinite(reset) ? reset : null, estado: 'ok', ...(limites.length ? { limites } : {}) }
         }
       }
     } catch { /* Cai no /usage; falhas externas não podem expor credenciais. */ }
@@ -83,7 +87,10 @@ export async function medirClaude(conta: Conta, d: DependenciasMedida): Promise<
     const curta = texto.match(/^Current session:\s*(\d+(?:\.\d+)?)%/m)
     const longa = texto.match(/^Current week \(all models\):\s*(\d+(?:\.\d+)?)%/m)
     if (longa && Number(longa[1]) <= 100 && (!curta || Number(curta[1]) <= 100)) {
-      return { ...base, curta: curta ? Math.round(Number(curta[1])) : null, longa: Math.round(Number(longa[1])), estado: 'ok' }
+      const limites = [...texto.matchAll(/^Current week \((?!all models\))([^)]+)\):\s*(\d+(?:\.\d+)?)%/gm)]
+        .filter((m) => Number(m[2]) <= 100)
+        .map((m) => ({ nome: m[1].trim(), curta: null, longa: Math.round(Number(m[2])) }))
+      return { ...base, curta: curta ? Math.round(Number(curta[1])) : null, longa: Math.round(Number(longa[1])), estado: 'ok', ...(limites.length ? { limites } : {}) }
     }
     // O claude renova o token vencido logo na partida, mesmo quando o /usage não responde a tempo.
     const novo = lerToken()
