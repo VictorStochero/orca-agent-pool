@@ -27,7 +27,7 @@ An [Orca](https://github.com/stablyai/orca) plugin that lets many coding agents 
 
 ## Install
 1. In Orca, open **Settings → Plugins** and install **Agent Pool & Test Queue** from the catalog.
-   Not listed yet? Choose **Add plugin → From a Git URL…** and paste `https://github.com/VictorStochero/orca-agent-pool#v1.0.5`.
+   Not listed yet? Choose **Add plugin → From a Git URL…** and paste `https://github.com/VictorStochero/orca-agent-pool#v1.0.6`.
 2. Approve the access it asks for (a trusted worker and its own storage).
 3. Open the **Agent Pool** panel. On first activation the plugin:
    1. creates `~/.agents/agent-pool/` (`config.json` and `state/`);
@@ -64,7 +64,7 @@ A reservation that is never swapped expires after 10 minutes, and a slot whose d
 | ![Accounts settings](assets/settings-accounts.png) | ![Enforcement settings](assets/settings-enforcement.png) |
 
 - **Tests in the queue**: what is running and waiting, per queue, with the process and how long it has waited.
-- **Agent pool**: slots in use per account (`2/∞` for an account without its own limit), 5-hour and weekly quota, and the details of each account on click.
+- **Agent pool**: slots in use per account (`2/∞` for an account without its own limit), open Claude sessions per account (including the ones you open yourself; display only, they don't take slots), 5-hour and weekly quota, and the details of each account on click.
 - **Settings**: tabs for the queue, the pool, the accounts (**Configure** an account or **Add** a custom one), **Enforcement** (install, reinstall or remove the hook per agent) and the panel itself.
 
 ## The test queue
@@ -76,7 +76,7 @@ Run tests with `agent-pool test` (detects the runner) or `agent-pool test -- <co
 | **Global** | one queue for the whole machine |
 | **Per project** | one queue per project (`fila.vagas_projeto` slots each) |
 
-The machine-wide cap (`fila.teto`) applies in every mode. The resource comes, in order, from the project's `.orca/agent-pool.json` (`{"recurso": "postgres:5433"}`), `DATABASE_URL`, `DB_HOST`/`DB_PORT`/`DB_DATABASE` (also when set inline, as in `DB_DATABASE=x php artisan test`), a container runner, or falls back to the general queue.
+The machine-wide cap (`fila.teto`) applies in every mode. A new mode applies to tests started afterwards (a test that already has a slot keeps its queue until it ends); new slot counts and cap also apply to tests already waiting. The resource comes, in order, from the project's `.orca/agent-pool.json` (`{"recurso": "postgres:5433"}`), `DATABASE_URL`, `DB_HOST`/`DB_PORT`/`DB_DATABASE` (also when set inline, as in `DB_DATABASE=x php artisan test`), a container runner, or falls back to the general queue.
 
 | Detected by | Runner | Parallelism (`fila.processos`) |
 |---|---|---|
@@ -176,6 +176,7 @@ orca plugin dev load . # load this folder into Orca (the real install)
 - Tests isolate `HOME` and `USERPROFILE`, and a guard fails the suite if it touches your real home.
 
 ## Changelog
+- **1.0.6**: a test whose `agent-pool test` was killed (for example by an Orca update on Windows) keeps its slot and shows as running while the test itself still runs; the pool shows open Claude sessions per account and their total; tables fit a narrow panel without horizontal scrolling; a long cell no longer hides the whole table; the queue mode radio selects one option; the Queue column shows each test's real queue; waiting tests pick up new slot and cap settings; the queue no longer fails with `ENOTEMPTY` when Windows holds a file in a lock folder.
 - **1.0.5**: an account's details list its separate limits: per-model weekly limits of Claude accounts (such as Fable) and the quota groups Orca reports for an agent (such as Antigravity's Gemini, Claude/GPT and Gemini 4 Argon).
 - **1.0.4**: the panel no longer shows a false "Orca unavailable" and empty quotas when Orca restarts the idle worker (it shows the recorded quotas and "checking" until the first collection); a Claude account with an expired token is no longer reported as "usage unavailable" when `claude /usage` is slow (45 s timeout, then the usage endpoint with the renewed token).
 - **1.0.3**: README with screenshots, usage flow, configuration reference, troubleshooting and uninstall.
@@ -192,6 +193,6 @@ orca plugin dev load . # load this folder into Orca (the real install)
 
 Plugin do Orca que deixa vários agentes de código dividirem uma máquina com segurança: **pool de agentes** (contas com vagas, peso e papéis; o escritor de cada tarefa é a conta com mais cota sobrando × peso, ou a primeira da sua ordem), **fila de testes** para qualquer linguagem (por máquina e por recurso disputado, como o mesmo banco de testes), **imposição** opcional por hook no Claude Code e no Codex, e um **painel** no Orca, em português ou inglês conforme o idioma do Orca, com tudo configurável.
 
-**Instalação:** pelo catálogo de plugins do Orca (Configurações → Plugins) ou por **Add plugin → From a Git URL…** com `https://github.com/VictorStochero/orca-agent-pool#v1.0.5`; aprove o acesso e abra o painel **Agent Pool**. O plugin grava só em `~/.agents/` (configuração, lançador `~/.agents/bin/agent-pool` e a skill) e instala o hook de imposição no Claude Code e no Codex, com backup antes e remoção em Configurações → Imposição.
+**Instalação:** pelo catálogo de plugins do Orca (Configurações → Plugins) ou por **Add plugin → From a Git URL…** com `https://github.com/VictorStochero/orca-agent-pool#v1.0.6`; aprove o acesso e abra o painel **Agent Pool**. O plugin grava só em `~/.agents/` (configuração, lançador `~/.agents/bin/agent-pool` e a skill) e instala o hook de imposição no Claude Code e no Codex, com backup antes e remoção em Configurações → Imposição.
 
 **Uso pelos agentes:** `~/.agents/bin/agent-pool writer --reserve <tag>` antes do `worker-start`, `slot swap` para o dispatch real, `agent-pool test -- <comando>` para todo teste e `slot release` no fim. Contas Claude personalizadas são medidas com a credencial da própria conta, enviada só à API da Anthropic e nunca gravada ou exibida. Problemas: `~/.agents/bin/agent-pool doctor`. Os detalhes de modos da fila, executores, configuração e comandos estão nas seções em inglês acima.

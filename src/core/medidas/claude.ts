@@ -41,9 +41,14 @@ export async function claude(dir: string, args: string[], bin = 'claude'): Promi
 const usage = (dir: string) => claude(dir, ['--strict-mcp-config', '-p', '/usage'])
 const status = (dir: string) => claude(dir, ['auth', 'status'])
 
-export async function medirClaude(conta: Conta, d: DependenciasMedida): Promise<Medida> {
+/** Pasta de configuração da conta Claude; `~` é a casa. */
+export function pastaDaConta(conta: Conta, home: string): string {
   const config = conta.config ?? '~/.claude'
-  const dir = config === '~' ? d.home : /^~[/\\]/.test(config) ? join(d.home, config.slice(2)) : config
+  return config === '~' ? home : /^~[/\\]/.test(config) ? join(home, config.slice(2)) : config
+}
+
+export async function medirClaude(conta: Conta, d: DependenciasMedida): Promise<Medida> {
+  const dir = pastaDaConta(conta, d.home)
   const base: Medida = { conta: conta.nome, curta: null, longa: null, resetLongaTs: null, estado: 'sem_login', medidaTs: d.agora }
   const semLogin = (): Medida => ({ ...base, acao: `CLAUDE_CONFIG_DIR=${/\s/.test(dir) ? JSON.stringify(dir) : dir} claude auth login` })
   const lerToken = (): string | null => {

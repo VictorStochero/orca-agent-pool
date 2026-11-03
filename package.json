@@ -1,6 +1,6 @@
 {
   "name": "orca-agent-pool",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "private": true,
   "type": "module",
   "description": "Agent Pool & Test Queue for Orca: an agent pool and a test queue for any language.",

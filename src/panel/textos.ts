@@ -115,6 +115,7 @@ export const pt = {
     filaBanco: (endereco: string) => `Banco ${endereco}`,
     filaContainer: 'Container',
     filaGeral: 'Geral',
+    filaTeto: 'Teto da máquina',
     estados: { execucao: 'Em execução', aguardando: 'Aguardando vaga', parado: '⚠ Parado' } as Record<string, string>,
     dicaParado: 'O processo terminou e deixou a vaga presa.',
     ondeRoda: 'Onde roda',
@@ -122,7 +123,7 @@ export const pt = {
     pid: 'PID',
     worktree: 'Worktree',
     situacao: 'Situação',
-    configurarDescricao: 'vale só para testes iniciados depois',
+    configurarDescricao: 'o modo vale para testes iniciados depois; vagas e teto, também para quem já espera',
     campos: {
       modo: 'Modo da fila',
       vagas: 'Vagas',
@@ -145,13 +146,14 @@ export const pt = {
   atencao: 'Atenção',
   pool: {
     titulo: 'Pool de agentes',
-    resumo: (usadas: number, teto: number, ramMin: number, escolha: string) =>
-      `Agentes ${usadas}/${teto || '∞'} · RAM mínima ${ramMin} GB · Escritor ${escolha === 'ordem' ? 'pela ordem da tabela' : 'pelo ritmo da cota'}`,
+    resumo: (usadas: number, teto: number, sessoes: number, escolha: string) =>
+      `Agentes ${usadas}/${teto || '∞'} · Sessões ${sessoes} · Escritor ${escolha === 'ordem' ? 'pela ordem da tabela' : 'pelo ritmo da cota'}`,
     escolhaOpcoes: { ritmo: 'Ritmo da cota', ordem: 'Ordem da tabela' } as Record<string, string>,
     semContas: 'Nenhuma conta no registro.',
     tabela: 'Contas do pool',
     colConta: 'Conta',
     colVagas: 'Vagas',
+    colSessoes: 'Sessões',
     col5h: '5h',
     colSemanal: 'Semanal',
     percentual: (v: number | null, alerta: boolean) => `${alerta ? '⚠ ' : ''}${pct(v)}`,
@@ -305,10 +307,10 @@ export const en: typeof pt = {
     comoFunciona: 'How the queue works', semTestes: 'No queued tests', tabela: 'Queued tests',
     colProjeto: 'Project', colFila: 'Queue', colEstado: 'Status', colHa: 'Since', filaGlobal: 'Global',
     filaProjeto: (nome) => `Project ${nome}`, filaBanco: (endereco) => `Database ${endereco}`,
-    filaContainer: 'Container', filaGeral: 'General',
+    filaContainer: 'Container', filaGeral: 'General', filaTeto: 'Machine cap',
     estados: { execucao: 'Running', aguardando: 'Waiting for a slot', parado: '⚠ Stopped' },
     dicaParado: 'The process ended and left a slot locked.', ondeRoda: 'Runs on', comando: 'Command', pid: 'PID', worktree: 'Worktree',
-    situacao: 'Status', configurarDescricao: 'applies to tests started afterwards',
+    situacao: 'Status', configurarDescricao: 'the mode applies to tests started afterwards; slots and cap also to tests already waiting',
     campos: { modo: 'Queue mode', vagas: 'Slots', vagas_projeto: 'Slots per project', teto: 'Machine cap', processos: 'Processes (--parallel)' },
     dicas: {
       global: 'One queue for the whole machine: tests from every project wait for the same slots.',
@@ -320,9 +322,9 @@ export const en: typeof pt = {
   },
   atencao: 'Attention',
   pool: {
-    titulo: 'Agent pool', resumo: (usadas, teto, ramMin, escolha) => `Agents ${usadas}/${teto || '∞'} · Minimum RAM ${ramMin} GB · Writer ${escolha === 'ordem' ? 'by table order' : 'by quota pace'}`,
+    titulo: 'Agent pool', resumo: (usadas, teto, sessoes, escolha) => `Agents ${usadas}/${teto || '∞'} · Sessions ${sessoes} · Writer ${escolha === 'ordem' ? 'by table order' : 'by quota pace'}`,
     escolhaOpcoes: { ritmo: 'Quota pace', ordem: 'Table order' }, semContas: 'No registered accounts.', tabela: 'Pool accounts',
-    colConta: 'Account', colVagas: 'Slots', col5h: '5h', colSemanal: 'Weekly',
+    colConta: 'Account', colVagas: 'Slots', colSessoes: 'Sessions', col5h: '5h', colSemanal: 'Weekly',
     percentual: (v, alerta) => `${alerta ? '⚠ ' : ''}${pct(v)}`,
     janelasValor: (curta, longa) => `5h ${pct(curta)} · week ${pct(longa)}`,
     limiteValor: (curta, longa) => [curta !== null && `5h ${pct(curta)}`, longa !== null && `week ${pct(longa)}`].filter(Boolean).join(' · ') || '-', semLogin: 'not signed in', erroMedida: (detalhe) => (detalhe && en.errosMedida[detalhe]) || detalhe || 'measurement failed',

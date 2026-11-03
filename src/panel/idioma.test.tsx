@@ -119,7 +119,7 @@ test('cota exatamente no limite (80%) mostra o alerta no painel, pela regra do w
 test('fila por banco: Postgres também aparece como banco', async () => {
   const e = estadoReal()
   e.fila.modo = 'banco'
-  e.fila.testes = [{ pid: 1, estado: 'execucao', recurso: 'postgres 127.0.0.1:5432/app', worktree: '/w/a', projeto: 'a', comando: 'x', desde_ts: 1 }]
+  e.fila.testes = [{ pid: 1, estado: 'execucao', recurso: 'postgres 127.0.0.1:5432/app', worktree: '/w/a', projeto: 'a', comando: 'x', fila: null, desde_ts: 1 }]
   view = await mount(panel, { locale: 'pt-BR', host: hostCom(e) })
   assert.ok(view.find({ type: 'Table', label: 'Testes na fila', text: /Banco 127\.0\.0\.1:5432\/app/ }))
 })

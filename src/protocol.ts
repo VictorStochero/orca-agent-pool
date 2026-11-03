@@ -11,6 +11,8 @@ export type TesteFila = {
   /** Último segmento do worktree. */
   projeto: string | null
   comando: string | null
+  /** Chave da fila real da trava ou da espera (`global`, `proj-<x>`, `_teto`, banco…); null se o registro não a traz. */
+  fila: string | null
   /** Epoch em ms: início da trava (execução, parado) ou da espera (aguardando). */
   desde_ts: number | null
 }
@@ -44,6 +46,8 @@ export type Conta = {
   peso: number
   papeis: string[]
   ocupantes: Ocupante[]
+  /** Nomes das sessões interativas abertas (só exibição, fora das vagas); null = conta sem leitura de sessões. */
+  sessoes: string[] | null
   cota: Cota | null
   /** `orca`: entrou sozinha pela detecção; `manual`: cadastrada pelo usuário (CLI personalizado). */
   origem: 'manual' | 'orca'
@@ -78,6 +82,8 @@ export type Estado = {
     escolha: string
     papeis_validos: string[]
     maquina: { usadas: number; teto: number }
+    /** Total de sessões abertas da máquina (uma vez por pasta de configuração). */
+    sessoes: number
     contas: Conta[]
   }
 }

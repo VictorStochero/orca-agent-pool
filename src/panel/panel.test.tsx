@@ -243,10 +243,21 @@ test('editar comando da conta manual preserva o campo da nova conta', async () =
   assert.deepEqual(gravados, [{ 'conta.main.comando': 'claude -p' }])
 })
 
-test('colunas da fila usam largura automática para painel estreito', async () => {
+// O Table nativo não rola o cabeçalho com as linhas: largura fixa somada passa dos ~240 px e vira rolagem horizontal.
+test('colunas das tabelas são flexíveis (sem largura fixa) para caber em painel estreito', async () => {
   view = await mount(panel, { host: hostCom() })
-  const colunas = view.find({ type: 'Table', label: 'Testes na fila' })!.props.columns as { width: string; minWidth?: string }[]
-  assert.deepEqual(colunas.slice(0, 3).map(({ width, minWidth }) => [width, minWidth]), [['auto', 'xs'], ['auto', 'xs'], ['auto', 'xs']])
+  for (const label of ['Testes na fila', 'Contas do pool']) {
+    const colunas = view.find({ type: 'Table', label })!.props.columns as { width: string; minWidth?: string }[]
+    assert.ok(colunas.every((c) => c.width === 'auto'), label)
+    assert.ok(colunas.filter((c) => c.minWidth).length <= 1, label)
+  }
+})
+
+test('colunas da tabela de requisitos são flexíveis', async () => {
+  view = await mount(panel, { host: mockHost({ requests: { 'requisitos.ler': () => faltando, 'estado.ler': () => estadoExemplo } }) })
+  const colunas = view.find({ type: 'Table', label: 'Requisitos do painel' })!.props.columns as { width: string; minWidth?: string }[]
+  assert.ok(colunas.every((c) => c.width === 'auto'))
+  assert.ok(colunas.filter((c) => c.minWidth).length <= 1)
 })
 
 test('erro de leitura dos hooks aparece sem ocultar fila e pool e recupera no refresh', async () => {
@@ -279,7 +290,7 @@ test('tabelas nativas: Testes na fila (Projeto · Fila · Estado · Há) e Conta
   view = await mount(panel, { host: hostCom() })
   assert.deepEqual(view.columnsOf(FILA), ['projeto', 'fila', 'estado', 'ha'])
   assert.deepEqual(view.rowsOf(FILA), ['p4242', 'p4120', 'p99']) // uma linha por teste, na ordem do backend; sem linha de teto
-  assert.deepEqual(view.columnsOf(POOL), ['conta', 'vagas', 'h5', 'semanal'])
+  assert.deepEqual(view.columnsOf(POOL), ['conta', 'vagas', 'sessoes', 'h5', 'semanal'])
   assert.deepEqual(view.rowsOf(POOL), ['main', 'codex', 'claude-abcdef12'])
   assert.ok(view.find({ text: /1 em execução · 1 aguardando · teto 5 · Modo Global/ }))
   const fila = { type: 'Table', label: 'Testes na fila' }
@@ -326,12 +337,30 @@ test('fila: a coluna Fila segue o modo (Global · Banco · Container · Geral ·
   assert.ok(view.find({ text: /Modo Por banco/ }))
   await view.unmount()
   view = await mount(panel, { host: hostCom([], com('projeto', ['projeto meu-projeto'])) })
-  assert.ok(view.find({ ...tabela, text: /Projeto meu-projeto/ }))
+  assert.ok(view.find({ ...tabela, text: /Projeto wt-um/ })) // o projeto da linha, não o recurso
   assert.ok(view.find({ text: /Modo Por projeto/ }))
   await view.unmount()
   view = await mount(panel, { host: hostCom([], com('global', [])) })
   assert.ok(view.find({ text: 'Nenhum teste na fila' }))
   assert.equal(view.find(tabela), null)
+})
+
+test('pool: coluna Sessões com o número (ou –), nomes nos detalhes e total no resumo, sem RAM', async () => {
+  view = await mount(panel, { host: hostCom() })
+  assert.ok(view.find({ text: /Agentes 1\/4 · Sessões 2 · Escritor pelo ritmo da cota/ }))
+  assert.equal(view.find({ text: /RAM mínima/ }), null)
+  const pool = view.find({ type: 'Table', label: 'Contas do pool' })!
+  const sessoes = (pool.props.rows as { key: string; cells: Record<string, unknown> }[]).map((r) => r.cells.sessoes)
+  assert.deepEqual(sessoes, [2, '–', '–'])
+  await view.selectRows(POOL, ['main'])
+  assert.ok(view.find({ ...POOL, text: /orca-agent-pool-b6, gestaosmart/ }))
+})
+
+test('pool em inglês: resumo com sessões e sem RAM', async () => {
+  view = await mount(panel, { host: hostCom(), locale: 'en' })
+  assert.ok(view.find({ text: /Agents 1\/4 · Sessions 2 · Writer by quota pace/ }))
+  assert.equal(view.find({ text: /Minimum RAM/ }), null)
+  assert.deepEqual(view.columnsOf({ label: 'Pool accounts' }), ['conta', 'vagas', 'sessoes', 'h5', 'semanal'])
 })
 
 test('pool: detalhes dentro da tabela, várias abertas, sem botão nem campo na linha', async () => {
@@ -685,4 +714,60 @@ test('alertas: o bloco Atenção lista um item por problema e o comando num Code
   assert.ok(view.find({ type: 'Table', label: 'Contas do pool', text: /Problema.*sem login/ }))
   assert.ok(view.find({ type: 'Table', label: 'Contas do pool', text: /Para resolver.*claude auth login/ }))
   assert.deepEqual(view.errors, [])
+})
+
+test('fila: célula de texto longo (comando de 1500 caracteres) é cortada em 1024 com "…" para o Orca não invalidar a tabela', async () => {
+  const longo = 'x'.repeat(1500)
+  const estado: Estado = { ...estadoExemplo, fila: { ...estadoExemplo.fila, testes: [{ ...estadoExemplo.fila.testes[0], comando: longo }] } }
+  view = await mount(panel, { host: hostCom([], estado) })
+  await view.selectRows(FILA, ['p4242'])
+  const tabela = view.find({ type: 'Table', label: 'Testes na fila' })
+  assert.ok(tabela, 'tabela invalidada pelo Orca')
+  const rows = tabela.props.rows as { cells: Record<string, unknown> }[]
+  const textos = rows.flatMap((r) => Object.values(r.cells)).filter((c): c is string => typeof c === 'string')
+  assert.ok(textos.some((s) => s.startsWith('xxx')))
+  for (const s of textos) assert.ok(s.length <= 1024, `célula com ${s.length} caracteres`)
+  assert.ok(textos.some((s) => s.length === 1024 && s.endsWith('…')))
+})
+
+test('modo da fila: o valor dos rádios é sempre controlado, só o do modo atual vem marcado', async () => {
+  view = await mount(panel, { host: hostCom() })
+  await abrir(view)
+  const valores = () => view!.findAll({ role: 'radiogroup' }).map((g) => g.props.value)
+  assert.deepEqual(valores(), ['global', '', ''])
+  await view.select({ label: 'Modo da fila: Por projeto' }, 'projeto')
+  assert.deepEqual(valores(), ['', '', 'projeto'])
+  await view.select({ label: 'Modo da fila: Por banco' }, 'banco')
+  assert.deepEqual(valores(), ['', 'banco', ''])
+  assert.deepEqual(view.refusals, [])
+})
+
+for (const [locale, projeto, teto] of [['pt-BR', 'Projeto gestaosmart', 'Teto da máquina'], ['en', 'Project gestaosmart', 'Machine cap']] as const) {
+  test(`${locale}: coluna Fila vem da fila real de cada linha, não do modo atual`, async () => {
+    const base = estadoExemplo.fila.testes[0]
+    const linha = (pid: number, fila: string | null, recurso: string) => ({ ...base, pid, fila, recurso, projeto: 'gestaosmart' })
+    const estado: Estado = {
+      ...estadoExemplo,
+      fila: { ...estadoExemplo.fila, modo: 'projeto', testes: [
+        linha(1, 'proj-gestaosmart', 'mysql 127.0.0.1:3307/gestaosmart_wt_1_test'),
+        linha(2, 'mysql_127_0_0_1_3307_gestaosmart_wt_1_test', 'mysql 127.0.0.1:3307/gestaosmart_wt_1_test'),
+        linha(3, '_teto', 'mysql 127.0.0.1:3307/gestaosmart_wt_1_test'),
+        linha(4, null, 'mysql 127.0.0.1:3307/gestaosmart_wt_1_test'),
+        linha(5, 'global', 'geral')
+      ] }
+    }
+    view = await mount(panel, { locale, host: hostCom([], estado) })
+    const cel = (pid: number) => (view!.find({ type: 'Table', label: /./ })!.props.rows as { key: string; cells: { fila: string } }[]).find((r) => r.key === `p${pid}`)!.cells.fila
+    assert.deepEqual([1, 2, 3, 4, 5].map(cel), [projeto, locale === 'en' ? 'Database 127.0.0.1:3307/gestaosmart_wt_1_test' : 'Banco 127.0.0.1:3307/gestaosmart_wt_1_test', teto, projeto, 'Global'])
+  })
+}
+
+test('fila: o corte da célula longa não parte um emoji (par substituto)', async () => {
+  const longo = 'x'.repeat(1022) + '😀' + 'y'.repeat(100)
+  const estado: Estado = { ...estadoExemplo, fila: { ...estadoExemplo.fila, testes: [{ ...estadoExemplo.fila.testes[0], comando: longo }] } }
+  view = await mount(panel, { host: hostCom([], estado) })
+  await view.selectRows(FILA, ['p4242'])
+  const rows = view.find({ type: 'Table', label: 'Testes na fila' })!.props.rows as { cells: Record<string, unknown> }[]
+  const cortada = rows.flatMap((r) => Object.values(r.cells)).find((c): c is string => typeof c === 'string' && c.startsWith('xxx'))!
+  assert.equal(cortada, 'x'.repeat(1022) + '…')
 })

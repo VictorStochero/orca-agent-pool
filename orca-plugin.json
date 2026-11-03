@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "agent-pool",
   "name": "Agent Pool & Test Queue",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "An agent pool and a test queue for any language: reserve agent slots by quota, run tests one at a time per resource, and configure everything from a panel.",
   "license": "MIT",
   "engines": {

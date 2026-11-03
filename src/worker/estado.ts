@@ -1,6 +1,10 @@
 // Monta o Estado do painel a partir do núcleo. Lê disco, nunca mede: a cota e o ambiente vêm da última passada do ciclo.
+import { homedir } from 'node:os'
+import { resolve } from 'node:path'
 import type { Detectada } from '../core/deteccao.ts'
 import { versao } from '../core/index.ts'
+import { pastaDaConta } from '../core/medidas/claude.ts'
+import { sessoesAbertas } from '../core/sessoes.ts'
 import type { Paths } from '../core/paths.ts'
 import { listarTestes } from '../core/fila/travas.ts'
 import { lerVagas, ocupadasMaquina } from '../core/pool/vagas.ts'
@@ -34,12 +38,20 @@ function cota(m: Medida | undefined, agoraMs: number): Cota | null {
   }
 }
 
-export function montarEstado(p: Paths, c: Config, erroConfig: string | null, amb: Ambiente, agoraMs = Date.now()): Estado {
+export function montarEstado(p: Paths, c: Config, erroConfig: string | null, amb: Ambiente, agoraMs = Date.now(), home = homedir()): Estado {
   const vagas = lerVagas(p)
+  const porPasta = new Map<string, string[]>()
   const porConta = new Map(amb.medidas.map((m) => [m.conta, m]))
   const detectadas = new Map(amb.detectadas.map((d) => [d.nome, d]))
   const contas: Conta[] = c.pool.contas.map((ct) => {
     const ocupantes = vagas.filter((v) => v.conta === ct.nome)
+    let sessoes: string[] | null = null
+    if (ct.agente === 'claude' && ct.origem === 'manual') {
+      // A mesma pasta escrita de outro jeito (barra normal, barra no fim) conta uma vez no total.
+      const pasta = resolve(pastaDaConta(ct, home))
+      sessoes = porPasta.get(pasta) ?? sessoesAbertas(pasta)
+      porPasta.set(pasta, sessoes)
+    }
     return {
       nome: ct.nome,
       agente: ct.agente,
@@ -48,6 +60,7 @@ export function montarEstado(p: Paths, c: Config, erroConfig: string | null, amb
       peso: ct.peso,
       papeis: ct.papeis,
       ocupantes: ocupantes.map((v) => ({ dispatch: v.dono || null, desde: Number.isFinite(v.desde) && v.desde > 0 ? new Date(v.desde).toISOString() : null })),
+      sessoes,
       cota: cota(porConta.get(ct.nome), agoraMs),
       origem: ct.origem,
       rotulo: detectadas.get(ct.nome)?.rotulo ?? null,
@@ -81,6 +94,7 @@ export function montarEstado(p: Paths, c: Config, erroConfig: string | null, amb
       escolha: c.pool.escolha,
       papeis_validos: PAPEIS,
       maquina: { usadas: ocupadasMaquina(p, c, agoraMs), teto: c.pool.teto },
+      sessoes: [...porPasta.values()].reduce((n, s) => n + s.length, 0),
       contas
     }
   }

@@ -11,5 +11,5 @@ export async function test(ctx: Ctx, args: string[]): Promise<number> {
   if (args[0] === '--' && args.length === 1) throw new Uso(`${t.uso}: agent-pool test -- <${t.comando}>`)
   if (!args.length && !detectarExecutor(ctx.cwd, ctx.env)) throw new Uso(t.stackAusente)
   const p = caminhos(ctx)
-  return rodarNaFila({ dir: ctx.cwd, comando: args.length ? args.slice(1) : undefined, config: carregar(p).fila, p, env: ctx.env, avisar: (e) => ctx.err(t.avisoFila(e)) })
+  return rodarNaFila({ dir: ctx.cwd, comando: args.length ? args.slice(1) : undefined, config: carregar(p).fila, lerConfig: () => carregar(p).fila, p, env: ctx.env, avisar: (e) => ctx.err(t.avisoFila(e)) })
 }

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -52,6 +52,37 @@ test('cota: limites separados passam para a cota; ausentes viram lista vazia', (
     assert.deepEqual(cota?.limites, limites)
     delete m.limites
     assert.deepEqual(montarEstado(paths(home), c, null, { ...AMBIENTE_VAZIO, medidas: [m] }, 1).pool.contas[0].cota?.limites, [])
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('sessões: conta Claude manual lista as abertas; as demais ficam null; o total não repete a mesma pasta', () => {
+  const home = mkdtempSync(join(tmpdir(), 'estado-'))
+  try {
+    for (const [pasta, nome] of [['.claude', 'um'], ['.claude-b', 'dois']]) {
+      mkdirSync(join(home, pasta, 'sessions'), { recursive: true })
+      writeFileSync(join(home, pasta, 'sessions', '1.json'), JSON.stringify({ pid: process.pid, kind: 'interactive', name: nome, cwd: 'C:\\x', status: 'idle' }))
+    }
+    const c = structuredClone(PADRAO)
+    const base = { comando: null, vagas: 1, peso: 1, papeis: [], ativo: true }
+    c.pool.contas.push(
+      { ...base, nome: 'a', agente: 'claude', config: null, origem: 'manual' },
+      { ...base, nome: 'a2', agente: 'claude', config: '~/.claude/', origem: 'manual' },
+      { ...base, nome: 'a3', agente: 'claude', config: join(home, '.claude').replaceAll('\\', '/'), origem: 'manual' },
+      { ...base, nome: 'b', agente: 'claude', config: '~/.claude-b', origem: 'manual' },
+      { ...base, nome: 'o', agente: 'claude', config: null, origem: 'orca' },
+      { ...base, nome: 'x', agente: 'codex', config: null, origem: 'manual' }
+    )
+    const e = montarEstado(paths(home), c, null, AMBIENTE_VAZIO, 1, home)
+    const por = Object.fromEntries(e.pool.contas.map((ct) => [ct.nome, ct.sessoes]))
+    assert.deepEqual(por.a, ['um'])
+    assert.deepEqual(por.a2, por.a)
+    assert.deepEqual(por.a3, por.a)
+    assert.equal(por.b?.length, 1)
+    assert.equal(por.o, null)
+    assert.equal(por.x, null)
+    assert.equal(e.pool.sessoes, 2)
   } finally {
     rmSync(home, { recursive: true, force: true })
   }

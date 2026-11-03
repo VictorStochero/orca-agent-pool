@@ -254,6 +254,14 @@ function ComDica({ texto, children }: { texto: string; children: OrcaNode }) {
 type Linha = { key: string; cells: Record<string, TableCell>; detalhes: [string, string | number][] }
 type Coluna = { key: string; label: string; align?: 'start' | 'center' | 'end'; width?: 'auto' | 'xs' | 'sm' | 'md' | 'lg'; minWidth?: 'auto' | 'xs' | 'sm' | 'md' }
 
+/** O Orca invalida a Table inteira se uma célula de texto passar de 1024 caracteres (maxLabelLength). */
+const LIMITE_CELULA = 1024
+function caber<T>(v: T): T | string {
+  if (typeof v !== 'string' || v.length <= LIMITE_CELULA) return v
+  const alto = /[\uD800-\uDBFF]/.test(v[LIMITE_CELULA - 2]) // não deixa metade de um par substituto antes do "…"
+  return `${v.slice(0, LIMITE_CELULA - (alto ? 2 : 1))}…`
+}
+
 /**
  * Table nativa que expande a linha: a selecionada ganha, logo abaixo, linhas de detalhe (desabilitadas) com o rótulo na
  * primeira coluna e o valor na segunda. Cada clique alterna a linha (várias abertas; clicar de novo recolhe). Só leitura.
@@ -267,9 +275,9 @@ function TabelaExpansivel(props: {
 }) {
   const [c0, c1] = props.colunas
   const rows: TableRow[] = props.linhas.flatMap((l) => [
-    { key: l.key, cells: l.cells } as TableRow,
+    { key: l.key, cells: Object.fromEntries(Object.entries(l.cells).map(([k, v]) => [k, caber(v)])) } as TableRow,
     ...(props.abertas.includes(l.key)
-      ? l.detalhes.map(([rotulo, valor], i) => ({ key: `${l.key}#${i}`, disabled: true, cells: { [c0.key]: rotulo, [c1.key]: valor } }) as TableRow)
+      ? l.detalhes.map(([rotulo, valor], i) => ({ key: `${l.key}#${i}`, disabled: true, cells: { [c0.key]: caber(rotulo), [c1.key]: caber(valor) } }) as TableRow)
       : [])
   ])
   return (
@@ -304,7 +312,7 @@ function CampoModo({ e }: { e: Estado }) {
           <RadioGroup
             label={`${t.fila.campos.modo}: ${t.fila.modos[m]}`}
             labelHidden
-            value={valor === m ? m : undefined}
+            value={valor === m ? m : ''}
             options={[{ value: m, label: t.fila.modos[m] }]}
             onChange={(x) => mudar('fila.modo', x)}
           />
@@ -327,11 +335,13 @@ function CampoFila({ item, e }: { item: Exclude<ItemFila, 'modo'>; e: Estado }) 
   )
 }
 
-/** Rótulo da coluna Fila: depende do modo; o detalhe do recurso fica na linha expandida. */
+/** Rótulo da coluna Fila: vem da fila real da linha (quem começou antes da troca de modo segue na fila antiga); sem ela, do modo atual. */
 function rotuloFila(modo: Estado['fila']['modo'], x: TesteFila): string {
-  if (modo === 'global') return t.fila.filaGlobal
+  const fila = x.fila ?? (modo === 'global' ? 'global' : modo === 'projeto' ? 'proj-' : null)
+  if (fila === 'global') return t.fila.filaGlobal
+  if (fila?.startsWith('proj-')) return t.fila.filaProjeto(x.projeto || '-')
+  if (fila === '_teto') return t.fila.filaTeto
   const r = x.recurso ?? ''
-  if (modo === 'projeto') return t.fila.filaProjeto(r.replace(/^projeto\s+/, '') || x.projeto || '-')
   if (r.startsWith('container')) return t.fila.filaContainer
   if (r === 'geral') return t.fila.filaGeral
   const banco = /^[a-z]+ (\S+:\d+(?:\/\S*)?)$/.exec(r) // `<motor> <host>:<porta>[/<banco>]`: mysql, postgres, mongodb, redis
@@ -373,9 +383,9 @@ function SecaoFila({ e }: { e: Estado }) {
           label={t.fila.tabela}
           colunas={[
             { key: 'projeto', label: t.fila.colProjeto, width: 'auto', minWidth: 'xs' },
-            { key: 'fila', label: t.fila.colFila, width: 'auto', minWidth: 'xs' },
-            { key: 'estado', label: t.fila.colEstado, width: 'auto', minWidth: 'xs' },
-            { key: 'ha', label: t.fila.colHa, width: 'xs' }
+            { key: 'fila', label: t.fila.colFila, width: 'auto' },
+            { key: 'estado', label: t.fila.colEstado, width: 'auto' },
+            { key: 'ha', label: t.fila.colHa, width: 'auto' }
           ]}
           linhas={linhas}
           abertas={read(abertasTrava)}
@@ -429,6 +439,7 @@ function SecaoPool({ e }: { e: Estado }) {
     cells: {
       conta: c.ativo ? c.nome : `${c.nome} (${t.pool.naoUtilizada})`,
       vagas: t.pool.vagasDaConta(c.usadas, c.vagas),
+      sessoes: c.sessoes === null ? '–' : c.sessoes.length,
       h5: comProblema(c) ? `⚠ ${t.pool.semLeitura}` : percentual(c.cota?.curta ?? null, c.cota?.alerta_curta ?? false),
       semanal: comProblema(c) ? `⚠ ${t.pool.semLeitura}` : percentual(c.cota?.longa ?? null, c.cota?.alerta_longa ?? false)
     },
@@ -444,21 +455,23 @@ function SecaoPool({ e }: { e: Estado }) {
       ...(c.cota && (c.cota.estado === 'ok' || c.cota.estado === 'antiga') ? c.cota.limites.map((l): [string, string] => [l.nome, t.pool.limiteValor(l.curta, l.longa)]) : []),
       [t.pool.medidaHa, c.cota?.medida_ha_min != null ? t.pool.minutos(c.cota.medida_ha_min) : '-'],
       ...(c.cota?.estado === 'antiga' && c.cota.medida_ha_min != null ? ([[t.pool.aviso, t.pool.medidaAntiga(c.cota.medida_ha_min)]] as [string, string][]) : []),
-      [t.pool.vagasEmUso, c.ocupantes.map((o) => o.dispatch ?? '?').join(', ') || t.pool.nenhuma]
+      [t.pool.vagasEmUso, c.ocupantes.map((o) => o.dispatch ?? '?').join(', ') || t.pool.nenhuma],
+      ...(c.sessoes !== null ? ([[t.pool.colSessoes, c.sessoes.join(', ') || t.pool.nenhuma]] as [string, string][]) : [])
     ]
   }))
   return (
-    <Card title={t.pool.titulo} description={t.pool.resumo(pool.maquina.usadas, pool.maquina.teto, pool.ram_min, pool.escolha)}>
+    <Card title={t.pool.titulo} description={t.pool.resumo(pool.maquina.usadas, pool.maquina.teto, pool.sessoes, pool.escolha)}>
       {pool.contas.length === 0 ? (
         <Text muted>{t.pool.semContas}</Text>
       ) : (
         <TabelaExpansivel
           label={t.pool.tabela}
           colunas={[
-            { key: 'conta', label: t.pool.colConta, width: 'md' },
-            { key: 'vagas', label: t.pool.colVagas },
-            { key: 'h5', label: t.pool.col5h, align: 'end', width: 'xs' },
-            { key: 'semanal', label: t.pool.colSemanal, align: 'end', width: 'sm', minWidth: 'sm' }
+            { key: 'conta', label: t.pool.colConta, width: 'auto', minWidth: 'xs' },
+            { key: 'vagas', label: t.pool.colVagas, width: 'auto' },
+            { key: 'sessoes', label: t.pool.colSessoes, align: 'end', width: 'auto' },
+            { key: 'h5', label: t.pool.col5h, align: 'end', width: 'auto' },
+            { key: 'semanal', label: t.pool.colSemanal, align: 'end', width: 'auto' }
           ]}
           linhas={linhas}
           abertas={read(abertasConta)}
@@ -746,8 +759,8 @@ function SecaoRequisitos({ r }: { r: Requisitos }) {
       <Table
         label={t.requisitos.tabela}
         columns={[
-          { key: 'requisito', label: t.requisitos.colRequisito, width: 'lg' },
-          { key: 'situacao', label: t.requisitos.colSituacao, width: 'sm' }
+          { key: 'requisito', label: t.requisitos.colRequisito, width: 'auto', minWidth: 'xs' },
+          { key: 'situacao', label: t.requisitos.colSituacao, width: 'auto' }
         ]}
         rows={linhas}
       />

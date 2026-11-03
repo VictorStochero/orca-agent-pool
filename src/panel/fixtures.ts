@@ -10,9 +10,9 @@ export const estadoExemplo: Estado = {
     vagas: 5,
     teto: 5,
     testes: [
-      { pid: 4242, estado: 'execucao', recurso: 'mysql 127.0.0.1:3308/app_test', worktree: '/work/wt-um', projeto: 'wt-um', comando: 'runner tests/X.php', desde_ts: 1793650465000 },
-      { pid: 4120, estado: 'aguardando', recurso: 'mysql 127.0.0.1:3308/app_test', worktree: '/work/wt-tres', projeto: 'wt-tres', comando: 'php artisan test', desde_ts: 1793650500000 },
-      { pid: 99, estado: 'parado', recurso: 'container exec-1', worktree: '/work/wt-dois', projeto: 'wt-dois', comando: null, desde_ts: 1793640000000 }
+      { pid: 4242, estado: 'execucao', recurso: 'mysql 127.0.0.1:3308/app_test', worktree: '/work/wt-um', projeto: 'wt-um', comando: 'runner tests/X.php', fila: null, desde_ts: 1793650465000 },
+      { pid: 4120, estado: 'aguardando', recurso: 'mysql 127.0.0.1:3308/app_test', worktree: '/work/wt-tres', projeto: 'wt-tres', comando: 'php artisan test', fila: null, desde_ts: 1793650500000 },
+      { pid: 99, estado: 'parado', recurso: 'container exec-1', worktree: '/work/wt-dois', projeto: 'wt-dois', comando: null, fila: null, desde_ts: 1793640000000 }
     ],
     config: {
       modo: 'global',
@@ -28,6 +28,7 @@ export const estadoExemplo: Estado = {
     escolha: 'ritmo',
     papeis_validos: ['escritor', 'revisor', 'verificador', 'mecanico', 'segunda-opiniao', 'orquestra'],
     maquina: { usadas: 1, teto: 4 },
+    sessoes: 2,
     contas: [
       {
         nome: 'main',
@@ -37,6 +38,7 @@ export const estadoExemplo: Estado = {
         peso: 10,
         papeis: ['escritor', 'revisor'],
         ocupantes: [{ dispatch: 'ctx_a', desde: '2026-11-02T13:00:00Z' }],
+        sessoes: ['orca-agent-pool-b6', 'gestaosmart'],
         origem: 'manual',
         rotulo: null,
         config: null,
@@ -44,8 +46,8 @@ export const estadoExemplo: Estado = {
         ativo: true,
         cota: { curta: 90, longa: 25, medida_ha_min: 45, limites: [], alerta_curta: true, alerta_longa: false, estado: 'antiga' }
       },
-      { nome: 'codex', agente: 'codex', vagas: 1, usadas: 0, peso: 1, papeis: [], ocupantes: [], cota: { curta: 24, longa: 42, medida_ha_min: 1, limites: [], alerta_curta: false, alerta_longa: false, estado: 'ok' }, origem: 'orca', rotulo: 'eu@exemplo.com', config: null, comando: null, ativo: true },
-      { nome: 'claude-abcdef12', agente: 'claude', vagas: 1, usadas: 0, peso: 1, papeis: [], ocupantes: [], cota: null, origem: 'orca', rotulo: 'gerenciada@exemplo.com', config: null, comando: null, ativo: false }
+      { nome: 'codex', agente: 'codex', vagas: 1, usadas: 0, peso: 1, papeis: [], ocupantes: [], sessoes: null, cota: { curta: 24, longa: 42, medida_ha_min: 1, limites: [], alerta_curta: false, alerta_longa: false, estado: 'ok' }, origem: 'orca', rotulo: 'eu@exemplo.com', config: null, comando: null, ativo: true },
+      { nome: 'claude-abcdef12', agente: 'claude', vagas: 1, usadas: 0, peso: 1, papeis: [], ocupantes: [], sessoes: null, cota: null, origem: 'orca', rotulo: 'gerenciada@exemplo.com', config: null, comando: null, ativo: false }
     ]
   }
 }
