@@ -1,6 +1,9 @@
-export type Entrada = { comando: string; agente: 'claude' | 'codex' }
-/** `trecho`: a parte do comando que roda teste, para o CLI montar a sugestão. */
-export type Decisao = { permitir: boolean; trecho?: string }
+/** `reservaViva`: há reserva `res-` pendente; ausente = true (quem não checa não bloqueia `worker-start`). */
+export type Entrada = { comando: string; agente: 'claude' | 'codex'; reservaViva?: boolean }
+/** `trecho`: a parte do comando negada, para o CLI montar a sugestão; `motivo`: teste fora da fila ou `worker-start` sem reserva. */
+export type Decisao = { permitir: boolean; trecho?: string; motivo?: 'teste' | 'reserva' }
+
+type Negado = { trecho: string; motivo: 'teste' | 'reserva' }
 
 const SEPARADORES = new Set([';', '&', '|', '\n', '\r'])
 const SHELLS = /^(bash|sh|zsh|pwsh|powershell)$/
@@ -101,20 +104,35 @@ function ehTeste(t: string[]): boolean {
   return false
 }
 
-function acha(texto: string): string | null {
+/** Palavras do trecho sem agrupamento `( … )` / `{ …; }`, `VAR=x` nem `env`: não mudam o que roda. */
+function comando(trecho: string): string[] {
+  let t = palavras(trecho).map((w) => w.replace(/^[({]+|[)}]+$/g, '')).filter(Boolean)
+  for (;;) {
+    while (t.length && /^[A-Za-z_]\w*=/.test(t[0])) t = t.slice(1)
+    if (base(t[0] ?? '') !== 'env') break
+    t = t.slice(1)
+    while (t.length && t[0].startsWith('-')) t = t.slice(1)
+  }
+  return t
+}
+
+/** O comando reserva vaga (`agent-pool writer --reserve` ou `slot take <conta> res-<tag>`) em algum trecho, inclusive em `$(…)`? */
+function reserva(texto: string): boolean {
+  if (substituicoes(texto).some(reserva)) return true
+  return trechos(texto).some((trecho) => {
+    const t = comando(trecho)
+    if (base(t[0] ?? '') !== 'agent-pool') return false
+    return (t[1] === 'writer' && t.includes('--reserve')) || (t[1] === 'slot' && t[2] === 'take' && /^res-/.test(t[4] ?? ''))
+  })
+}
+
+function acha(texto: string, reservaViva: boolean): Negado | null {
   for (const sub of substituicoes(texto)) {
-    const x = acha(sub)
+    const x = acha(sub, reservaViva)
     if (x) return x
   }
   for (const trecho of trechos(texto)) {
-    // Agrupamento `( … )` / `{ …; }` e `env VAR=x` não mudam o que roda.
-    let t = palavras(trecho).map((w) => w.replace(/^[({]+|[)}]+$/g, '')).filter(Boolean)
-    for (;;) {
-      while (t.length && /^[A-Za-z_]\w*=/.test(t[0])) t = t.slice(1)
-      if (base(t[0] ?? '') !== 'env') break
-      t = t.slice(1)
-      while (t.length && t[0].startsWith('-')) t = t.slice(1)
-    }
+    const t = comando(trecho)
     if (!t.length) continue
     const e = base(t[0])
     if (e === 'agent-pool' && t[1] === 'test') continue
@@ -122,22 +140,26 @@ function acha(texto: string): string | null {
     if (SHELLS.test(e)) {
       const k = t.findIndex((a, n) => n > 0 && /^-(l?c|command)$/i.test(a))
       if (k > 0 && t[k + 1] !== undefined) {
-        const x = acha(t[k + 1])
+        const x = acha(t[k + 1], reservaViva)
         if (x) return x
         continue
       }
     }
+    if (!reservaViva && /^orca(-ide|-dev)?$/.test(e) && t[1] === 'orchestration' && t[2] === 'worker-start' && !t.some((a) => a === '--help' || a === '-h')) {
+      return { trecho: trecho.replace(/^[({\s]+/, '').replace(/[)}\s]+$/, ''), motivo: 'reserva' }
+    }
     if (SO_LISTA.test(trecho)) continue
     // `pip install pytest` e afins não rodam teste
     if (/^(pip3?|uv|poetry|pipenv|npm|pnpm|yarn|bun|composer)$/.test(e) && /^(install|add|i|ci|sync|remove|uninstall|require)$/.test(t[1] ?? '')) continue
-    if (ehTeste(t)) return trecho.replace(/^[({\s]+/, '').replace(/[)}\s]+$/, '')
+    if (ehTeste(t)) return { trecho: trecho.replace(/^[({\s]+/, '').replace(/[)}\s]+$/, ''), motivo: 'teste' }
   }
   return null
 }
 
-/** Comando de teste (ou banco de teste) fora de `agent-pool test` é negado com o comando certo. */
+/** Teste fora de `agent-pool test` e `orca orchestration worker-start` sem reserva são negados com o comando certo. */
 export function decidir(e: Entrada): Decisao {
-  const trecho = acha(e.comando.replace(/\r\n/g, '\n'))
-  if (!trecho) return { permitir: true }
-  return { permitir: false, trecho }
+  const texto = e.comando.replace(/\r\n/g, '\n')
+  // Reserva e worker-start na mesma chamada: o hook roda antes de a reserva existir.
+  const negado = acha(texto, (e.reservaViva ?? true) || reserva(texto))
+  return negado ? { permitir: false, ...negado } : { permitir: true }
 }

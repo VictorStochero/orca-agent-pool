@@ -372,7 +372,7 @@ function CampoModo({ e }: { e: Estado }) {
 function CampoFila({ item, e }: { item: Exclude<ItemFila, 'modo'>; e: Estado }) {
   const v = e.fila.config[item]
   const chave = `fila.${item}`
-  const dica = item === 'vagas' || item === 'vagas_projeto' || item === 'teto' ? t.fila.dicas[item] : null
+  const dica = t.fila.dicas[item]
   return (
     <Row gap="xs" align="end">
       <Input label={t.fila.campos[item]} value={read(edicoes)[chave] ?? String(v)} onChange={(x) => mudar(chave, x)} />
@@ -509,7 +509,7 @@ function SecaoPool({ e }: { e: Estado }) {
         : []),
       [t.pool.medidaHa, c.cota?.medida_ha_min != null ? t.pool.minutos(c.cota.medida_ha_min) : '-'],
       ...(c.cota?.estado === 'antiga' && c.cota.medida_ha_min != null ? ([[t.pool.aviso, t.pool.medidaAntiga(c.cota.medida_ha_min)]] as [string, string][]) : []),
-      [t.pool.vagasEmUso, c.ocupantes.map((o) => o.dispatch ?? '?').join(', ') || t.pool.nenhuma],
+      [t.pool.vagasEmUso, [...c.ocupantes.map((o) => o.dispatch ?? '?'), ...(c.agentes ?? [])].join(', ') || t.pool.nenhuma],
       ...(c.sessoes !== null ? ([[t.pool.colSessoes, c.sessoes.join(', ') || t.pool.nenhuma]] as [string, string][]) : [])
     ]
   }))

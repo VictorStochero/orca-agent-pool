@@ -50,6 +50,8 @@ export type Conta = {
   ocupantes: Ocupante[]
   /** Nomes das sessões interativas abertas (só exibição, fora das vagas); null = conta sem leitura de sessões. */
   sessoes: string[] | null
+  /** Nomes dos agentes vivos (`--agent <papel>`) da conta, que ocupam vaga; null = conta sem leitura de sessões. */
+  agentes: string[] | null
   cota: Cota | null
   /** `orca`: entrou sozinha pela detecção; `manual`: cadastrada pelo usuário (CLI personalizado). */
   origem: 'manual' | 'orca'

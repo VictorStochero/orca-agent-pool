@@ -53,9 +53,12 @@ códigos: 0 ok, 2 uso inválido, 75 sem vaga ou espera esgotada`,
     ev.codigo === 'aguardando' ? `Aguardando fila ${ev.fila}`
       : ev.codigo === 'ocupada' ? `FILA OCUPADA — ${ev.fila} — rode de novo`
         : ev.codigo === 'sem_stack' ? 'Stack não detectada: use agent-pool test -- <comando de teste>'
-          : `Não foi possível iniciar ${ev.comando}: ${ev.erro}`,
+          : ev.codigo === 'processos_ajustados' ? (ev.de === null ? `\`${ev.para}\` acrescentado (fila.processos)` : `\`${ev.de}\` reduzido para \`${ev.para}\` (fila.processos)`)
+            : `Não foi possível iniciar ${ev.comando}: ${ev.erro}`,
   hookNegado: (lancador: string, trecho: string, prefixo = '') =>
-    `Execute o trecho de teste pela fila: troque \`${trecho}\` por \`${prefixo}"${lancador}" test -- ${trecho}\` (se sair 75, espere e rode de novo).`
+    `Execute o trecho de teste pela fila: troque \`${trecho}\` por \`${prefixo}"${lancador}" test -- ${trecho}\` (se sair 75, espere e rode de novo).`,
+  hookSemReserva: (lancador: string, prefixo = '') =>
+    `\`worker-start\` sem reserva de vaga. Reserve antes com \`${prefixo}"${lancador}" writer --reserve <tag>\` (escritor) ou \`${prefixo}"${lancador}" slot take <conta> res-<tag>\` e, depois do recibo do worker-start, \`${prefixo}"${lancador}" slot swap res-<tag> <dispatch>\`.`
 }
 
 type Textos = { [K in keyof typeof pt]: (typeof pt)[K] }
@@ -100,9 +103,12 @@ exit codes: 0 ok, 2 invalid usage, 75 no slot or wait timed out`,
     ev.codigo === 'aguardando' ? `Waiting for queue ${ev.fila}`
       : ev.codigo === 'ocupada' ? `QUEUE BUSY — ${ev.fila} — run again`
         : ev.codigo === 'sem_stack' ? 'Stack not detected: use agent-pool test -- <test command>'
-          : `Could not start ${ev.comando}: ${ev.erro}`,
+          : ev.codigo === 'processos_ajustados' ? (ev.de === null ? `\`${ev.para}\` added (fila.processos)` : `\`${ev.de}\` lowered to \`${ev.para}\` (fila.processos)`)
+            : `Could not start ${ev.comando}: ${ev.erro}`,
   hookNegado: (lancador, trecho, prefixo = '') =>
-    `Run the test part through the queue: replace \`${trecho}\` with \`${prefixo}"${lancador}" test -- ${trecho}\` (if it exits 75, wait and run again).`
+    `Run the test part through the queue: replace \`${trecho}\` with \`${prefixo}"${lancador}" test -- ${trecho}\` (if it exits 75, wait and run again).`,
+  hookSemReserva: (lancador, prefixo = '') =>
+    `\`worker-start\` without a slot reservation. Reserve first with \`${prefixo}"${lancador}" writer --reserve <tag>\` (writer) or \`${prefixo}"${lancador}" slot take <account> res-<tag>\` and, after the worker-start receipt, \`${prefixo}"${lancador}" slot swap res-<tag> <dispatch>\`.`
 }
 
 export const textos = { en, pt }

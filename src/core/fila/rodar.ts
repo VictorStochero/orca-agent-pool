@@ -6,6 +6,7 @@ import type { Paths } from '../paths.ts'
 import { lancar } from '../executavel.ts'
 import { detectarExecutor, type Executor } from './executores.ts'
 import { limparBancosLaravel } from './limpeza.ts'
+import { limitarProcessos, processosDoComando } from './processos.ts'
 import { chaveFila, detectarRecurso, nomeProjeto } from './recurso.ts'
 import { TETO, anotarFilho, limparEsperaMorta, publicar, removerMelhorEsforco, soltarVaga, tomarVaga, vivoPadrao, type InfoTrava } from './travas.ts'
 
@@ -17,6 +18,7 @@ export type EventoFila =
   | { codigo: 'ocupada'; fila: string }
   | { codigo: 'sem_stack' }
   | { codigo: 'falha_inicio'; comando: string; erro: string }
+  | { codigo: 'processos_ajustados'; de: string | null; para: string }
 
 export type OpcoesRodar = {
   avisar?: (e: EventoFila) => void
@@ -124,8 +126,15 @@ export async function rodarNaFila(o: OpcoesRodar): Promise<number> {
       return 75
     }
 
+    // Comando explícito: fila.processos (relido na espera) é teto nas flags de paralelismo do agente.
+    let lancado = comando
+    if (argv) {
+      const r = limitarProcessos(comando, atual.processos)
+      lancado = r.comando
+      for (const a of r.ajustes) avisar({ codigo: 'processos_ajustados', ...a })
+    }
     const code = await new Promise<number>((resolve) => {
-      filho = lancar(comando, o.dir, { CI: '1', ...envTeste })
+      filho = lancar(lancado, o.dir, { CI: '1', ...envTeste })
       if (filho.pid) {
         const f = { pid: filho.pid, inicio: agora() }
         anotarFilho(join(base, String(vagaFila)), f)
@@ -138,8 +147,8 @@ export async function rodarNaFila(o: OpcoesRodar): Promise<number> {
       filho.on('close', (c, s) => resolve(c ?? 128 + (constants.signals[s as NodeJS.Signals] ?? 0)))
     })
 
-    if (comando[0] === 'php' && comando.includes('--parallel')) {
-      const n = Number(comando.find((a) => a.startsWith('--processes='))?.slice(12)) || config.processos
+    if (lancado[0] === 'php' && lancado.includes('--parallel')) {
+      const n = processosDoComando(lancado) ?? config.processos
       await limparBancosLaravel(o.dir, envTeste, n).catch(() => undefined)
     }
     return code

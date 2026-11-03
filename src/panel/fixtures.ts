@@ -39,6 +39,7 @@ export const estadoExemplo: Estado = {
         papeis: ['escritor', 'revisor'],
         ocupantes: [{ dispatch: 'ctx_a', desde: '2026-11-02T13:00:00Z' }],
         sessoes: ['orca-agent-pool-b6', 'gestaosmart'],
+        agentes: ['orca-agent-pool-b6'],
         origem: 'manual',
         rotulo: null,
         config: null,
@@ -49,8 +50,8 @@ export const estadoExemplo: Estado = {
         ativo: true,
         cota: { curta: 90, longa: 25, medida_ha_min: 45, limites: [], alerta_curta: true, alerta_longa: false, estado: 'antiga' }
       },
-      { nome: 'codex', agente: 'codex', vagas: 1, usadas: 0, peso: 1, papeis: [], ocupantes: [], sessoes: null, cota: { curta: 24, longa: 42, medida_ha_min: 1, limites: [], alerta_curta: false, alerta_longa: false, estado: 'ok' }, origem: 'orca', rotulo: 'eu@exemplo.com', config: null, comando: null, modelo: null, modelo_efetivo: null, limite_seguido: null, ativo: true },
-      { nome: 'claude-abcdef12', agente: 'claude', vagas: 1, usadas: 0, peso: 1, papeis: [], ocupantes: [], sessoes: null, cota: null, origem: 'orca', rotulo: 'gerenciada@exemplo.com', config: null, comando: null, modelo: null, modelo_efetivo: null, limite_seguido: null, ativo: false }
+      { nome: 'codex', agente: 'codex', vagas: 1, usadas: 0, peso: 1, papeis: [], ocupantes: [], sessoes: null, agentes: null, cota: { curta: 24, longa: 42, medida_ha_min: 1, limites: [], alerta_curta: false, alerta_longa: false, estado: 'ok' }, origem: 'orca', rotulo: 'eu@exemplo.com', config: null, comando: null, modelo: null, modelo_efetivo: null, limite_seguido: null, ativo: true },
+      { nome: 'claude-abcdef12', agente: 'claude', vagas: 1, usadas: 0, peso: 1, papeis: [], ocupantes: [], sessoes: null, agentes: null, cota: null, origem: 'orca', rotulo: 'gerenciada@exemplo.com', config: null, comando: null, modelo: null, modelo_efetivo: null, limite_seguido: null, ativo: false }
     ]
   }
 }

@@ -74,7 +74,7 @@ test('sessões: conta Claude manual lista as abertas; as demais ficam null; o to
       { ...base, nome: 'o', agente: 'claude', config: null, origem: 'orca' },
       { ...base, nome: 'x', agente: 'codex', config: null, origem: 'manual' }
     )
-    const e = montarEstado(paths(home), c, null, AMBIENTE_VAZIO, 1, home)
+    const e = montarEstado(paths(home), c, null, AMBIENTE_VAZIO, 1)
     const por = Object.fromEntries(e.pool.contas.map((ct) => [ct.nome, ct.sessoes]))
     assert.deepEqual(por.a, ['um'])
     assert.deepEqual(por.a2, por.a)
@@ -83,6 +83,32 @@ test('sessões: conta Claude manual lista as abertas; as demais ficam null; o to
     assert.equal(por.o, null)
     assert.equal(por.x, null)
     assert.equal(e.pool.sessoes, 2)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('agente vivo: usadas é a ocupação do pool e a conta lista os agentes; sem sessões fica null', () => {
+  const home = mkdtempSync(join(tmpdir(), 'estado-'))
+  try {
+    mkdirSync(join(home, '.claude', 'sessions'), { recursive: true })
+    for (const [i, agent] of [[1, 'fluxo-orca:escritor'], [2, 'fluxo-orca:revisor'], [3, undefined]] as const) {
+      writeFileSync(join(home, '.claude', 'sessions', `${i}.json`), JSON.stringify({ pid: process.pid, kind: 'interactive', name: `s${i}`, agent }))
+    }
+    const c = structuredClone(PADRAO)
+    const base = { comando: null, modelo: null, vagas: 3, peso: 1, papeis: [], ativo: true }
+    c.pool.contas.push(
+      { ...base, nome: 'a', agente: 'claude', config: null, origem: 'manual' },
+      { ...base, nome: 'x', agente: 'codex', config: null, origem: 'manual' }
+    )
+    const e = montarEstado(paths(home), c, null, AMBIENTE_VAZIO, 1)
+    const [a, x] = e.pool.contas
+    assert.equal(a.usadas, 2)
+    assert.deepEqual(a.agentes, ['s1', 's2'])
+    assert.deepEqual(a.ocupantes, [])
+    assert.equal(x.usadas, 0)
+    assert.equal(x.agentes, null)
+    assert.equal(e.pool.maquina.usadas, 2)
   } finally {
     rmSync(home, { recursive: true, force: true })
   }

@@ -2,6 +2,8 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 export type Paths = {
+  /** Casa do usuário: resolve o `~` das pastas de conta. */
+  home: string
   raiz: string
   config: string
   state: string
@@ -18,6 +20,7 @@ export function paths(home: string = homedir()): Paths {
   const raiz = join(home, '.agents', 'agent-pool')
   const state = join(raiz, 'state')
   return {
+    home,
     raiz,
     config: join(raiz, 'config.json'),
     state,

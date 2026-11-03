@@ -145,7 +145,8 @@ export const pt = {
         'Cada projeto tem a própria fila (vagas por projeto), independente dos outros; só o teto da máquina limita o total. Use quando cada projeto tem banco de testes próprio.',
       vagas: 'Testes ao mesmo tempo em cada fila. No modo Por banco, cada banco tem 1 vaga e esta vale para as filas sem banco (container, Python/JS).',
       vagas_projeto: 'Testes ao mesmo tempo em cada projeto. Só vale no modo Por projeto.',
-      teto: 'Máximo de testes ao mesmo tempo na máquina, somando todas as filas.'
+      teto: 'Máximo de testes ao mesmo tempo na máquina, somando todas as filas.',
+      processos: 'Processos em paralelo do teste. Também é o teto das flags de paralelismo que o agente passa (--processes, -n, --maxWorkers): pedido maior é reduzido a este valor.'
     }
   },
 
@@ -243,7 +244,7 @@ export const pt = {
   },
   imposicao: {
     titulo: 'Hooks',
-    descricao: 'Os hooks fazem os agentes usar a fila de testes.',
+    descricao: 'Os hooks fazem os agentes usar a fila de testes e reservar vaga antes do worker-start.',
     estados: { instalado: 'Instalado', ausente: 'Ausente', erro: 'Erro' },
     remover: 'Remover hook',
     reinstalar: 'Reinstalar',
@@ -330,7 +331,8 @@ export const en: typeof pt = {
       banco: 'One queue per database (address:port/database), shared by projects, with 1 test at a time per database. Use when projects share a test database. Containers and tests without a database have their own queues.',
       projeto: 'Each project has its own queue and slots. Only the machine cap limits the total. Use when each project has its own test database.',
       vagas: 'Concurrent tests in each queue. In Per database mode each database gets 1 slot and this applies to the queues without a database (container, Python/JS).', vagas_projeto: 'Concurrent tests in each project. Only applies in Per project mode.',
-      teto: 'Maximum concurrent tests on the machine across all queues.'
+      teto: 'Maximum concurrent tests on the machine across all queues.',
+      processos: 'Parallel processes of the test. Also a cap on the parallelism flags an agent passes (--processes, -n, --maxWorkers): a larger request is lowered to this value.'
     }
   },
   atencao: 'Attention',
@@ -378,7 +380,7 @@ export const en: typeof pt = {
     subir: 'Move up', descer: 'Move down', nova: 'New manual account', novaNome: 'Name', novaCriar: 'Add account'
   },
   imposicao: {
-    titulo: 'Hooks', descricao: 'Hooks make agents use the test queue.',
+    titulo: 'Hooks', descricao: 'Hooks make agents use the test queue and reserve a slot before worker-start.',
     estados: { instalado: 'Installed', ausente: 'Not installed', erro: 'Error' }, remover: 'Remove hook', reinstalar: 'Reinstall',
     indisponivel: 'Could not read the hooks.'
   }

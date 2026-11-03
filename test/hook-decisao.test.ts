@@ -52,6 +52,46 @@ describe('decidir', () => {
       'podman exec app pytest', 'ddev artisan test', 'cargo nextest run')
     livres('docker compose up -d', 'ddev start', 'cargo build', 'env FOO=1 ls')
   })
+  it('nega worker-start sem reserva viva, pelos mesmos caminhos do teste', () => {
+    const sem = (comando: string) => decidir({ comando, agente: 'claude', reservaViva: false })
+    for (const c of ['orca orchestration worker-start --agent claude', 'out=$(orca orchestration worker-start --task t)',
+      'bash -c "orca orchestration worker-start --task t"', 'slot take pessoal res-x; orca orchestration worker-start --task t',
+      'FOO=1 orca.exe orchestration worker-start', 'orca-ide orchestration worker-start --task t',
+      'ORCA_DEV_REPO_ROOT=/x orca-dev.cmd orchestration worker-start', 'env X=1 "C:/bin/orca.cmd" orchestration worker-start']) {
+      const d = sem(c)
+      assert.equal(d.permitir, false, c)
+      assert.equal(d.motivo, 'reserva', c)
+    }
+    for (const c of ['orca orchestration worker-start --help', 'orca orchestration worker-start -h', 'orca orchestration worker-list',
+      'orca orchestration send --body "worker-start"', 'grep -rn "orca orchestration worker-start" docs']) {
+      assert.equal(sem(c).permitir, true, c)
+    }
+  })
+  it('libera worker-start quando o mesmo comando reserva antes', () => {
+    const sem = (comando: string) => decidir({ comando, agente: 'claude', reservaViva: false }).permitir
+    for (const c of [
+      'R=$(~/.agents/bin/agent-pool writer --reserve x 2>&1); echo $R; orca orchestration worker-start --task t',
+      '~/.agents/bin/agent-pool slot take pessoal res-x && orca orchestration worker-start --task t',
+      'agent-pool.cmd slot take pessoal res-x; orca orchestration worker-start',
+      'agent-pool slot take pessoal res-x; out=$(orca orchestration worker-start)'
+    ]) assert.equal(sem(c), true, c)
+    for (const c of [
+      'agent-pool writer; orca orchestration worker-start',
+      'agent-pool slot free && orca orchestration worker-start',
+      'agent-pool slot swap res-x ctx_1 && orca orchestration worker-start',
+      'agent-pool slot take pessoal ctx_1 && orca orchestration worker-start',
+      'echo "agent-pool writer --reserve x"; orca orchestration worker-start'
+    ]) assert.equal(sem(c), false, c)
+  })
+  it('libera worker-start com reserva viva (ou sem a informação)', () => {
+    const c = 'orca orchestration worker-start --agent claude'
+    assert.equal(decidir({ comando: c, agente: 'claude', reservaViva: true }).permitir, true)
+    assert.equal(decidir({ comando: c, agente: 'claude' }).permitir, true)
+  })
+  it('teste negado informa o motivo teste, com ou sem reserva', () => {
+    assert.equal(decidir({ comando: 'npm test', agente: 'claude', reservaViva: false }).motivo, 'teste')
+    assert.equal(decidir({ comando: 'npm test', agente: 'claude' }).motivo, 'teste')
+  })
   it('vale igual para o Codex', () => {
     assert.equal(nega('bash -lc "pytest -x"', 'codex'), true)
   })

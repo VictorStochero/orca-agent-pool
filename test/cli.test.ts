@@ -7,6 +7,7 @@ import { after, describe, it } from 'node:test'
 import { executar } from '../src/cli/executar.ts'
 import { aplicar, carregar, gravar } from '../src/core/config.ts'
 import { paths } from '../src/core/paths.ts'
+import { pegar } from '../src/core/pool/vagas.ts'
 import type { OrcaCli } from '../src/core/tipos.ts'
 import { cfg, conta } from './helpers/pool.ts'
 import { envCasa, guardarCasaReal } from './helpers/casa.ts'
@@ -371,6 +372,45 @@ describe('hook', () => {
       assert.equal(d.permissionDecision, 'deny')
       assert.match(d.permissionDecisionReason, /agent-pool(\.cmd)?" test -- pytest -q/)
     }
+  })
+  describe('worker-start sem reserva', () => {
+    const AGORA = 1_700_000_000_000
+    const start = entrada('orca orchestration worker-start --agent claude --task t')
+    const comReserva = (desde: number) => {
+      const home = comConfig()
+      pegar(paths(home), carregar(paths(home)), 'a', 'res-x', desde)
+      return home
+    }
+    it('claude: nega com exit 2 e a mensagem da reserva', async () => {
+      const home = comConfig()
+      const r = await rodar(home, ['hook', 'claude'], { stdin: start })
+      const lancador = join(home, '.agents', 'bin', process.platform === 'win32' ? 'agent-pool.cmd' : 'agent-pool').replace(/\\/g, '/')
+      assert.equal(r.code, 2)
+      assert.match(r.err, /sem reserva de vaga/)
+      assert.ok(r.err.includes(`"${lancador}" writer --reserve <tag>`), r.err)
+      assert.ok(r.err.includes(`"${lancador}" slot take <conta> res-<tag>`), r.err)
+      assert.ok(r.err.includes(`"${lancador}" slot swap res-<tag> <dispatch>`), r.err)
+    })
+    it('mensagem em inglês com LANG en', async () => {
+      const r = await rodar(comConfig(), ['hook', 'claude'], { stdin: start, env: { LANG: 'en_US', LC_ALL: '' } })
+      assert.match(r.err, /without a slot reservation/)
+    })
+    it('claude: libera com reserva res- pendente e nega com ela vencida', async () => {
+      assert.deepEqual((await rodar(comReserva(AGORA - 1000), ['hook', 'claude'], { stdin: start })).code, 0)
+      assert.equal((await rodar(comReserva(AGORA - 700_000), ['hook', 'claude'], { stdin: start })).code, 2)
+    })
+    it('codex: nega com JSON de deny', async () => {
+      const r = await rodar(comConfig(), ['hook', 'codex'], { stdin: start })
+      assert.equal(r.code, 0)
+      const d = JSON.parse(r.out).hookSpecificOutput
+      assert.equal(d.permissionDecision, 'deny')
+      assert.match(d.permissionDecisionReason, /sem reserva de vaga/)
+    })
+    it('worker-list e --help passam', async () => {
+      for (const c of ['orca orchestration worker-list', 'orca orchestration worker-start --help']) {
+        assert.equal((await rodar(comConfig(), ['hook', 'claude'], { stdin: entrada(c) })).code, 0, c)
+      }
+    })
   })
   it('libera o que passa pela fila, texto qualquer e JSON ilegível', async () => {
     for (const stdin of [entrada('agent-pool test -- npm test'), entrada('git commit -m "rode pytest"'), 'isto não é json', '{}']) {

@@ -414,7 +414,7 @@ test('Configurações: seção recolhida no fim, com abas Fila · Pool · Contas
   await view.select({ label: 'Assuntos das configurações' }, 'contas')
   assert.ok(view.find({ text: /^Vagas, peso, papéis e ordem de cada conta — ~\/\.agents\/agent-pool\/config\.json\. As contas detectadas pelo Orca entram no pool sozinhas; as manuais são CLIs personalizados/ }))
   await view.select({ label: 'Assuntos das configurações' }, 'imposicao')
-  assert.ok(view.find({ text: 'Os hooks fazem os agentes usar a fila de testes.' }))
+  assert.ok(view.find({ text: 'Os hooks fazem os agentes usar a fila de testes e reservar vaga antes do worker-start.' }))
   await view.select({ label: 'Assuntos das configurações' }, 'painel')
   assert.ok(view.find({ text: /^Este painel — guardado no Orca/ }))
 })

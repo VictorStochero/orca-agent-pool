@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
@@ -138,6 +138,76 @@ describe('encerradoNoOrca', () => {
     assert.equal(await encerradoNoOrca(orca(lista, { ok: true, result: { dispatch: { id: 'outro', status: 'stopped' } } }))('c'), undefined)
     assert.equal(await encerradoNoOrca(orca(lista))('c'), undefined)
     assert.equal(await encerradoNoOrca(orca({ ok: false }, { ok: false, error: { code: 'runtime_unavailable' } }))('c'), undefined)
+  })
+})
+
+describe('agente vivo ocupa vaga', () => {
+  function agentes(h: string, pasta: string, n: number) {
+    mkdirSync(join(h, pasta, 'sessions'), { recursive: true })
+    for (let i = 1; i <= n; i++) {
+      writeFileSync(join(h, pasta, 'sessions', `${i}.json`), JSON.stringify({ pid: process.pid, kind: 'interactive', name: `ag${i}`, agent: 'fluxo-orca:escritor' }))
+    }
+  }
+
+  it('ocupação é o maior entre reservas e agentes; pegar devolve cheio', () => {
+    const { h, p } = novoHome(), c = cfg([conta('a', { vagas: 2, config: '~/.claude-a' })])
+    agentes(h, '.claude-a', 2)
+    assert.equal(pegar(p, c, 'a', 'ctx_1'), 'cheio')
+    assert.deepEqual(livres(p, c), [{ conta: 'a', livres: 0, ocupadas: 2, total: 2, inativa: false }])
+  })
+
+  it('reserva 1 e 2 agentes: ocupadas 2; reservas acima dos agentes valem', () => {
+    const { h, p } = novoHome(), c = cfg([conta('a', { vagas: 3, config: '~/.claude-a' })])
+    agentes(h, '.claude-a', 2)
+    pegar(p, c, 'a', 'ctx_1')
+    assert.equal(livres(p, c)[0].ocupadas, 2)
+    assert.equal(pegar(p, c, 'a', 'ctx_2'), 'ok')
+    assert.equal(pegar(p, c, 'a', 'ctx_3'), 'ok')
+    assert.equal(livres(p, c)[0].ocupadas, 3)
+  })
+
+  it('reserva res- soma aos agentes vivos; trocada para dispatch, não conta duas vezes', () => {
+    const { h, p } = novoHome(), c = cfg([conta('a', { vagas: 3, config: '~/.claude-a' })])
+    agentes(h, '.claude-a', 2)
+    assert.equal(pegar(p, c, 'a', 'res-a'), 'ok')
+    assert.equal(livres(p, c)[0].ocupadas, 3)
+    assert.equal(pegar(p, c, 'a', 'res-b'), 'cheio')
+    assert.equal(trocar(p, 'res-a', 'ctx_1'), true)
+    assert.equal(livres(p, c)[0].ocupadas, 2)
+    assert.equal(ocupadasMaquina(p, c), 2)
+    assert.equal(pegar(p, c, 'a', 'res-b'), 'ok')
+  })
+
+  it('o teto da máquina também soma a reserva aos agentes', () => {
+    const { h, p } = novoHome(), c = cfg([conta('a', { vagas: 0, config: '~/.claude-a' })], { teto: 3 })
+    agentes(h, '.claude-a', 2)
+    assert.equal(pegar(p, c, 'a', 'res-a'), 'ok')
+    assert.equal(pegar(p, c, 'a', 'res-b'), 'cheio')
+  })
+
+  it('o teto da máquina conta os agentes', () => {
+    const { h, p } = novoHome(), c = cfg([conta('a', { vagas: 5, config: '~/.claude-a' }), conta('b', { vagas: 5, agente: 'codex' })], { teto: 2 })
+    agentes(h, '.claude-a', 2)
+    assert.equal(ocupadasMaquina(p, c), 2)
+    assert.equal(pegar(p, c, 'b', 'ctx_1'), 'cheio')
+  })
+
+  it('duas contas na mesma pasta contam uma vez', () => {
+    const { h, p } = novoHome()
+    const c = cfg([conta('a', { vagas: 5, config: '~/.claude-a' }), conta('a2', { vagas: 5, config: '~/.claude-a/' })])
+    agentes(h, '.claude-a', 2)
+    assert.equal(ocupadasMaquina(p, c), 2)
+    assert.deepEqual(livres(p, c).map((l) => l.ocupadas), [2, 0])
+  })
+
+  it('conta não Claude ou gerenciada pelo Orca ignora a pasta; reserva de conta removida segue contando', () => {
+    const { h, p } = novoHome()
+    agentes(h, '.claude', 2)
+    const c = cfg([conta('x', { agente: 'codex' }), conta('o', { origem: 'orca' })])
+    assert.equal(ocupadasMaquina(p, c), 0)
+    assert.deepEqual(livres(p, c).map((l) => l.ocupadas), [0, 0])
+    pegar(p, cfg([conta('velha', { agente: 'codex' })]), 'velha', 'ctx_9')
+    assert.equal(ocupadasMaquina(p, c), 1)
   })
 })
 

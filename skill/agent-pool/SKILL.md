@@ -14,6 +14,8 @@ This machine shares its agent accounts and its test resources between many agent
 4. If `worker-start` fails: `~/.agents/bin/agent-pool slot release res-<tag>`.
 5. When the worker is done and verified: `~/.agents/bin/agent-pool slot release <dispatch_id>`.
 
+A worker opened with `--agent <role>` keeps its slot taken for as long as its session stays open, even after `slot release`; close it to free the slot. The hook refuses `worker-start` without a pending reservation.
+
 Second opinion from another model family: `~/.agents/bin/agent-pool second --family <claude|gpt|gemini>` (a family other than the writer's). If the line carries `model <id>`, pass `--model <id>` to `worker-start` (Antigravity defaults to Flash so a second opinion does not burn the Argon limit).
 
 ## Running tests

@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { decidir } from '../../core/hook/decisao.ts'
+import { temReservaViva } from '../../core/pool/vagas.ts'
 import { caminhos, Uso, type Ctx } from '../ctx.ts'
 import { textosPara } from '../textos.ts'
 
@@ -29,11 +30,13 @@ export async function hook(ctx: Ctx, args: string[]): Promise<number> {
     powershell = /^PowerShell$/i.test(entrada?.tool_name ?? '') || (Array.isArray(v) && /^(?:powershell|pwsh)(?:\.exe)?$/i.test(String(v[0]).split(/[\\/]/).pop() ?? ''))
   } catch {}
   if (comando === null) return 0
-  const d = decidir({ comando, agente })
+  const p = caminhos(ctx)
+  const d = decidir({ comando, agente, reservaViva: temReservaViva(p, ctx.agora()) })
   if (d.permitir) return 0
   // O lançador não está no PATH dos agentes: a sugestão usa o caminho absoluto.
-  const lancador = join(caminhos(ctx).bin, process.platform === 'win32' ? 'agent-pool.cmd' : 'agent-pool').replace(/\\/g, '/')
-  const mensagem = t.hookNegado(lancador, d.trecho ?? comando, powershell ? '& ' : '')
+  const lancador = join(p.bin, process.platform === 'win32' ? 'agent-pool.cmd' : 'agent-pool').replace(/\\/g, '/')
+  const prefixo = powershell ? '& ' : ''
+  const mensagem = d.motivo === 'reserva' ? t.hookSemReserva(lancador, prefixo) : t.hookNegado(lancador, d.trecho ?? comando, prefixo)
   if (agente === 'claude') {
     ctx.err(mensagem)
     return 2
