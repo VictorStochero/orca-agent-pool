@@ -86,7 +86,7 @@ export const pt = {
       fila: 'Como os testes esperam a vez — ~/.agents/agent-pool/config.json',
       pool: 'Limites da máquina e como o escritor é escolhido — ~/.agents/agent-pool/config.json',
       contas:
-        'Vagas, peso, papéis e ordem de cada conta — ~/.agents/agent-pool/config.json. As contas detectadas pelo Orca entram no pool sozinhas; as manuais são CLIs personalizados, cadastrados em "Nova conta manual".',
+        'Vagas, peso, papéis e ordem de cada conta — ~/.agents/agent-pool/config.json. As contas detectadas pelo Orca entram no pool sozinhas; as manuais são CLIs personalizados, cadastrados na aba "Cadastrar".',
       painel: 'Este painel — guardado no Orca'
     }
   },
@@ -288,7 +288,7 @@ export const en: typeof pt = {
     linhas: {
       fila: 'How tests wait for a slot — ~/.agents/agent-pool/config.json',
       pool: 'Machine limits and writer selection — ~/.agents/agent-pool/config.json',
-      contas: 'Slots, weight, roles and account order — ~/.agents/agent-pool/config.json. Orca accounts join automatically; add custom CLIs under "New manual account".',
+      contas: 'Slots, weight, roles and account order — ~/.agents/agent-pool/config.json. Orca accounts join automatically; add custom CLIs in the "Add" tab.',
       painel: 'This panel — stored in Orca'
     }
   },
