@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { paths } from '../src/core/paths.ts'
 import type { Config } from '../src/core/tipos.ts'
-import { medirTodas } from '../src/core/medidas/cache.ts'
+import { medidasGravadas, medirTodas } from '../src/core/medidas/cache.ts'
 import { envCasa } from './helpers/casa.ts'
 
 test('cache por conta dura cinco minutos, renova sem cota velha e nunca contém token', async () => {
@@ -64,5 +64,19 @@ test('a chamada publica as medidas juntas depois de concluir a coleta', async ()
     } })
     assert.equal(parcial, false)
     assert.deepEqual(novas.map(m => m.longa), [20, 20])
+  } finally { rmSync(home, { recursive: true, force: true }) }
+})
+
+test('medidasGravadas devolve o que está em disco sem limite de idade e descarta forma inválida', () => {
+  const home = mkdtempSync(join(tmpdir(), 'cache-medidas-'))
+  try {
+    const p = paths(home)
+    assert.deepEqual(medidasGravadas(p), [])
+    mkdirSync(p.medidas, { recursive: true })
+    const velha = { conta: 'a', curta: 10, longa: 20, resetLongaTs: null, estado: 'ok', medidaTs: 1 }
+    writeFileSync(join(p.medidas, 'contas.json'), JSON.stringify({ x: velha, y: { ...velha, conta: 'b', curta: 101 }, z: { ...velha, conta: 'c', estado: 'qualquer' }, w: null }))
+    assert.deepEqual(medidasGravadas(p), [velha])
+    writeFileSync(join(p.medidas, 'contas.json'), '{inválido')
+    assert.deepEqual(medidasGravadas(p), [])
   } finally { rmSync(home, { recursive: true, force: true }) }
 })

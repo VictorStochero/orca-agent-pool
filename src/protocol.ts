@@ -68,7 +68,7 @@ export type Alerta = {
 export type Estado = {
   gerado_em: string
   alertas: Alerta[]
-  saude: { plugin_versao: string | null; orca: { rodando: boolean; versao: string | null } }
+  saude: { plugin_versao: string | null; orca: { rodando: boolean | null; versao: string | null } }
   fila: { modo: 'global' | 'banco' | 'projeto'; vagas: number; teto: number; testes: TesteFila[]; config: Record<ItemFila, string | number> }
   pool: {
     teto: number

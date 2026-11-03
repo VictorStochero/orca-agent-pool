@@ -10,14 +10,31 @@ function chave(conta: Conta): string {
   return createHash('sha256').update(JSON.stringify([conta.nome, conta.agente, conta.config, conta.origem])).digest('hex')
 }
 
-function ler(medida: Medida | undefined, conta: Conta, agora: number, cacheMin: number): Medida | null {
+function formaValida(medida: Medida | undefined): medida is Medida {
   try {
-    if (!medida || medida.conta !== conta.nome || !Number.isFinite(medida.medidaTs) || medida.medidaTs > agora || agora - medida.medidaTs >= cacheMin * 60_000) return null
-    if (!['ok', 'erro', 'sem_login', 'sem_medida'].includes(medida.estado)) return null
-    if (![medida.curta, medida.longa].every(n => n === null || typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 100)) return null
-    if (medida.resetLongaTs !== null && !Number.isFinite(medida.resetLongaTs)) return null
-    return medida
-  } catch { return null }
+    if (!medida || !Number.isFinite(medida.medidaTs)) return false
+    if (!['ok', 'erro', 'sem_login', 'sem_medida'].includes(medida.estado)) return false
+    if (![medida.curta, medida.longa].every(n => n === null || typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 100)) return false
+    return medida.resetLongaTs === null || Number.isFinite(medida.resetLongaTs)
+  } catch { return false }
+}
+
+function ler(medida: Medida | undefined, conta: Conta, agora: number, cacheMin: number): Medida | null {
+  if (!formaValida(medida) || medida.conta !== conta.nome || medida.medidaTs > agora || agora - medida.medidaTs >= cacheMin * 60_000) return null
+  return medida
+}
+
+function lerArquivo(p: Paths): Record<string, Medida> {
+  try {
+    const json = JSON.parse(readFileSync(join(p.medidas, 'contas.json'), 'utf8'))
+    if (json && typeof json === 'object' && !Array.isArray(json)) return json
+  } catch { /* Cache ausente ou ilegível exige coleta nova. */ }
+  return {}
+}
+
+/** Medidas gravadas por `medirTodas`, sem medir e sem limite de idade: o worker religado mostra a cota (já marcada como antiga) até a primeira coleta. */
+export function medidasGravadas(p: Paths): Medida[] {
+  return Object.values(lerArquivo(p)).filter(formaValida)
 }
 
 export async function medirTodas(c: Config, p: Paths, orca: OrcaCli, d: DependenciasMedida, cacheMin = 5): Promise<Medida[]> {
@@ -25,11 +42,7 @@ export async function medirTodas(c: Config, p: Paths, orca: OrcaCli, d: Dependen
   let falhouOrca = false
   const medidas: Medida[] = []
   const destino = join(p.medidas, 'contas.json')
-  let anteriores: Record<string, Medida> = {}
-  try {
-    const json = JSON.parse(readFileSync(destino, 'utf8'))
-    if (json && typeof json === 'object' && !Array.isArray(json)) anteriores = json
-  } catch { /* Cache ausente ou ilegível exige coleta nova. */ }
+  const anteriores = lerArquivo(p)
   const atualizadas: Record<string, Medida> = {}
   let mudou = false
   for (const conta of c.pool.contas) {

@@ -26,7 +26,8 @@ export async function claude(dir: string, args: string[], bin = 'claude'): Promi
     const filho = lancar([bin, ...args], undefined, env, ['ignore', 'pipe', 'ignore'])
     // No Windows o kill() de um claude.cmd não encerra o neto que segura o stdout: resolve já, o close tardio não faz nada.
     const desistir = () => { filho.kill(); resolve('') }
-    const prazo = setTimeout(desistir, 15000)
+    // `claude -p /usage` leva 11-14 s pelo claude.cmd no Windows, mais com a máquina ocupada ou renovando o token.
+    const prazo = setTimeout(desistir, 45000)
     filho.stdout?.on('data', dados => {
       texto += dados.toString()
       if (texto.length > 65536) { clearTimeout(prazo); desistir() }
@@ -45,13 +46,14 @@ export async function medirClaude(conta: Conta, d: DependenciasMedida): Promise<
   const dir = config === '~' ? d.home : /^~[/\\]/.test(config) ? join(d.home, config.slice(2)) : config
   const base: Medida = { conta: conta.nome, curta: null, longa: null, resetLongaTs: null, estado: 'sem_login', medidaTs: d.agora }
   const semLogin = (): Medida => ({ ...base, acao: `CLAUDE_CONFIG_DIR=${/\s/.test(dir) ? JSON.stringify(dir) : dir} claude auth login` })
-  let token: string | null = null
-  try {
-    const cred = JSON.parse(readFileSync(join(dir, '.credentials.json'), 'utf8')).claudeAiOauth
-    if (typeof cred?.accessToken === 'string' && cred.accessToken && typeof cred.expiresAt === 'number' && cred.expiresAt > d.agora) token = cred.accessToken
-  } catch { /* Sem arquivo (ex.: Keychain no macOS) ou token vencido: só o próprio `claude` renova e sabe. */ }
-
-  if (token) {
+  const lerToken = (): string | null => {
+    try {
+      const cred = JSON.parse(readFileSync(join(dir, '.credentials.json'), 'utf8')).claudeAiOauth
+      if (typeof cred?.accessToken === 'string' && cred.accessToken && typeof cred.expiresAt === 'number' && cred.expiresAt > d.agora) return cred.accessToken
+    } catch { /* Sem arquivo (ex.: Keychain no macOS) ou token vencido: só o próprio `claude` renova e sabe. */ }
+    return null
+  }
+  const porApi = async (token: string): Promise<Medida | null> => {
     try {
       const resposta = await d.fetch('https://api.anthropic.com/api/oauth/usage', {
         headers: { Authorization: `Bearer ${token}`, 'anthropic-beta': 'oauth-2025-04-20', Accept: 'application/json' },
@@ -68,7 +70,12 @@ export async function medirClaude(conta: Conta, d: DependenciasMedida): Promise<
         }
       }
     } catch { /* Cai no /usage; falhas externas não podem expor credenciais. */ }
+    return null
   }
+
+  const token = lerToken()
+  const daApi = token ? await porApi(token) : null
+  if (daApi) return daApi
 
   try {
     const texto = await (d.executarUsage ?? usage)(dir)
@@ -78,6 +85,10 @@ export async function medirClaude(conta: Conta, d: DependenciasMedida): Promise<
     if (longa && Number(longa[1]) <= 100 && (!curta || Number(curta[1]) <= 100)) {
       return { ...base, curta: curta ? Math.round(Number(curta[1])) : null, longa: Math.round(Number(longa[1])), estado: 'ok' }
     }
+    // O claude renova o token vencido logo na partida, mesmo quando o /usage não responde a tempo.
+    const novo = lerToken()
+    const renovada = novo && novo !== token ? await porApi(novo) : null
+    if (renovada) return renovada
     // Sem prova de deslogada: "sem login" só quando o próprio claude disser.
     if (JSON.parse(await (d.executarStatus ?? status)(dir)).loggedIn === false) return semLogin()
   } catch { /* Falhas externas não podem expor credenciais. */ }

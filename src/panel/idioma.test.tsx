@@ -17,7 +17,7 @@ afterEach(() => view?.unmount())
 const AGORA = 1_800_000_000_000
 const medida = (c: string, extra: Partial<Medida>): Medida => ({ conta: c, curta: null, longa: null, resetLongaTs: null, estado: 'sem_medida', medidaTs: AGORA, ...extra })
 
-function estadoReal(opcoes: { contas?: ReturnType<typeof conta>[]; medidas?: Medida[]; parado?: boolean; testes?: boolean } = {}) {
+function estadoReal(opcoes: { contas?: ReturnType<typeof conta>[]; medidas?: Medida[]; parado?: boolean; testes?: boolean; orca?: Estado['saude']['orca'] } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'painel-real-'))
   try {
     const p = paths(home)
@@ -26,7 +26,7 @@ function estadoReal(opcoes: { contas?: ReturnType<typeof conta>[]; medidas?: Med
       mkdirSync(dir, { recursive: true })
       writeFileSync(join(dir, 'info.json'), JSON.stringify({ pid: 2147483000, inicio: 1, projeto: 'wt' }))
     }
-    return montarEstado(p, cfg(opcoes.contas ?? [conta('alfa'), conta('beta')]), null, { ...AMBIENTE_VAZIO, medidas: opcoes.medidas ?? [] }, AGORA)
+    return montarEstado(p, cfg(opcoes.contas ?? [conta('alfa'), conta('beta')]), null, { ...AMBIENTE_VAZIO, medidas: opcoes.medidas ?? [], orca: opcoes.orca ?? { rodando: false, versao: null } }, AGORA)
   } finally {
     rmSync(home, { recursive: true, force: true })
   }
@@ -50,6 +50,17 @@ test('pt-BR: os mesmos alertas saem em português', async () => {
   const e = estadoReal({ medidas: [medida('alfa', { estado: 'sem_login' })], parado: true })
   view = await mount(panel, { locale: 'pt-BR', host: hostCom(e) })
   for (const trecho of [/alfa: sem login/, /Orca indisponível/, /Teste parado/]) assert.ok(view.find({ type: 'Callout', text: trecho }), String(trecho))
+})
+
+test('Orca ainda não verificado: rodapé "verificando"/"checking" e sem alerta', async () => {
+  const e = estadoReal({ orca: { rodando: null, versao: null } })
+  view = await mount(panel, { locale: 'pt-BR', host: hostCom(e) })
+  assert.ok(view.find({ text: /Orca verificando/ }))
+  assert.equal(view.find({ text: /fora do ar|Orca indisponível/ }), null)
+  view.unmount()
+  view = await mount(panel, { locale: 'en', host: hostCom(e) })
+  assert.ok(view.find({ text: /Orca checking/ }))
+  assert.equal(view.find({ text: /unavailable/ }), null)
 })
 
 test('en: requisitos do worker real saem em inglês', async () => {

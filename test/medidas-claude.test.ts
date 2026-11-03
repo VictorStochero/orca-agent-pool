@@ -73,6 +73,32 @@ test('sem prova de deslogada a conta é erro, não sem_login; claude auth status
   } finally { rmSync(home, { recursive: true, force: true }) }
 })
 
+test('token vencido: o /usage renova e não responde no prazo, a API mede com o token novo; token já tentado não repete', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'medida-'))
+  try {
+    const dir = join(home, '.claude-work')
+    mkdirSync(dir)
+    const credencial = (accessToken: string, expiresAt: number) => writeFileSync(join(dir, '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken, refreshToken: 'valido', expiresAt } }))
+    const chamadas: string[] = []
+    const fetchFalso: typeof fetch = async (_url, opts) => {
+      chamadas.push(new Headers(opts?.headers).get('Authorization') ?? '')
+      return chamadas.at(-1) === 'Bearer NOVO' ? Response.json({ five_hour: { utilization: 3 }, seven_day: { utilization: 7 } }) : new Response('', { status: 429 })
+    }
+    const d = { home, agora: 1_000_000, fetch: fetchFalso, executarStatus: async () => '{"loggedIn":true}' }
+
+    credencial('VELHO', 900000)
+    const renovada = await medirClaude(conta, { ...d, executarUsage: async () => { credencial('NOVO', 2000000); return '' } })
+    assert.deepEqual([renovada.estado, renovada.curta, renovada.longa], ['ok', 3, 7])
+    assert.deepEqual(chamadas, ['Bearer NOVO'])
+
+    chamadas.length = 0
+    credencial('VALIDO', 2000000)
+    const recusada = await medirClaude(conta, { ...d, executarUsage: async () => '' })
+    assert.deepEqual([recusada.estado, recusada.erro], ['erro', 'claude_usage_unavailable'])
+    assert.deepEqual(chamadas, ['Bearer VALIDO'])
+  } finally { rmSync(home, { recursive: true, force: true }) }
+})
+
 test('fallback reconhece conta deslogada sem copiar a saída externa', async () => {
   const home = mkdtempSync(join(tmpdir(), 'medida-'))
   try {

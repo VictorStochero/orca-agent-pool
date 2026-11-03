@@ -12,8 +12,9 @@ const TETO_ALERTA = 80
 const PAPEIS = ['escritor', 'revisor', 'verificador', 'mecanico', 'segunda-opiniao', 'orquestra']
 
 /** O que o ciclo aprende fora do caminho de leitura. */
-export type Ambiente = { medidas: Medida[]; detectadas: Detectada[]; ramGb: number | null; orca: { rodando: boolean; versao: string | null } }
-export const AMBIENTE_VAZIO: Ambiente = { medidas: [], detectadas: [], ramGb: null, orca: { rodando: false, versao: null } }
+export type Ambiente = { medidas: Medida[]; detectadas: Detectada[]; ramGb: number | null; orca: { rodando: boolean | null; versao: string | null } }
+/** `rodando: null` = ainda não verificado (worker recém-religado): sem alerta até a primeira coleta. */
+export const AMBIENTE_VAZIO: Ambiente = { medidas: [], detectadas: [], ramGb: null, orca: { rodando: null, versao: null } }
 
 /** `medidaTs` e `agoraMs` em ms, a mesma unidade do pool e dos medidores. */
 function cota(m: Medida | undefined, agoraMs: number): Cota | null {
@@ -58,7 +59,7 @@ export function montarEstado(p: Paths, c: Config, erroConfig: string | null, amb
 
   const alertas: Alerta[] = []
   if (erroConfig) alertas.push({ codigo: 'config_ilegivel', nivel: 'erro', params: { detalhe: erroConfig }, acao: p.config })
-  if (!amb.orca.rodando) alertas.push({ codigo: 'orca_indisponivel', nivel: 'aviso' })
+  if (amb.orca.rodando === false) alertas.push({ codigo: 'orca_indisponivel', nivel: 'aviso' })
   for (const ct of contas) {
     if (!ct.ativo) continue
     if (ct.cota?.estado === 'sem_login') alertas.push({ codigo: 'sem_login', nivel: 'erro', params: { conta: ct.nome }, ...(ct.cota.acao && { acao: ct.cota.acao }) })

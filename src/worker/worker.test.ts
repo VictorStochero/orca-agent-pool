@@ -89,6 +89,36 @@ test('estado.ler junta conta, vaga ocupada e teste da fila', async () => {
   await w.deactivate()
 })
 
+test('worker religado: antes da primeira coleta mostra as medidas gravadas e o Orca "verificando", sem alerta', async () => {
+  novaCasa()
+  gravarConfig(config([conta('alfa')]))
+  const medidas = join(raizDados(), 'state', 'medidas')
+  mkdirSync(medidas, { recursive: true })
+  writeFileSync(join(medidas, 'contas.json'), JSON.stringify({ x: { conta: 'alfa', curta: 10, longa: 20, resetLongaTs: null, estado: 'ok', medidaTs: Date.now() - 40 * 60_000 } }))
+  // A coleta da ativação fica presa no fetch da API de uso até o fim das asserções: sem corrida com o pedido.
+  mkdirSync(join(casa, '.claude'))
+  writeFileSync(join(casa, '.claude', '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: 'falso', expiresAt: 9_999_999_999_999 } }))
+  let soltar = () => {}
+  const liberado = new Promise<void>((r) => { soltar = r })
+  // Solta com uso válido: a coleta fecha pela API, sem lançar o claude real.
+  const preso = mock.method(globalThis, 'fetch', async () => { await liberado; return Response.json({ five_hour: { utilization: 1 }, seven_day: { utilization: 2 } }) })
+  try {
+    const w = await montarWorker(main)
+    const e = await w.request('estado.ler')
+    assert.equal(e.pool.contas[0].cota?.estado, 'antiga')
+    assert.equal(e.pool.contas[0].cota?.curta, 10)
+    assert.equal(e.saude.orca.rodando, null)
+    assert.equal(e.alertas.some((a: { codigo: string }) => a.codigo === 'orca_indisponivel'), false)
+    soltar()
+    await ativado(w)
+    assert.ok(w.posts.length >= 2, 'ativação terminou')
+    await w.deactivate()
+  } finally {
+    soltar()
+    preso.mock.restore()
+  }
+})
+
 test('config.gravar grava e devolve o estado; valor inválido e config corrompida são config_recusada sem tocar no arquivo', async () => {
   novaCasa()
   gravarConfig(config())

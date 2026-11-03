@@ -8,6 +8,20 @@ import { paths } from '../core/paths.ts'
 import type { Medida } from '../core/tipos.ts'
 import { AMBIENTE_VAZIO, montarEstado } from './estado.ts'
 
+test('Orca ainda não verificado não gera alerta; fora do ar gera', () => {
+  const home = mkdtempSync(join(tmpdir(), 'estado-'))
+  try {
+    const c = structuredClone(PADRAO)
+    const inicial = montarEstado(paths(home), c, null, AMBIENTE_VAZIO)
+    assert.equal(inicial.saude.orca.rodando, null)
+    assert.equal(inicial.alertas.some((a) => a.codigo === 'orca_indisponivel'), false)
+    const fora = montarEstado(paths(home), c, null, { ...AMBIENTE_VAZIO, orca: { rodando: false, versao: null } })
+    assert.equal(fora.alertas.some((a) => a.codigo === 'orca_indisponivel'), true)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
 test('cota: medidaTs em ms (unidade do pool) dá "há N min" e marca medida antiga', () => {
   const home = mkdtempSync(join(tmpdir(), 'estado-'))
   try {

@@ -844,7 +844,7 @@ export default function Painel() {
           </Text>
           <Atencao alertas={e.alertas} />
           <Text size="xs" muted>
-            {`${t.plugin} ${e.saude.plugin_versao ?? '?'} · ${t.orca} ${e.saude.orca.rodando ? (e.saude.orca.versao ?? t.orcaRodando) : t.orcaForaDoAr}`}
+            {`${t.plugin} ${e.saude.plugin_versao ?? '?'} · ${t.orca} ${e.saude.orca.rodando === null ? t.orcaVerificando : e.saude.orca.rodando ? (e.saude.orca.versao ?? t.orcaRodando) : t.orcaForaDoAr}`}
           </Text>
           <SecaoFila e={e} />
           <SecaoPool e={e} />

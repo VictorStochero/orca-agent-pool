@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import type { OrcaWorkerApi } from 'orca/worker'
 import { aplicar, atualizarConfig, carregar, ErroConfig, PADRAO } from '../core/config.ts'
 import { detectar, sincronizarDetectadas } from '../core/deteccao.ts'
-import { medirTodas } from '../core/medidas/cache.ts'
+import { medidasGravadas, medirTodas } from '../core/medidas/cache.ts'
 import { versao } from '../core/index.ts'
 import { importarLegado } from '../core/legado.ts'
 import { criarOrcaCli } from '../core/orca.ts'
@@ -46,7 +46,7 @@ export default function activate(orca: OrcaWorkerApi): void {
   const cli = criarOrcaCli()
   const win = process.platform === 'win32'
   const lancador = join(p.bin, win ? 'agent-pool.cmd' : 'agent-pool')
-  let ambiente: Ambiente = AMBIENTE_VAZIO
+  let ambiente: Ambiente = { ...AMBIENTE_VAZIO, medidas: medidasGravadas(p) }
 
   const lerConfig = (): Config => {
     try {

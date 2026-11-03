@@ -49,6 +49,7 @@ export const pt = {
   orca: 'Orca',
   orcaRodando: 'rodando',
   orcaForaDoAr: 'fora do ar',
+  orcaVerificando: 'verificando',
   requisitos: {
     titulo: 'Requisitos',
     explica: 'O painel só funciona com todos os requisitos abaixo instalados.',
@@ -267,7 +268,7 @@ export const en: typeof pt = {
     teste_parado: (pid, onde) => `Stopped test (pid ${pid ?? '?'}) in ${onde}`
   },
   atualizadoEm: 'Updated', plugin: 'Plugin', orca: 'Orca',
-  orcaRodando: 'running', orcaForaDoAr: 'unavailable',
+  orcaRodando: 'running', orcaForaDoAr: 'unavailable', orcaVerificando: 'checking',
   requisitos: {
     titulo: 'Requirements', explica: 'Install all requirements below to use the panel.', tabela: 'Panel requirements',
     colRequisito: 'Requirement', colSituacao: 'Status', ok: '✓ ready', falta: '✗ missing',
