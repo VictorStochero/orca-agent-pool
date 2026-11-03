@@ -4,9 +4,11 @@ import { resolve } from 'node:path'
 import type { Detectada } from '../core/deteccao.ts'
 import { versao } from '../core/index.ts'
 import { pastaDaConta } from '../core/medidas/claude.ts'
+import { motivoNaoConfigurada } from '../core/motivo.ts'
 import { sessoesAbertas } from '../core/sessoes.ts'
 import type { Paths } from '../core/paths.ts'
 import { listarTestes } from '../core/fila/travas.ts'
+import { limiteSeguido, medidaEfetiva, modeloEfetivo } from '../core/pool/modelo.ts'
 import { lerVagas, ocupadasMaquina } from '../core/pool/vagas.ts'
 import type { Config, Medida } from '../core/tipos.ts'
 import type { Alerta, Conta, Cota, Estado, ItemFila } from '../protocol.ts'
@@ -34,7 +36,8 @@ function cota(m: Medida | undefined, agoraMs: number): Cota | null {
     limites: m.limites ?? [],
     estado,
     acao: m.acao ?? null,
-    erro: m.erro ?? null
+    erro: m.erro ?? null,
+    motivo: m.estado === 'nao_configurada' ? motivoNaoConfigurada(m.erro) : null
   }
 }
 
@@ -44,6 +47,7 @@ export function montarEstado(p: Paths, c: Config, erroConfig: string | null, amb
   const porConta = new Map(amb.medidas.map((m) => [m.conta, m]))
   const detectadas = new Map(amb.detectadas.map((d) => [d.nome, d]))
   const contas: Conta[] = c.pool.contas.map((ct) => {
+    const medida = porConta.get(ct.nome)
     const ocupantes = vagas.filter((v) => v.conta === ct.nome)
     let sessoes: string[] | null = null
     if (ct.agente === 'claude' && ct.origem === 'manual') {
@@ -61,11 +65,14 @@ export function montarEstado(p: Paths, c: Config, erroConfig: string | null, amb
       papeis: ct.papeis,
       ocupantes: ocupantes.map((v) => ({ dispatch: v.dono || null, desde: Number.isFinite(v.desde) && v.desde > 0 ? new Date(v.desde).toISOString() : null })),
       sessoes,
-      cota: cota(porConta.get(ct.nome), agoraMs),
+      cota: cota(medida && medidaEfetiva(ct, medida), agoraMs),
       origem: ct.origem,
       rotulo: detectadas.get(ct.nome)?.rotulo ?? null,
       config: ct.config,
       comando: ct.comando,
+      modelo: ct.modelo,
+      modelo_efetivo: modeloEfetivo(ct),
+      limite_seguido: limiteSeguido(ct, medida)?.nome ?? null,
       ativo: ct.ativo
     }
   })

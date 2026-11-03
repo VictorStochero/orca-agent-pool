@@ -68,6 +68,12 @@ export function lerCaminhoDoSistema(): Promise<string> {
   return caminhoDoSistema
 }
 
+/** PATH para achar os CLIs das contas: o do processo e, no Windows, o do sistema (o Orca pode não herdar pastas do usuário, ex.: npm global). */
+export async function caminhoDeBusca(env: NodeJS.ProcessEnv = process.env, plataforma: string = process.platform, sistema = lerCaminhoDoSistema): Promise<string> {
+  const doProcesso = env[Object.keys(env).find((k) => k.toLowerCase() === 'path') ?? 'PATH'] ?? ''
+  return [doProcesso, plataforma === 'win32' ? await sistema() : ''].filter(Boolean).join(plataforma === 'win32' ? ';' : ':')
+}
+
 export function criarOrcaCli(env: NodeJS.ProcessEnv = process.env, plataforma: string = process.platform, execPath: string = process.execPath): OrcaCli {
   return {
     async run(args, opts) {

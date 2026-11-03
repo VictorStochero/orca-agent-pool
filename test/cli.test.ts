@@ -110,6 +110,30 @@ describe('status', () => {
     assert.equal(j.fila.modo, 'banco')
     assert.deepEqual(j.pool.contas.map((c: { conta: string }) => c.conta), ['a', 'b'])
   })
+  it('conta com pasta própria ausente aparece como não configurada, em texto e --json', async () => {
+    const home = comConfig([conta('team', { config: '~/.claude-team', vagas: 1 })])
+    assert.match((await rodar(home, ['status'])).out, /team \(não configurada nesta máquina\)/)
+    const j = JSON.parse((await rodar(home, ['status', '--json'])).out)
+    assert.deepEqual([j.pool.contas[0].medida.estado, j.pool.contas[0].medida.erro], ['nao_configurada', `pasta_ausente:${join(home, '.claude-team')}`])
+    assert.match((await rodar(home, ['measure'])).out, /team: não configurada nesta máquina: pasta .*\.claude-team não existe/)
+  })
+  it('--json mostra a medida do limite seguido (agy sem modelo segue Gemini Models, não o geral do Argon)', async () => {
+    const home = comConfig([conta('agy', { agente: 'antigravity', vagas: 1 })])
+    const buckets = [
+      { group: 'Gemini Models', usedPercent: 0, windowMinutes: 300 },
+      { group: 'Gemini Models', usedPercent: 0, windowMinutes: 10080 },
+      { group: 'Gemini 4 Argon', usedPercent: 70, windowMinutes: 10080 }
+    ]
+    const limites = { antigravity: { provider: 'antigravity', status: 'ok', session: { usedPercent: 0 }, weekly: { usedPercent: 70 }, buckets } }
+    const orca: OrcaCli = {
+      async run(args) {
+        if (args[0] === 'account') return { code: 0, stdout: JSON.stringify({ ok: true, result: { rateLimits: limites } }), stderr: '' }
+        return orcaFalso.run(args)
+      }
+    }
+    const j = JSON.parse((await rodar(home, ['status', '--json'], { orca })).out)
+    assert.equal(j.pool.contas[0].medida.longa, 0)
+  })
   it('sem config usa o padrão', async () => {
     assert.match((await rodar(novoHome(), ['status'])).out, /nenhuma conta/)
   })
@@ -356,5 +380,28 @@ describe('hook', () => {
       }
     }
     assert.equal((await rodar(novoHome(), ['hook', 'gemini'])).code, 2)
+  })
+})
+
+describe('modelo', () => {
+  const comModelo = () => comConfig([conta('a', { vagas: 1, modelo: 'claude-fable-5-1' })])
+  it('writer e second mostram o modelo (texto pt/en e JSON)', async () => {
+    const home = comModelo()
+    assert.match((await rodar(home, ['writer'])).out, /· modelo claude-fable-5-1$/)
+    assert.match((await rodar(home, ['writer'], { env: { LANG: 'en', LC_ALL: '' } })).out, /· model claude-fable-5-1$/)
+    assert.equal(JSON.parse((await rodar(home, ['writer', '--json'])).out).modelo, 'claude-fable-5-1')
+    assert.match((await rodar(home, ['second', '--family', 'gpt'])).out, /· modelo claude-fable-5-1$/)
+    assert.equal(JSON.parse((await rodar(home, ['second', '--family', 'gpt', '--json'])).out).modelo, 'claude-fable-5-1')
+  })
+  it('sem modelo a linha não muda', async () => {
+    assert.doesNotMatch((await rodar(comConfig([conta('a')]), ['writer'])).out, /modelo/)
+  })
+  it('config set conta.x.modelo grava, valida e limpa', async () => {
+    const home = comConfig([conta('a')])
+    assert.equal((await rodar(home, ['config', 'set', 'conta.a.modelo=gemini-3.8-flash-high'])).code, 0)
+    assert.equal((await rodar(home, ['config', 'get', 'pool.contas.0.modelo'])).out, 'gemini-3.8-flash-high')
+    assert.equal((await rodar(home, ['config', 'set', 'conta.a.modelo=a b'])).code, 2)
+    assert.equal((await rodar(home, ['config', 'set', 'conta.a.modelo='])).code, 0)
+    assert.equal(JSON.parse((await rodar(home, ['config', 'get', 'pool.contas.0'])).out).modelo, null)
   })
 })

@@ -23,7 +23,7 @@ test('opencode2 exige conta Orca mesmo com executável instalado', async () => {
 })
 
 test('sincronizar preserva conta inativa, aplica padrões e é idempotente', () => {
-  const c: Config = { versao: 1, pool: { teto: 0, ramMinGb: 0, escolha: 'ritmo', contas: [{ nome: 'codex', agente: 'codex', config: null, comando: null, vagas: 3, peso: 5, papeis: [], ativo: false, origem: 'manual' }] }, fila: { modo: 'banco', vagas: 2, vagasPorProjeto: 1, teto: 3, processos: 8, esperaMaxS: 300 } }
+  const c: Config = { versao: 1, pool: { teto: 0, ramMinGb: 0, escolha: 'ritmo', contas: [{ nome: 'codex', agente: 'codex', config: null, comando: null, modelo: null, vagas: 3, peso: 5, papeis: [], ativo: false, origem: 'manual' }] }, fila: { modo: 'banco', vagas: 2, vagasPorProjeto: 1, teto: 3, processos: 8, esperaMaxS: 300 } }
   const detectadas = [{ nome: 'codex', agente: 'codex', rotulo: 'instalado' }, { nome: 'claude', agente: 'claude', rotulo: 'instalado' }]
   const nova = sincronizarDetectadas(c, detectadas)
   assert.equal(nova.pool.contas[0].ativo, false)
@@ -49,7 +49,7 @@ test('detecta Claude padrão por cota nativa e continua localmente com resposta 
 })
 
 test('detectada no perfil padrão não duplica a conta manual do mesmo agente; conta gerenciada entra', () => {
-  const manual = (nome: string, agente: string, config: string | null = null) => ({ nome, agente, config, comando: null, vagas: 1, peso: 1, papeis: ['escritor' as const], ativo: true, origem: 'manual' as const })
+  const manual = (nome: string, agente: string, config: string | null = null) => ({ nome, agente, config, comando: null, modelo: null, vagas: 1, peso: 1, papeis: ['escritor' as const], ativo: true, origem: 'manual' as const })
   const c: Config = { versao: 1, pool: { teto: 0, ramMinGb: 0, escolha: 'ritmo', contas: [manual('main', 'claude'), manual('work', 'claude', '~/.claude-work'), manual('cx', 'codex'), manual('ag', 'antigravity')] }, fila: { modo: 'banco', vagas: 2, vagasPorProjeto: 1, teto: 3, processos: 8, esperaMaxS: 300 } }
   const detectadas = [{ nome: 'claude-padrao', agente: 'claude', rotulo: 'x' }, { nome: 'codex-padrao', agente: 'codex', rotulo: 'y' }, { nome: 'antigravity', agente: 'antigravity', rotulo: 'z' }, { nome: 'claude-abcd1234', agente: 'claude', rotulo: 'w', gerenciada: true }]
   const nova = sincronizarDetectadas(c, detectadas)

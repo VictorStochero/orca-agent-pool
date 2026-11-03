@@ -75,9 +75,7 @@ async function alterarHook(agente: string, acao: 'remover' | 'reinstalar'): Prom
     set(hooks, await plugin.request(`hooks.${acao}`, { agente }))
     set(erroHooks, false)
     update(avisos, (p) => ({ ...p, hooks: { tom: 'success' as const, texto: t.salvo } }))
-    const r = await lerRequisitos()
-    set(requisitos, r)
-    if (!r || r.ok) {
+    if (!aplicarLeitura(await lerRequisitos())) {
       set(estado, await plugin.request('estado.ler'))
       set(erro, null)
     }
@@ -94,6 +92,8 @@ type Aviso = { tom: 'success' | 'danger'; texto: string }
 const estado = atom<Estado | null>(null)
 /** null enquanto não lido ou quando o worker não tem o handler (painel normal). */
 const requisitos = atom<Requisitos | null>(null)
+/** Aviso verde da instalação que completou tudo; some na próxima atualização. */
+const concluido = atom(false)
 const erro = atom<Erro | null>(null)
 const carregando = atom(false)
 /** Edições pendentes por chave de configuração (ex.: `conta.main.vagas`). */
@@ -114,10 +114,19 @@ const abertasConta = atom<string[]>([])
 
 let coletando = false
 
-/** Worker sem o handler `requisitos.ler` (versão antiga): devolve null e o painel segue normal. */
-async function lerRequisitos(): Promise<Requisitos | null> {
+const ehRequisitos = (x: unknown): x is Requisitos => typeof (x as Requisitos | null)?.ok === 'boolean' && Array.isArray((x as Requisitos).itens)
+
+/** Já houve uma pendência: só uma leitura válida "tudo instalado" tira o painel da tela de pendências. */
+const pendente = () => {
+  const r = read(requisitos)
+  return r !== null && !r.ok
+}
+
+/** null: worker sem o handler `requisitos.ler` (versão antiga) ou resposta fora do formato. */
+async function lerRequisitos(forcar = false): Promise<Requisitos | null> {
   try {
-    return await plugin.request('requisitos.ler')
+    const r: unknown = await (forcar ? plugin.request('requisitos.ler', { forcar: true }) : plugin.request('requisitos.ler'))
+    return ehRequisitos(r) ? r : null
   } catch (e) {
     if ((e as { code?: string }).code === 'unknown_method') return null
     throw e
@@ -127,9 +136,12 @@ async function lerRequisitos(): Promise<Requisitos | null> {
 type RequisitoInstalavel = Exclude<RequisitoItem['id'], 'orca'>
 
 export async function instalarRequisito(id: RequisitoInstalavel): Promise<void> {
+  const veioDePendencia = pendente()
   set(gravando, `req:${id}`)
   try {
-    set(requisitos, await plugin.request('requisitos.instalar', { id })) // devolve os requisitos já lidos de novo
+    const r: unknown = await plugin.request('requisitos.instalar', { id }) // devolve os requisitos já lidos de novo
+    if (!ehRequisitos(r)) throw new Error(t.requisitos.respostaInvalida)
+    set(requisitos, r)
     update(avisos, (p) => ({ ...p, requisitos: { tom: 'success' as const, texto: t.salvo } }))
   } catch (e) {
     update(avisos, (p) => ({ ...p, requisitos: { tom: 'danger' as const, texto: textoErro(e) } }))
@@ -137,6 +149,34 @@ export async function instalarRequisito(id: RequisitoInstalavel): Promise<void> 
     set(gravando, null)
   }
   await atualizar()
+  if (veioDePendencia && read(requisitos)?.ok === true) set(concluido, true)
+}
+
+/** Refaz a checagem na hora (o worker guarda a leitura por 60 s). */
+async function verificarAgora(): Promise<void> {
+  set(gravando, 'req:verificar')
+  try {
+    const r = await lerRequisitos(true)
+    // Leitura forçada vazia ou fora do formato: avisa, em vez de deixar a tabela anterior como se tivesse sido conferida.
+    if (!r) update(avisos, (p) => ({ ...p, requisitos: { tom: 'danger' as const, texto: t.requisitos.leituraInvalida } }))
+    aplicarLeitura(r)
+    await lerHooks() // a tela de pendências e a aba Hooks mostram o mesmo estado que a checagem acabou de ler
+  } catch (e) {
+    update(avisos, (p) => ({ ...p, requisitos: { tom: 'danger' as const, texto: textoErro(e) } }))
+  } finally {
+    set(gravando, null)
+  }
+}
+
+/** Aplica uma releitura dos requisitos (de `atualizar` ou de `alterarHook`); true = o painel fica na tela de pendências. */
+function aplicarLeitura(r: Requisitos | null): boolean {
+  if (r) set(requisitos, r)
+  // Releitura válida desfaz o aviso de que a anterior falhou (o erro de uma instalação fica).
+  if (r && read(avisos).requisitos?.texto === t.requisitos.leituraInvalida) update(avisos, ({ requisitos: _, ...resto }) => resto)
+  if (r ? r.ok : !pendente()) return false
+  // Leitura vazia ou inválida depois de uma pendência não tira o painel da lista.
+  if (!r && read(avisos).requisitos?.tom !== 'danger') update(avisos, (p) => ({ ...p, requisitos: { tom: 'danger' as const, texto: t.requisitos.leituraInvalida } }))
+  return true
 }
 
 /** Com uma coleta em andamento, a chamada é descartada (set() é em lote: o átomo `carregando` não serve de guarda). */
@@ -144,11 +184,11 @@ export async function atualizar(): Promise<void> {
   if (coletando) return
   coletando = true
   set(carregando, true)
+  set(concluido, false)
   try {
-    const r = await lerRequisitos()
-    set(requisitos, r)
+    const ficaNaLista = aplicarLeitura(await lerRequisitos())
     await lerHooks()
-    if (r && !r.ok) return set(erro, null) // faltou requisito: só a seção Requisitos, sem coletar o resto
+    if (ficaNaLista) return set(erro, null) // faltou requisito: só a seção Requisitos, sem coletar o resto
     set(estado, await plugin.request('estado.ler'))
     set(erro, null)
   } catch (e) {
@@ -251,7 +291,9 @@ function ComDica({ texto, children }: { texto: string; children: OrcaNode }) {
   )
 }
 
-type Linha = { key: string; cells: Record<string, TableCell>; detalhes: [string, string | number][] }
+/** Detalhe: [rótulo, valor] nas duas primeiras colunas, ou células por coluna (ex.: limite separado em 5h e Semanal). */
+type Detalhe = [string, string | number] | { celulas: Record<string, TableCell> }
+type Linha = { key: string; cells: Record<string, TableCell>; detalhes: Detalhe[] }
 type Coluna = { key: string; label: string; align?: 'start' | 'center' | 'end'; width?: 'auto' | 'xs' | 'sm' | 'md' | 'lg'; minWidth?: 'auto' | 'xs' | 'sm' | 'md' }
 
 /** O Orca invalida a Table inteira se uma célula de texto passar de 1024 caracteres (maxLabelLength). */
@@ -264,7 +306,7 @@ function caber<T>(v: T): T | string {
 
 /**
  * Table nativa que expande a linha: a selecionada ganha, logo abaixo, linhas de detalhe (desabilitadas) com o rótulo na
- * primeira coluna e o valor na segunda. Cada clique alterna a linha (várias abertas; clicar de novo recolhe). Só leitura.
+ * primeira coluna e o valor na segunda (ou, no detalhe com células, o valor de cada coluna). Cada clique alterna a linha (várias abertas; clicar de novo recolhe). Só leitura.
  */
 function TabelaExpansivel(props: {
   label: string
@@ -277,7 +319,11 @@ function TabelaExpansivel(props: {
   const rows: TableRow[] = props.linhas.flatMap((l) => [
     { key: l.key, cells: Object.fromEntries(Object.entries(l.cells).map(([k, v]) => [k, caber(v)])) } as TableRow,
     ...(props.abertas.includes(l.key)
-      ? l.detalhes.map(([rotulo, valor], i) => ({ key: `${l.key}#${i}`, disabled: true, cells: { [c0.key]: caber(rotulo), [c1.key]: caber(valor) } }) as TableRow)
+      ? l.detalhes.map((d, i) => ({
+          key: `${l.key}#${i}`,
+          disabled: true,
+          cells: Array.isArray(d) ? { [c0.key]: caber(d[0]), [c1.key]: caber(d[1]) } : Object.fromEntries(Object.entries(d.celulas).map(([k, v]) => [k, caber(v)]))
+        }) as TableRow)
       : [])
   ])
   return (
@@ -382,7 +428,7 @@ function SecaoFila({ e }: { e: Estado }) {
         <TabelaExpansivel
           label={t.fila.tabela}
           colunas={[
-            { key: 'projeto', label: t.fila.colProjeto, width: 'auto', minWidth: 'xs' },
+            { key: 'projeto', label: t.fila.colProjeto, width: 'auto', minWidth: 'md' },
             { key: 'fila', label: t.fila.colFila, width: 'auto' },
             { key: 'estado', label: t.fila.colEstado, width: 'auto' },
             { key: 'ha', label: t.fila.colHa, width: 'auto' }
@@ -399,6 +445,10 @@ function SecaoFila({ e }: { e: Estado }) {
 const percentual = (v: number | null, alerta: boolean) => t.pool.percentual(v, alerta)
 /** Conta ativa que precisa de ação: o valor da cota (se houver) é velho e não aparece. */
 const comProblema = (c: Conta) => c.ativo && (c.cota?.estado === 'sem_login' || c.cota?.estado === 'erro')
+
+const naoConfigurada = (c: Conta) => c.cota?.estado === 'nao_configurada'
+const situacaoNaoConfigurada = (m: NonNullable<Conta['cota']>['motivo']) =>
+  `${t.pool.naoConfigurada}: ${m ? t.pool.motivosNaoConfigurada[m.tipo](m.valor) : '–'}`
 
 function textoAlerta(a: Alerta): string {
   const p = a.params ?? {}
@@ -440,19 +490,23 @@ function SecaoPool({ e }: { e: Estado }) {
       conta: c.ativo ? c.nome : `${c.nome} (${t.pool.naoUtilizada})`,
       vagas: t.pool.vagasDaConta(c.usadas, c.vagas),
       sessoes: c.sessoes === null ? '–' : c.sessoes.length,
-      h5: comProblema(c) ? `⚠ ${t.pool.semLeitura}` : percentual(c.cota?.curta ?? null, c.cota?.alerta_curta ?? false),
-      semanal: comProblema(c) ? `⚠ ${t.pool.semLeitura}` : percentual(c.cota?.longa ?? null, c.cota?.alerta_longa ?? false)
+      h5: comProblema(c) ? `⚠ ${t.pool.semLeitura}` : naoConfigurada(c) ? '–' : percentual(c.cota?.curta ?? null, c.cota?.alerta_curta ?? false),
+      semanal: comProblema(c) ? `⚠ ${t.pool.semLeitura}` : naoConfigurada(c) ? '–' : percentual(c.cota?.longa ?? null, c.cota?.alerta_longa ?? false)
     },
     detalhes: [
+      ...(naoConfigurada(c) ? ([[t.pool.situacao, situacaoNaoConfigurada(c.cota?.motivo)]] as [string, string][]) : []),
       ...(comProblema(c) && c.cota ? ([[t.pool.problema, c.cota.estado === 'sem_login' ? t.pool.semLogin : t.pool.erroMedida(c.cota.erro)]] as [string, string][]) : []),
       ...(comProblema(c) && c.cota?.acao ? ([[t.pool.acao, c.cota.acao]] as [string, string][]) : []),
       ...(c.ativo ? [] : ([[t.pool.situacao, t.pool.naoUtilizadaDetalhe]] as [string, string][])),
       ...(c.rotulo ? ([[t.pool.rotulo, c.rotulo]] as [string, string][]) : []),
       [t.pool.agente, c.agente ?? '-'],
+      ...(c.modelo_efetivo ? ([[t.pool.modelo, t.pool.modeloValor(c.modelo_efetivo, c.limite_seguido)]] as [string, string][]) : []),
       [t.pool.peso, c.peso],
       [t.pool.papeis, c.papeis.map((p) => t.pool.nomesPapel[p] ?? p).join(', ') || '-'],
       [t.pool.janelas, c.cota && (c.cota.estado === 'ok' || c.cota.estado === 'antiga') ? t.pool.janelasValor(c.cota.curta, c.cota.longa) : t.pool.semMedida],
-      ...(c.cota && (c.cota.estado === 'ok' || c.cota.estado === 'antiga') ? c.cota.limites.map((l): [string, string] => [l.nome, t.pool.limiteValor(l.curta, l.longa)]) : []),
+      ...(c.cota && (c.cota.estado === 'ok' || c.cota.estado === 'antiga')
+        ? c.cota.limites.map((l): Detalhe => ({ celulas: { conta: l.nome, h5: l.curta === null ? '–' : percentual(l.curta, false), semanal: l.longa === null ? '–' : percentual(l.longa, false) } }))
+        : []),
       [t.pool.medidaHa, c.cota?.medida_ha_min != null ? t.pool.minutos(c.cota.medida_ha_min) : '-'],
       ...(c.cota?.estado === 'antiga' && c.cota.medida_ha_min != null ? ([[t.pool.aviso, t.pool.medidaAntiga(c.cota.medida_ha_min)]] as [string, string][]) : []),
       [t.pool.vagasEmUso, c.ocupantes.map((o) => o.dispatch ?? '?').join(', ') || t.pool.nenhuma],
@@ -467,7 +521,7 @@ function SecaoPool({ e }: { e: Estado }) {
         <TabelaExpansivel
           label={t.pool.tabela}
           colunas={[
-            { key: 'conta', label: t.pool.colConta, width: 'auto', minWidth: 'xs' },
+            { key: 'conta', label: t.pool.colConta, width: 'auto', minWidth: 'md' },
             { key: 'vagas', label: t.pool.colVagas, width: 'auto' },
             { key: 'sessoes', label: t.pool.colSessoes, align: 'end', width: 'auto' },
             { key: 'h5', label: t.pool.col5h, align: 'end', width: 'auto' },
@@ -501,6 +555,7 @@ function EdicaoConta({ c, e }: { c: Conta; e: Estado }) {
   const chavePapeis = `conta.${c.nome}.papeis`
   const chaveConfig = `conta.${c.nome}.config`
   const chaveComando = `conta.${c.nome}.comando`
+  const chaveModelo = `conta.${c.nome}.modelo`
   const ed = read(edicoes)
   const papeis = (ed[chavePapeis] ?? c.papeis.join(',')).split(',').filter(Boolean)
   const alterna = (p: string, marcado: boolean) =>
@@ -527,6 +582,9 @@ function EdicaoConta({ c, e }: { c: Conta; e: Estado }) {
       <ComDica texto={t.pool.dicas.novoComando}>
         <Input label={t.pool.comandoDaConta} value={ed[chaveComando] ?? c.comando ?? ''} onChange={(x) => mudar(chaveComando, x)} />
       </ComDica>
+      <ComDica texto={t.pool.dicas.modelo}>
+        <Input label={t.pool.modelo} value={ed[chaveModelo] ?? c.modelo ?? ''} onChange={(x) => mudar(chaveModelo, x)} />
+      </ComDica>
       <Row gap="xs" align="center">
         <Checkbox label={t.pool.naoUtilizar} checked={naoUtilizar} onChange={(m) => mudar(chaveAtivo, m ? 'nao' : 'sim')} />
         <Dica texto={t.pool.dicas.naoUtilizar} />
@@ -543,7 +601,7 @@ function EdicaoConta({ c, e }: { c: Conta; e: Estado }) {
         ))}
       </Stack>
       <Mensagem secao={secao} />
-      <Salvar secao={secao} chaves={[chaveVagas, chavePeso, chavePapeis, chaveConfig, chaveComando, chaveAtivo]} />
+      <Salvar secao={secao} chaves={[chaveVagas, chavePeso, chavePapeis, chaveConfig, chaveComando, chaveModelo, chaveAtivo]} />
       {read(removendo) === c.nome ? (
         <Stack gap="xs">
           <Text tone="warning">{t.pool.confirmarRemocao(c.nome)}</Text>
@@ -721,6 +779,7 @@ function SecaoConfiguracoes({ e }: { e: Estado }) {
     { id: 'pool', corpo: <ConfigPool e={e} /> },
     { id: 'contas', corpo: <ConfigContas e={e} /> },
     { id: 'imposicao', corpo: <ConfigImposicao /> },
+    { id: 'instalacao', corpo: <ConfigInstalacao /> },
     { id: 'painel', corpo: <ConfigPainel /> }
   ] as const
   return (
@@ -747,15 +806,21 @@ function textoDetalhe(d: DetalheRequisito): string {
       return x[d.codigo](traduzirCodigos(d.valor))
     case 'hooks':
       return d.agentes.map((a) => `${a.agente}: ${a.situacao === 'erro' && a.erro ? traduzirCodigos(a.erro) : x.situacoes[a.situacao]}`).join('; ')
+    case 'instalado':
+      return d.valor ?? x.instalado
     default:
       return x[d.codigo]
   }
 }
 
-function SecaoRequisitos({ r }: { r: Requisitos }) {
-  const linhas: TableRow[] = r.itens.map((i) => ({ key: i.id, cells: { requisito: t.requisitos.nomes[i.id], situacao: i.ok ? t.requisitos.ok : t.requisitos.falta } }))
+/** Tabela, detalhes e botões de instalar. `detalhada` (aba Instalação): a célula Situação traz o detalhe de cada item. */
+function CorpoRequisitos({ r, detalhada = false }: { r: Requisitos; detalhada?: boolean }) {
+  const linhas: TableRow[] = r.itens.map((i) => ({
+    key: i.id,
+    cells: { requisito: t.requisitos.nomes[i.id], situacao: detalhada ? `${i.ok ? '✓' : '✗'} ${textoDetalhe(i.detalhe)}` : i.ok ? t.requisitos.ok : t.requisitos.falta }
+  }))
   return (
-    <Card title={t.requisitos.titulo} description={t.requisitos.explica}>
+    <>
       <Table
         label={t.requisitos.tabela}
         columns={[
@@ -780,7 +845,27 @@ function SecaoRequisitos({ r }: { r: Requisitos }) {
           </Stack>
         ))}
       <Mensagem secao="requisitos" />
+    </>
+  )
+}
+
+function SecaoRequisitos({ r }: { r: Requisitos }) {
+  return (
+    <Card title={t.requisitos.titulo} description={t.requisitos.explica}>
+      <CorpoRequisitos r={r} />
     </Card>
+  )
+}
+
+function ConfigInstalacao() {
+  const r = read(requisitos)
+  return (
+    <Stack gap="sm">
+      {r ? <CorpoRequisitos r={r} detalhada /> : <><Text muted>{t.requisitos.naoVerificados}</Text><Mensagem secao="requisitos" /></>}
+      <Button size="sm" icon="refresh" disabled={read(gravando) !== null} onPress={() => void verificarAgora()}>
+        {read(gravando) === 'req:verificar' ? t.requisitos.verificando : t.requisitos.verificar}
+      </Button>
+    </Stack>
   )
 }
 
@@ -810,7 +895,7 @@ function CorpoImposicao() {
   )
 }
 
-/** Sem requisitos o painel não mostra Configurações: a imposição fica solta aqui para poder reinstalar os hooks. */
+/** Sem requisitos o painel não mostra Configurações: os hooks ficam soltos aqui para poder reinstalá-los. */
 function SecaoImposicao() {
   return (
     <Card title={t.imposicao.titulo} description={t.imposicao.descricao}>
@@ -852,6 +937,7 @@ export default function Painel() {
         )
       ) : (
         <Stack gap="md">
+          {read(concluido) ? <Text tone="success">{t.requisitos.instalados}</Text> : null}
           <Text muted size="xs">
             {t.atualizadoEm} <RelativeTime at={Date.parse(e.gerado_em)} />
             {` · ${t.dicaLinha}`}

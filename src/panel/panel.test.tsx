@@ -52,8 +52,8 @@ for (const acao of ['ordem', 'remover']) {
 }
 
 for (const [locale, fila, pool, config, imposicao, remover, reinstalar, ausencia] of [
-  ['en', 'Queued tests', 'Pool accounts', 'Settings', 'Enforcement', 'Remove enforcement', 'Reinstall', 'Not installed'],
-  ['pt-BR', 'Testes na fila', 'Contas do pool', 'Configurações', 'Imposição', 'Remover imposição', 'Reinstalar', 'Ausente']
+  ['en', 'Queued tests', 'Pool accounts', 'Settings', 'Hooks', 'Remove hook', 'Reinstall', 'Not installed'],
+  ['pt-BR', 'Testes na fila', 'Contas do pool', 'Configurações', 'Hooks', 'Remover hook', 'Reinstalar', 'Ausente']
 ]) {
   const t = textosPara(locale)
   test(`${locale}: requisitos bloqueiam fila e pool`, async () => {
@@ -132,13 +132,13 @@ for (const [locale, fila, pool, config, imposicao, remover, reinstalar, ausencia
     assert.ok(view.find({ type: 'Collapsible', label: config }))
     assert.equal(view.find({ type: 'Card', label: imposicao }), null) // o bloco solto saiu do corpo
     assert.ok(view.find({ type: 'Card', text: new RegExp(config) })) // Configurações ganha o cartão das outras seções
-    assert.equal(view.find({ type: 'Button', text: reinstalar }), null) // recolhida: a imposição só aparece dentro dela
+    assert.equal(view.find({ type: 'Button', text: reinstalar }), null) // recolhida: os hooks só aparecem dentro dela
     await view.toggle({ label: config })
     await view.select({ label: t.configuracoes.assuntos }, 'imposicao')
     assert.ok(view.find({ text: t.imposicao.descricao }))
   })
 
-  test(`${locale}: imposição remove e reinstala por agente com estado atualizado`, async () => {
+  test(`${locale}: hooks removem e reinstalam por agente com estado atualizado`, async () => {
     const chamadas: unknown[] = []
     const lista: EstadoHookAgente[] = [{ agente: 'claude', estado: 'instalado' }, { agente: 'codex', estado: 'erro', detalhe: 'JSON inválido' }]
     view = await mount(panel, { locale, host: mockHost({ requests: {
@@ -179,7 +179,7 @@ function hostCom(gravados: unknown[] = [], estado: Estado = estadoExemplo) {
   })
 }
 
-test('reinstalar imposição que faltava desbloqueia o painel e coleta o estado', async () => {
+test('reinstalar hook que faltava desbloqueia o painel e coleta o estado', async () => {
   let instalado = false
   const req = (): Requisitos => ({ ok: instalado, itens: [{ id: 'hooks', ok: instalado, detalhe: { codigo: 'hooks_nenhum' } }] })
   view = await mount(panel, { host: mockHost({ requests: {
@@ -196,7 +196,24 @@ test('reinstalar imposição que faltava desbloqueia o painel e coleta o estado'
   assert.equal(view.rowsOf(POOL).length, 3)
 })
 
-test('falha na imposição preserva o estado e permite tentar de novo', async () => {
+test('reinstalar hook com pendência: releitura null mantém a lista com o aviso, e a válida limpa o aviso', async () => {
+  let lidas = 0
+  const pendencia: Requisitos = { ok: false, itens: [{ id: 'hooks', ok: false, detalhe: { codigo: 'hooks_nenhum' }, instalar: true }] }
+  view = await mount(panel, { host: mockHost({ requests: {
+    'requisitos.ler': () => (lidas++ === 1 ? (null as never) : pendencia),
+    'hooks.estado': () => [{ agente: 'claude', estado: 'ausente' }],
+    'hooks.reinstalar': () => [{ agente: 'claude', estado: 'ausente' }],
+    'estado.ler': () => estadoExemplo
+  } }) })
+  await view.press({ type: 'Button', text: 'Reinstalar' })
+  assert.ok(view.find({ text: /Não consegui reler os requisitos/ }))
+  assert.equal(view.find({ type: 'Table', label: 'Contas do pool' }), null)
+  await view.press({ type: 'Button', text: 'Reinstalar' })
+  assert.equal(view.find({ text: /Não consegui reler os requisitos/ }), null)
+  assert.deepEqual(view.rowsOf({ label: 'Requisitos do painel' }), ['hooks'])
+})
+
+test('falha nos hooks preserva o estado e permite tentar de novo', async () => {
   let falha = true
   view = await mount(panel, { host: mockHost({ requests: {
     'estado.ler': () => estadoExemplo,
@@ -207,11 +224,11 @@ test('falha na imposição preserva o estado e permite tentar de novo', async ()
     }
   } }) })
   await abrir(view, 'imposicao')
-  await view.press({ type: 'Button', text: 'Remover imposição' })
+  await view.press({ type: 'Button', text: 'Remover hook' })
   assert.ok(view.find({ text: 'Arquivo inválido' }))
   assert.ok(view.find({ text: 'Instalado' }))
   falha = false
-  await view.press({ type: 'Button', text: 'Remover imposição' })
+  await view.press({ type: 'Button', text: 'Remover hook' })
   assert.ok(view.find({ text: 'Ausente' }))
   assert.equal(view.find({ text: 'Arquivo inválido' }), null)
 })
@@ -250,6 +267,8 @@ test('colunas das tabelas são flexíveis (sem largura fixa) para caber em paine
     const colunas = view.find({ type: 'Table', label })!.props.columns as { width: string; minWidth?: string }[]
     assert.ok(colunas.every((c) => c.width === 'auto'), label)
     assert.ok(colunas.filter((c) => c.minWidth).length <= 1, label)
+    assert.equal(colunas[0].minWidth, 'md', label) // detalhes legíveis: a primeira coluna não encolhe abaixo de 9rem
+    assert.ok(colunas.slice(1).every((c) => !c.minWidth), label)
   }
 })
 
@@ -270,11 +289,11 @@ test('erro de leitura dos hooks aparece sem ocultar fila e pool e recupera no re
     }
   } }) })
   await abrir(view, 'imposicao')
-  assert.ok(view.find({ text: 'Não foi possível ler a imposição.' }))
+  assert.ok(view.find({ text: 'Não foi possível ler os hooks.' }))
   assert.equal(view.rowsOf(POOL).length, 3)
   falha = false
   await view.press({ text: 'Atualizar' })
-  assert.equal(view.find({ text: 'Não foi possível ler a imposição.' }), null)
+  assert.equal(view.find({ text: 'Não foi possível ler os hooks.' }), null)
   assert.ok(view.find({ text: 'Instalado' }))
 })
 
@@ -383,9 +402,9 @@ test('medida antiga: a conta manual com medida de mais de 30 min ganha aviso no 
   assert.equal(view.find({ type: 'Table', text: /Medida antiga/ }), null)
 })
 
-test('Configurações: seção recolhida no fim, com abas Fila · Pool · Contas · Imposição · Painel e a linha do que cada uma muda', async () => {
+test('Configurações: seção recolhida no fim, com abas Fila · Pool · Contas · Hooks · Instalação · Painel e a linha do que cada uma muda', async () => {
   view = await mount(panel, { host: hostCom() })
-  assert.ok(view.find({ type: 'Collapsible', label: 'Configurações', text: /Fila, pool, contas, imposição e painel/ }))
+  assert.ok(view.find({ type: 'Collapsible', label: 'Configurações', text: /Fila, pool, contas, hooks, instalação e painel/ }))
   assert.equal(view.find({ label: 'Modo da fila: Global' }), null) // recolhida: nada de formulário à mostra
   await abrir(view)
   assert.ok(view.find({ type: 'Tabs', label: 'Assuntos das configurações' }))
@@ -395,7 +414,7 @@ test('Configurações: seção recolhida no fim, com abas Fila · Pool · Contas
   await view.select({ label: 'Assuntos das configurações' }, 'contas')
   assert.ok(view.find({ text: /^Vagas, peso, papéis e ordem de cada conta — ~\/\.agents\/agent-pool\/config\.json\. As contas detectadas pelo Orca entram no pool sozinhas; as manuais são CLIs personalizados/ }))
   await view.select({ label: 'Assuntos das configurações' }, 'imposicao')
-  assert.ok(view.find({ text: 'Hooks orientam os agentes a usar a fila de testes.' }))
+  assert.ok(view.find({ text: 'Os hooks fazem os agentes usar a fila de testes.' }))
   await view.select({ label: 'Assuntos das configurações' }, 'painel')
   assert.ok(view.find({ text: /^Este painel — guardado no Orca/ }))
 })
@@ -666,6 +685,80 @@ test('requisitos faltando: só a seção Requisitos, com ✓/✗, o detalhe no i
   assert.equal(view.findAll({ type: 'Button', text: 'Instalar' }).length, 1) // só quem traz `instalar`
 })
 
+const tudoOk: Requisitos = {
+  ok: true,
+  itens: [
+    { id: 'orca', ok: true, detalhe: { codigo: 'versao', valor: '1.4.247' } },
+    { id: 'orchestration', ok: true, detalhe: { codigo: 'instalada' } },
+    { id: 'skill', ok: true, detalhe: { codigo: 'instalada' } },
+    { id: 'lancador', ok: true, detalhe: { codigo: 'instalado', valor: '~/.agents/bin/agent-pool' } },
+    { id: 'hooks', ok: true, detalhe: { codigo: 'hooks', agentes: [{ agente: 'claude', situacao: 'instalado' }, { agente: 'codex', situacao: 'instalado' }] } }
+  ]
+}
+
+for (const [locale, versao, instalada, lancador] of [
+  ['pt-BR', /✓ versão 1\.4\.247/, /✓ instalada/, /✓ ~\/\.agents\/bin\/agent-pool/],
+  ['en', /✓ version 1\.4\.247/, /✓ installed/, /✓ ~\/\.agents\/bin\/agent-pool/]
+] as const) {
+  test(`${locale}: aba Instalação lista os 5 requisitos com ✓, o caminho do lançador, os agentes dos hooks e o botão de verificar`, async () => {
+    const t = textosPara(locale)
+    view = await mount(panel, { locale, host: mockHost({ requests: { 'requisitos.ler': () => tudoOk, 'estado.ler': () => estadoExemplo } }) })
+    await view.toggle({ label: t.configuracoes.titulo })
+    await view.select({ label: t.configuracoes.assuntos }, 'instalacao')
+    assert.ok(view.find({ type: 'Tab', label: locale === 'en' ? 'Installation' : 'Instalação' }))
+    assert.deepEqual(view.rowsOf({ label: t.requisitos.tabela }), ['orca', 'orchestration', 'skill', 'lancador', 'hooks'])
+    assert.ok(view.find({ type: 'Table', label: t.requisitos.tabela, text: versao }))
+    assert.ok(view.find({ type: 'Table', label: t.requisitos.tabela, text: instalada }))
+    assert.ok(view.find({ type: 'Table', label: t.requisitos.tabela, text: lancador }))
+    assert.ok(view.find({ type: 'Table', label: t.requisitos.tabela, text: /claude.*codex/ }))
+    assert.equal(view.find({ type: 'Table', label: t.requisitos.tabela, text: /✗/ }), null)
+    assert.equal(view.find({ type: 'Button', text: t.requisitos.instalar }), null)
+    assert.ok(view.find({ type: 'Button', text: t.requisitos.verificar }))
+  })
+}
+
+test('Instalação: Verificar agora chama requisitos.ler com forcar; leitura forçada com pendência leva à tela de pendências', async () => {
+  const entradas: unknown[] = []
+  let leiturasHooks = 0
+  const t = textosPara('pt-BR')
+  view = await mount(panel, { host: mockHost({ requests: {
+    'requisitos.ler': (entrada) => {
+      entradas.push(entrada)
+      return entradas.length === 1 ? tudoOk : faltando
+    },
+    'hooks.estado': () => (leiturasHooks++, [{ agente: 'claude', estado: 'instalado' as const }]),
+    'estado.ler': () => estadoExemplo
+  } }) })
+  await abrir(view, 'instalacao')
+  const antes = leiturasHooks
+  await view.press({ type: 'Button', text: t.requisitos.verificar })
+  assert.deepEqual(entradas.at(1), { forcar: true })
+  assert.ok(leiturasHooks > antes, 'Verificar agora relê os hooks')
+  assert.deepEqual(view.rowsOf({ label: t.requisitos.tabela }), ['orca', 'orchestration', 'lancador'])
+  assert.equal(view.find({ type: 'Heading', text: 'Configurações' }), null)
+})
+
+test('Instalação: leitura forçada que volta vazia avisa em vez de manter a tabela como conferida', async () => {
+  let lidas = 0
+  view = await mount(panel, { host: mockHost({ requests: {
+    'requisitos.ler': () => (lidas++ === 0 ? tudoOk : (null as never)),
+    'estado.ler': () => estadoExemplo
+  } }) })
+  await abrir(view, 'instalacao')
+  await view.press({ type: 'Button', text: 'Verificar agora' })
+  assert.ok(view.find({ text: /Não consegui reler os requisitos/ }))
+})
+
+test('Instalação: requisitos ainda não lidos mostram o aviso e o botão', async () => {
+  view = await mount(panel, { host: mockHost({ requests: {
+    'requisitos.ler': () => { throw hostError('unknown_method', 'sem handler') },
+    'estado.ler': () => estadoExemplo
+  } }) })
+  await abrir(view, 'instalacao')
+  assert.ok(view.find({ text: 'Requisitos não verificados.' }))
+  assert.ok(view.find({ type: 'Button', text: 'Verificar agora' }))
+})
+
 test('Instalar chama requisitos.instalar com o id e lê os requisitos de novo; com tudo ok volta o painel normal', async () => {
   const instalados: unknown[] = []
   let r: Requisitos = faltando
@@ -685,6 +778,98 @@ test('Instalar chama requisitos.instalar com o id e lê os requisitos de novo; c
   assert.deepEqual(instalados, ['orchestration'])
   assert.deepEqual(view.rowsOf(POOL), ['main', 'codex', 'claude-abcdef12'])
   assert.equal(view.find({ type: 'Table', label: 'Requisitos do painel' }), null)
+})
+
+const tres: Requisitos = {
+  ok: false,
+  itens: [
+    { id: 'orchestration', ok: false, detalhe: { codigo: 'nao_instalada' }, instalar: true },
+    { id: 'skill', ok: false, detalhe: { codigo: 'nao_instalada' }, instalar: true },
+    { id: 'hooks', ok: false, detalhe: { codigo: 'hooks_nenhum' }, instalar: true }
+  ]
+}
+const TABELA_REQ = { label: 'Requisitos do painel' }
+
+for (const releitura of ['null', 'unknown_method'] as const) {
+  test(`instalação que falha mantém a lista de pendências e o erro; releitura ${releitura} também mantém`, async () => {
+    let lidas = 0
+    const host = mockHost({
+      requests: {
+        'requisitos.ler': () => {
+          if (lidas++ === 0) return tres
+          if (releitura === 'null') return null as never
+          throw hostError('unknown_method', 'sem handler')
+        },
+        'requisitos.instalar': () => { throw hostError('instalacao_falhou', 'falhou aqui') },
+        'estado.ler': () => estadoExemplo
+      }
+    })
+    view = await mount(panel, { host })
+    await view.press(view.findAll({ type: 'Button', text: 'Instalar' })[0]!)
+    assert.deepEqual(view.rowsOf(TABELA_REQ), ['orchestration', 'skill', 'hooks'])
+    assert.ok(view.find({ text: /falhou aqui/ }))
+    assert.equal(view.find({ type: 'Table', label: 'Contas do pool' }), null)
+  })
+}
+
+test('aviso de releitura que falhou some quando chega uma leitura válida, ainda pendente', async () => {
+  let lidas = 0
+  const host = mockHost({ requests: { 'requisitos.ler': () => (lidas++ === 1 ? (null as never) : tres), 'estado.ler': () => estadoExemplo } })
+  view = await mount(panel, { host })
+  await view.press(view.find({ type: 'Button', text: 'Atualizar' })!)
+  assert.ok(view.find({ text: /Não consegui reler os requisitos/ }))
+  await view.press(view.find({ type: 'Button', text: 'Atualizar' })!)
+  assert.equal(view.find({ text: /Não consegui reler os requisitos/ }), null)
+  assert.deepEqual(view.rowsOf(TABELA_REQ), ['orchestration', 'skill', 'hooks'])
+})
+
+for (const resposta of [{}, null, { ok: true }, { itens: [] }]) {
+  test(`requisitos.instalar com resposta fora do formato (${JSON.stringify(resposta)}) mantém a lista`, async () => {
+    let lidas = 0
+    const host = mockHost({
+      requests: {
+        'requisitos.ler': () => (lidas++ === 0 ? tres : (null as never)),
+        'requisitos.instalar': () => resposta as never,
+        'estado.ler': () => estadoExemplo
+      }
+    })
+    view = await mount(panel, { host })
+    await view.press(view.findAll({ type: 'Button', text: 'Instalar' })[0]!)
+    assert.deepEqual(view.rowsOf(TABELA_REQ), ['orchestration', 'skill', 'hooks'])
+    assert.equal(view.find({ type: 'Table', label: 'Contas do pool' }), null)
+  })
+}
+
+for (const [locale, aviso] of [['pt-BR', 'Requisitos instalados. O painel já está pronto.'], ['en', 'Requirements installed. The panel is ready.']] as const) {
+  test(`${locale}: instalação que deixa tudo ok mostra o aviso verde na visão normal e ele some na próxima atualização`, async () => {
+    let r: Requisitos = tres
+    const host = mockHost({
+      requests: {
+        'requisitos.ler': () => r,
+        'requisitos.instalar': () => (r = { ok: true, itens: tres.itens.map((i) => ({ ...i, ok: true })) }),
+        'estado.ler': () => estadoExemplo
+      }
+    })
+    view = await mount(panel, { host, locale })
+    await view.press(view.findAll({ type: 'Button' }).find((b) => /Instal|Install/.test(String(b.text)))!)
+    assert.ok(view.find({ type: 'Text', text: aviso }))
+    assert.equal(view.find({ type: 'Table', label: textosPara(locale).requisitos.tabela }), null)
+    await view.press(view.findAll({ type: 'Button' }).find((b) => /Atualizar|Refresh/.test(String(b.text)))!)
+    assert.equal(view.find({ text: aviso }), null)
+  })
+}
+
+test('primeira leitura unknown_method (worker antigo, sem pendência vista): visão normal, sem aviso', async () => {
+  view = await mount(panel, {
+    host: mockHost({
+      requests: {
+        'requisitos.ler': () => { throw hostError('unknown_method', 'sem handler') },
+        'estado.ler': () => estadoExemplo
+      }
+    })
+  })
+  assert.deepEqual(view.rowsOf(POOL), ['main', 'codex', 'claude-abcdef12'])
+  assert.equal(view.find({ text: /Requisitos instalados/ }), null)
 })
 
 test('requisitos ok: o painel normal; worker sem o handler (unknown_method): também o painel normal', async () => {
@@ -770,4 +955,43 @@ test('fila: o corte da célula longa não parte um emoji (par substituto)', asyn
   const rows = view.find({ type: 'Table', label: 'Testes na fila' })!.props.rows as { cells: Record<string, unknown> }[]
   const cortada = rows.flatMap((r) => Object.values(r.cells)).find((c): c is string => typeof c === 'string' && c.startsWith('xxx'))!
   assert.equal(cortada, 'x'.repeat(1022) + '…')
+})
+
+const comModelo = (modelo: string | null, limite: string | null): Estado => ({
+  ...estadoExemplo,
+  pool: { ...estadoExemplo.pool, contas: estadoExemplo.pool.contas.map((c) => (c.nome === 'main' ? { ...c, modelo, modelo_efetivo: modelo, limite_seguido: limite } : c)) }
+})
+
+for (const [locale, rotulo, geral, pool] of [['pt-BR', 'Modelo', 'Geral', 'Contas do pool'], ['en', 'Model', 'General', 'Pool accounts']]) {
+  test(`${locale}: detalhe da conta mostra o modelo e o limite seguido (ou o geral); sem modelo, sem a linha`, async () => {
+    view = await mount(panel, { locale, host: hostCom([], comModelo('claude-fable-5-1', 'Fable')) })
+    await view.selectRows({ label: pool }, ['main'])
+    assert.ok(view.find({ type: 'Table', text: new RegExp(`${rotulo}.*claude-fable-5-1 · Fable`) }))
+    view.unmount()
+    view = await mount(panel, { locale, host: hostCom([], comModelo('qwen', null)) })
+    await view.selectRows({ label: pool }, ['main'])
+    assert.ok(view.find({ type: 'Table', text: new RegExp(`qwen · ${geral}`) }))
+    view.unmount()
+    view = await mount(panel, { locale, host: hostCom() })
+    await view.selectRows({ label: pool }, ['main'])
+    assert.equal(view.find({ type: 'Table', text: new RegExp(`${rotulo}.*·`) }), null)
+  })
+}
+
+test('Configurações > Contas: campo Modelo grava conta.<nome>.modelo e explica o limite seguido', async () => {
+  const gravados: unknown[] = []
+  view = await mount(panel, { host: hostCom(gravados) })
+  await abrir(view, 'contas')
+  await view.type({ label: 'Modelo' }, 'claude-fable-5-1', { replace: true })
+  await view.press({ type: 'Button', text: 'Salvar' })
+  assert.deepEqual(gravados, [{ 'conta.main.modelo': 'claude-fable-5-1' }])
+  assert.ok(view.find({ type: 'IconButton', label: /Gemini 4 Argon.*Gemini Models.*Claude and GPT models.*gemini-3\.8-flash-high/s }))
+})
+
+test('Configurações > Contas em inglês: campo Model e dica em inglês', async () => {
+  view = await mount(panel, { locale: 'en', host: hostCom() })
+  await view.toggle({ label: 'Settings' })
+  await view.select({ label: 'Settings sections' }, 'contas')
+  assert.ok(view.find({ type: 'Input', label: 'Model' }))
+  assert.ok(view.find({ type: 'IconButton', label: /Fable.*Gemini 4 Argon.*default/s }))
 })

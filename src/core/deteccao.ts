@@ -5,7 +5,7 @@ import type { Config, OrcaCli } from './tipos.ts'
 
 export type Detectada = { nome: string; agente: string; rotulo: string; /** Conta cadastrada no Orca (não a padrão): o despacho e a medida ainda usam a padrão. */ gerenciada?: boolean }
 
-function instalado(comando: string, pathEnv: string): boolean {
+export function instalado(comando: string, pathEnv: string): boolean {
   const extensoes = process.platform === 'win32' ? ['', '.exe', '.cmd', '.bat', '.com'] : ['']
   return pathEnv.split(delimiter).filter(Boolean).some(dir => extensoes.some(ext => {
     try {
@@ -59,7 +59,7 @@ export function sincronizarDetectadas(c: Config, d: Detectada[]): Config {
     if (mesmaPadrao || contas.some(conta => conta.nome === detectada.nome) || c.pool.ignoradas?.includes(detectada.nome)) continue
     const agente = CATALOGO.find(a => a.id === detectada.agente)
     if (!agente) continue
-    contas.push({ nome: detectada.nome, agente: detectada.agente, config: null, comando: null, vagas: 1, peso: 1, papeis: detectada.gerenciada ? [] : [...agente.papeisPadrao], ativo: true, origem: 'orca' })
+    contas.push({ nome: detectada.nome, agente: detectada.agente, config: null, comando: null, modelo: null, vagas: 1, peso: 1, papeis: detectada.gerenciada ? [] : [...agente.papeisPadrao], ativo: true, origem: 'orca' })
   }
   return { ...c, pool: { ...c.pool, contas } }
 }

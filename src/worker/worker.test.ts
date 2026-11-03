@@ -55,7 +55,7 @@ const gravarConfig = (obj: unknown) => {
   mkdirSync(raizDados(), { recursive: true })
   writeFileSync(join(raizDados(), 'config.json'), JSON.stringify(obj, null, 2))
 }
-const conta = (nome: string, agente = 'claude') => ({ nome, agente, config: null, comando: null, vagas: 2, peso: 1, papeis: ['escritor'], ativo: true, origem: 'manual' })
+const conta = (nome: string, agente = 'claude') => ({ nome, agente, config: null, comando: null, modelo: null, vagas: 2, peso: 1, papeis: ['escritor'], ativo: true, origem: 'manual' })
 const config = (contas: unknown[] = []) => ({
   versao: 1,
   pool: { teto: 0, ramMinGb: 0, escolha: 'ritmo', contas },
@@ -167,6 +167,14 @@ test('requisitos.ler: Orca pela versão, orchestration não verificável, skill 
   await w.deactivate()
 })
 
+test('requisitos.instalar que falha registra o id e o erro no log do plugin e relança', async () => {
+  novaCasa()
+  const w = await mountWorker(main)
+  await assert.rejects(w.request('requisitos.instalar', { id: 'orchestration' }), (x: unknown) => (x as { code?: string }).code === 'instalacao_falhou')
+  assert.ok(w.logs.some((l) => /requisitos\.instalar orchestration: /.test(l) && l.length > 'requisitos.instalar orchestration: '.length), w.logs.join('\n'))
+  await w.deactivate()
+})
+
 test('hooks: estado, remover (arquivo volta ao original) e reinstalar; agente desconhecido é agente_invalido', async () => {
   novaCasa()
   mkdirSync(join(casa, '.claude'), { recursive: true })
@@ -238,7 +246,7 @@ test('conta com pasta de config própria recebe hook e skill na pasta dela; remo
   await w.deactivate()
 })
 
-test('remover imposição alcança a conta desativada; config ilegível recusa em vez de remover pela metade', async () => {
+test('remover hook alcança a conta desativada; config ilegível recusa em vez de remover pela metade', async () => {
   novaCasa()
   const pasta = join(casa, '.claude-work')
   mkdirSync(pasta, { recursive: true })
@@ -342,6 +350,21 @@ test('mudança no estado em disco dispara um único estado.mudou por rajada', as
   await w.deactivate()
 })
 
+test('requisitos.ler com forcar relê na hora; sem forcar usa o guardado, e o lançador traz o caminho com ~', async () => {
+  novaCasa()
+  const w = await mountWorker(main)
+  const lancador = (r: { itens: { id: string; ok: boolean; detalhe: unknown }[] }) => r.itens.find((i) => i.id === 'lancador')!
+  const nome = process.platform === 'win32' ? 'agent-pool.cmd' : 'agent-pool'
+  const primeiro = lancador(await w.request('requisitos.ler')) // a ativação instala o lançador
+  assert.equal(primeiro.ok, true)
+  assert.deepEqual(primeiro.detalhe, { codigo: 'instalado', valor: join('~', '.agents', 'bin', nome) })
+  rmSync(join(casa, '.agents', 'bin', nome))
+  assert.equal(lancador(await w.request('requisitos.ler')).ok, true) // guardado por 60 s
+  assert.equal(lancador(await w.request('requisitos.ler', {})).ok, true)
+  assert.equal(lancador(await w.request('requisitos.ler', { forcar: true })).ok, false)
+  await w.deactivate()
+})
+
 // --- requisitos (lógica pura) ---
 const depsOk = {
   orca: async (args: string[]) => (args[0] === '--version' ? '1.4.246' : JSON.stringify({ result: { skills: [{ name: 'orchestration' }] } })),
@@ -364,6 +387,29 @@ test('requisitos: tudo certo, versão antiga, hook removido por escolha não tra
   assert.equal(ausente.itens.find((i) => i.id === 'hooks')?.ok, false)
   const semSkill = await criarRequisitos({ ...depsOk, skill: () => ({ estado: 'editada' as const }) }).ler()
   assert.equal(semSkill.ok, true) // skill editada é respeitada
+})
+
+test('requisitos: reler espera a coleta em voo e coleta de novo depois dela', async () => {
+  let liberar: () => void = () => {}
+  let primeira = true
+  let coletas = 0
+  const r = criarRequisitos({
+    ...depsOk,
+    lancador: () => (coletas++, true),
+    orca: async (a) => {
+      if (a[0] === '--version' && primeira) {
+        primeira = false
+        await new Promise<void>((ok) => (liberar = ok))
+      }
+      return depsOk.orca(a)
+    }
+  })
+  const emVoo = r.ler()
+  const forcada = r.reler()
+  liberar()
+  await emVoo
+  await forcada
+  assert.equal(coletas, 2)
 })
 
 test('requisitos: instalar relê o estado e guarda por 60 s', async () => {

@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import type { Conta } from '../src/core/tipos.ts'
 import { claude, medirClaude } from '../src/core/medidas/claude.ts'
 
-const conta: Conta = { nome: 'main', agente: 'claude', config: '~/.claude-work', comando: null, vagas: 1, peso: 1, papeis: ['escritor'], ativo: true, origem: 'manual' }
+const conta: Conta = { nome: 'main', agente: 'claude', config: '~/.claude-work', comando: null, modelo: null, vagas: 1, peso: 1, papeis: ['escritor'], ativo: true, origem: 'manual' }
 const token = 'TOKEN_FALSO_NUNCA_EXIBIR'
 
 test('mede credencial válida com header OAuth e sem divulgar token', async () => {

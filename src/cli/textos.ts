@@ -2,13 +2,14 @@ import type { ErroValidacao } from '../core/config.ts'
 import type { EventoFila } from '../core/fila/rodar.ts'
 import type { Escolhida } from '../core/pool/escolha.ts'
 
-type Palavras = { sem: string; ritmo: string; livre: string; zera: string; peso: string }
+type Palavras = { sem: string; ritmo: string; livre: string; zera: string; peso: string; modelo: string }
 function descreverEscolha(e: Escolhida, w: Palavras): string {
   const zera = e.horas === null ? '' : `, ${w.zera} ${Math.round(e.horas)}h`
   const peso = e.peso === 1 ? '' : ` · ${w.peso} ${e.peso}`
-  if (e.semMedidor) return `${e.conta} (${w.sem})${peso}`
-  if (e.ritmo === null) return `${e.conta} (${e.livre}% ${w.livre}${zera})`
-  return `${e.conta} (${w.ritmo} ${e.ritmo.toFixed(1)} · ${e.livre}% ${w.livre}${zera})${peso}`
+  const modelo = e.modelo ? ` · ${w.modelo} ${e.modelo}` : ''
+  if (e.semMedidor) return `${e.conta} (${w.sem})${peso}${modelo}`
+  if (e.ritmo === null) return `${e.conta} (${e.livre}% ${w.livre}${zera})${modelo}`
+  return `${e.conta} (${w.ritmo} ${e.ritmo.toFixed(1)} · ${e.livre}% ${w.livre}${zera})${peso}${modelo}`
 }
 
 const pt = {
@@ -21,6 +22,8 @@ const pt = {
 códigos: 0 ok, 2 uso inválido, 75 sem vaga ou espera esgotada`,
   uso: 'uso', vazio: '(vazio)', comando: 'comando', chave: 'chave', valor: 'valor',
   erro: 'erro', semanal: 'semanal', semLogin: 'sem login', semMedida: 'sem medida',
+  naoConfigurada: 'não configurada nesta máquina',
+  motivosNaoConfigurada: { pasta_ausente: (v: string) => `pasta ${v} não existe`, cli_ausente: (v: string) => `${v} não instalado` },
   inativa: 'inativa', nenhumaConta: 'nenhuma conta',
   fila: 'fila', rodando: 'rodando', aguardando: 'aguardando', parados: 'parados',
   modos: { banco: 'banco', projeto: 'projeto', global: 'global', ritmo: 'ritmo', ordem: 'ordem' } as Record<string, string>,
@@ -42,10 +45,10 @@ códigos: 0 ok, 2 uso inválido, 75 sem vaga ou espera esgotada`,
     conta_existente: 'conta já existe', conta_inexistente: 'conta inexistente', conta_repetida: 'conta repetida',
     ordem_incompleta: 'ordem incompleta', chave_desconhecida: 'chave desconhecida',
     agente_desconhecido: 'agente desconhecido', variavel_sem_suporte: 'variável sem suporte',
-    agente_nao_provado: 'agente sem imposição comprovada', config_ocupada: 'outra gravação da configuração em andamento'
+    agente_nao_provado: 'agente sem hook comprovado', config_ocupada: 'outra gravação da configuração em andamento'
   } as Record<string, string>,
   stackAusente: 'Stack não detectada: use agent-pool test -- <comando de teste>',
-  escolha: (e: Escolhida) => descreverEscolha(e, { sem: 'sem medidor', ritmo: 'ritmo', livre: 'livre', zera: 'zera em', peso: 'peso' }),
+  escolha: (e: Escolhida) => descreverEscolha(e, { sem: 'sem medidor', ritmo: 'ritmo', livre: 'livre', zera: 'zera em', peso: 'peso', modelo: 'modelo' }),
   avisoFila: (ev: EventoFila) =>
     ev.codigo === 'aguardando' ? `Aguardando fila ${ev.fila}`
       : ev.codigo === 'ocupada' ? `FILA OCUPADA — ${ev.fila} — rode de novo`
@@ -66,6 +69,8 @@ const en: Textos = {
 exit codes: 0 ok, 2 invalid usage, 75 no slot or wait timed out`,
   uso: 'usage', vazio: '(empty)', comando: 'command', chave: 'key', valor: 'value',
   erro: 'error', semanal: 'weekly', semLogin: 'not logged in', semMedida: 'not measured',
+  naoConfigurada: 'not set up on this machine',
+  motivosNaoConfigurada: { pasta_ausente: (v) => `folder ${v} does not exist`, cli_ausente: (v) => `${v} not installed` },
   inativa: 'inactive', nenhumaConta: 'no accounts',
   fila: 'queue', rodando: 'running', aguardando: 'waiting', parados: 'stopped',
   modos: { banco: 'database', projeto: 'project', global: 'global', ritmo: 'pace', ordem: 'order' },
@@ -87,10 +92,10 @@ exit codes: 0 ok, 2 invalid usage, 75 no slot or wait timed out`,
     conta_existente: 'account already exists', conta_inexistente: 'account does not exist', conta_repetida: 'duplicate account',
     ordem_incompleta: 'incomplete order', chave_desconhecida: 'unknown key',
     agente_desconhecido: 'unknown agent', variavel_sem_suporte: 'unsupported variable',
-    agente_nao_provado: 'agent has no proven enforcement', config_ocupada: 'another configuration write is in progress'
+    agente_nao_provado: 'agent has no proven hook', config_ocupada: 'another configuration write is in progress'
   },
   stackAusente: 'Stack not detected: use agent-pool test -- <test command>',
-  escolha: (e) => descreverEscolha(e, { sem: 'no meter', ritmo: 'pace', livre: 'free', zera: 'resets in', peso: 'weight' }),
+  escolha: (e) => descreverEscolha(e, { sem: 'no meter', ritmo: 'pace', livre: 'free', zera: 'resets in', peso: 'weight', modelo: 'model' }),
   avisoFila: (ev) =>
     ev.codigo === 'aguardando' ? `Waiting for queue ${ev.fila}`
       : ev.codigo === 'ocupada' ? `QUEUE BUSY — ${ev.fila} — run again`

@@ -14,7 +14,7 @@ function casa() {
 }
 
 const conta = (nome: string, extra: Partial<Conta> = {}): Conta => ({
-  nome, agente: 'claude', config: null, comando: null, vagas: 1, peso: 1,
+  nome, agente: 'claude', config: null, comando: null, modelo: null, vagas: 1, peso: 1,
   papeis: ['escritor'], ativo: true, origem: 'manual', ...extra
 })
 const com = (...contas: Conta[]): Config => ({ ...structuredClone(PADRAO), pool: { ...PADRAO.pool, contas } })
@@ -157,4 +157,20 @@ test('deduzirAgente: executável do comando, VAR=valor à frente, opencode2 só 
   assert.equal(deduzirAgente(null, '~/.claude-work')?.id, 'claude')
   assert.equal(deduzirAgente('foo', null), null)
   assert.equal(deduzirAgente(null, null), null)
+})
+
+test('modelo: config antiga sem o campo vira null; set grava, valida e limpa', () => {
+  const { p, fim } = casa()
+  mkdirSync(p.raiz, { recursive: true })
+  const { modelo: _, ...antiga } = conta('a')
+  writeFileSync(p.config, JSON.stringify({ ...PADRAO, pool: { ...PADRAO.pool, contas: [antiga] } }))
+  const c = carregar(p)
+  assert.equal(c.pool.contas[0].modelo, null)
+  const com1 = aplicar(c, { 'conta.a.modelo': 'gemini-3.8-flash-high' })
+  assert.equal(com1.pool.contas[0].modelo, 'gemini-3.8-flash-high')
+  assert.equal(aplicar(com1, { 'conta.a.modelo': '' }).pool.contas[0].modelo, null)
+  for (const ruim of ['a b', 'x;y', 'x'.repeat(101), '-x', '--dangerously-skip-permissions']) recusa(() => aplicar(c, { 'conta.a.modelo': ruim }), 'valor_invalido')
+  writeFileSync(p.config, JSON.stringify({ ...PADRAO, pool: { ...PADRAO.pool, contas: [conta('a', { modelo: 5 as unknown as string })] } }))
+  assert.throws(() => carregar(p), ErroConfig)
+  fim()
 })

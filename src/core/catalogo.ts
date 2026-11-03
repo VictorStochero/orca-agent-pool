@@ -9,6 +9,8 @@ export type Agente = {
   hook: 'claude' | 'codex' | null
   papeisPadrao: Papel[]
   provado: boolean
+  /** Modelo usado quando a conta não define um. */
+  modeloPadrao?: string
   perfilGerenciadoDe?: string
 }
 
@@ -20,7 +22,7 @@ const TRABALHO: Papel[] = [...PAPEIS_TRABALHO]
 export const CATALOGO: readonly Agente[] = [
   { id: 'claude', idOrca: 'claude', comandos: ['claude'], familia: 'claude', medidor: 'claude', hook: 'claude', papeisPadrao: TRABALHO, provado: true },
   { id: 'codex', idOrca: 'codex', comandos: ['codex'], familia: 'gpt', medidor: 'orca', hook: 'codex', papeisPadrao: TRABALHO, provado: true },
-  { id: 'antigravity', idOrca: 'antigravity', comandos: ['agy'], familia: 'gemini', medidor: 'orca', hook: null, papeisPadrao: TRABALHO, provado: true },
+  { id: 'antigravity', idOrca: 'antigravity', comandos: ['agy'], familia: 'gemini', medidor: 'orca', hook: null, papeisPadrao: TRABALHO, provado: true, modeloPadrao: 'gemini-3.8-flash-high' },
   { id: 'opencode', idOrca: 'opencode', comandos: ['opencode'], familia: 'outro', medidor: null, hook: null, papeisPadrao: [], provado: false },
   { id: 'opencode2', idOrca: 'opencode2', comandos: ['opencode'], familia: 'outro', medidor: null, hook: null, papeisPadrao: [], provado: false, perfilGerenciadoDe: 'opencode' },
   { id: 'gemini', idOrca: null, comandos: ['gemini'], familia: 'gemini', medidor: 'orca', hook: null, papeisPadrao: [], provado: false },
@@ -29,6 +31,12 @@ export const CATALOGO: readonly Agente[] = [
 
 export function acharAgente(id: string): Agente | null {
   return CATALOGO.find((a) => a.id === id) ?? null
+}
+
+/** Programa do comando como escrito (sem `VAR=valor` à frente nem aspas): `"C:\Program Files\x.exe" -a` → `C:\Program Files\x.exe`. */
+export function programaDe(comando: string): string | null {
+  const tok = comando.match(/(?:[^\s"']|"[^"]*"|'[^']*')+/g)?.find((t) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(t))
+  return tok ? tok.replace(/["']/g, '') : null
 }
 
 /** Executável do comando sem `VAR=valor` à frente nem extensão (`C:\bin\codex.exe` → `codex`). */

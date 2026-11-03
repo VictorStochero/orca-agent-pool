@@ -128,3 +128,30 @@ describe('medidas → escolha', () => {
     assert.equal(rankearEscritores(c, medidas, paths(home), agora)[0]?.conta, 'a')
   })
 })
+
+describe('limite seguido pelo modelo', () => {
+  const gemini = [{ nome: 'Gemini Models', curta: 0, longa: 0 }, { nome: 'Gemini 4 Argon', curta: null, longa: 70 }]
+  it('segunda opinião: agy com Argon acima do teto é escolhida pelo Flash, com o modelo', () => {
+    const c = cfg([conta('agy', { agente: 'antigravity' })])
+    const r = escolherSegunda(c, [m('agy', 0, 70, { limites: gemini })], 'claude', agora)
+    assert.equal(r?.conta, 'agy')
+    assert.deepEqual([r?.livre, r?.modelo], [100, 'gemini-3.8-flash-high'])
+    const argon = cfg([conta('agy', { agente: 'antigravity', modelo: 'gemini-4-argon-high' })])
+    assert.equal(escolherSegunda(argon, [m('agy', 0, 70, { limites: gemini })], 'claude', agora), null)
+  })
+  it('escritor Claude com Fable usa a folga do Fable e informa o modelo', () => {
+    const c = cfg([conta('a', { modelo: 'claude-fable-5-1' }), conta('b')])
+    const fable = [{ nome: 'Fable', curta: null, longa: 20 }]
+    const r = rankearEscritores(c, [m('a', 10, 90, { limites: fable }), m('b', 10, 50)], novoP(), agora)
+    assert.deepEqual(r.map((x) => [x.conta, x.livre, x.modelo]), [['a', 80, 'claude-fable-5-1'], ['b', 50, null]])
+  })
+})
+
+describe('nao_configurada', () => {
+  it('fica fora do writer e do second', () => {
+    const c = cfg([conta('a', { agente: 'claude' }), conta('b', { agente: 'codex' })])
+    const ms = [m('a', 10, 20, { estado: 'nao_configurada', erro: 'cli_ausente:claude' }), m('b', 10, 20, { estado: 'nao_configurada', erro: 'cli_ausente:codex' })]
+    assert.equal(escolherEscritor(c, ms, novoP(), agora), null)
+    assert.equal(escolherSegunda(c, ms, 'claude', agora), null)
+  })
+})

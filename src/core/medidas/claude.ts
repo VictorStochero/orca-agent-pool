@@ -9,6 +9,8 @@ export type DependenciasMedida = {
   fetch: typeof fetch
   /** ms desde a época, como todo o núcleo. */
   agora: number
+  /** PATH para conferir se o CLI da conta existe; ausente = não confere. */
+  path?: string
   executarUsage?: (dir: string) => Promise<string>
   executarStatus?: (dir: string) => Promise<string>
 }

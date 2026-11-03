@@ -1,6 +1,7 @@
 import { acharAgente } from '../catalogo.ts'
 import type { Paths } from '../paths.ts'
 import type { Config, Conta, Medida } from '../tipos.ts'
+import { medidaEfetiva, modeloEfetivo } from './modelo.ts'
 import { livres, ocupadasMaquina } from './vagas.ts'
 
 const H = 3600_000
@@ -10,7 +11,7 @@ const JANELA_LONGA_H = 168
 const familiaDe = (agente: string): string => acharAgente(agente)?.familia ?? 'outro'
 
 /** Dados da escolha; o texto legível (idioma) é montado por quem exibe. */
-export type Escolhida = { conta: string; peso: number; semMedidor: boolean; ritmo: number | null; livre: number | null; horas: number | null }
+export type Escolhida = { conta: string; peso: number; semMedidor: boolean; ritmo: number | null; livre: number | null; horas: number | null; modelo: string | null }
 
 /** Conta ativa, com o papel, vaga no pool e máquina fora do teto. */
 function aptas(c: Config, p: Paths, papel: Conta['papeis'][number], agora: number): Conta[] {
@@ -30,8 +31,9 @@ export function rankearEscritores(c: Config, medidas: Medida[], p: Paths, agora:
   const medidos: { conta: Conta; ritmo: number; livre: number; h: number }[] = []
   const semMedidor: Conta[] = []
   for (const ct of aptas(c, p, 'escritor', agora)) {
-    const m = porConta.get(ct.nome)
-    if (m && (m.estado === 'sem_login' || m.estado === 'erro')) continue
+    const bruta = porConta.get(ct.nome)
+    const m = bruta && medidaEfetiva(ct, bruta)
+    if (m && (m.estado === 'sem_login' || m.estado === 'erro' || m.estado === 'nao_configurada')) continue
     if (!m || m.estado === 'sem_medida' || m.longa === null) { semMedidor.push(ct); continue }
     const curta = m.curta ?? 0
     const h = horasAte(m.resetLongaTs, agora)
@@ -40,8 +42,8 @@ export function rankearEscritores(c: Config, medidas: Medida[], p: Paths, agora:
     const base = (100 - m.longa) / (100 * frac)
     medidos.push({ conta: ct, ritmo: base * (c.pool.escolha === 'ordem' ? 1 : ct.peso), livre: 100 - m.longa, h })
   }
-  const doMedido = (x: (typeof medidos)[number]): Escolhida => ({ conta: x.conta.nome, peso: x.conta.peso, semMedidor: false, ritmo: x.ritmo, livre: x.livre, horas: x.h >= 0 ? x.h : null })
-  const doSem = (ct: Conta): Escolhida => ({ conta: ct.nome, peso: ct.peso, semMedidor: true, ritmo: null, livre: null, horas: null })
+  const doMedido = (x: (typeof medidos)[number]): Escolhida => ({ conta: x.conta.nome, peso: x.conta.peso, semMedidor: false, ritmo: x.ritmo, livre: x.livre, horas: x.h >= 0 ? x.h : null, modelo: modeloEfetivo(x.conta) })
+  const doSem = (ct: Conta): Escolhida => ({ conta: ct.nome, peso: ct.peso, semMedidor: true, ritmo: null, livre: null, horas: null, modelo: modeloEfetivo(ct) })
   const ordemTabela = (ct: Conta) => c.pool.contas.indexOf(ct)
   if (c.pool.escolha === 'ordem') {
     // a ordem da tabela mistura medidas e sem medidor
@@ -68,12 +70,13 @@ export function escolherSegunda(
   let melhor: { ct: Conta; folga: number; h: number } | null = null
   for (const ct of candidatas) {
     const fam = familiaDe(ct.agente)
-    const m = porConta.get(ct.nome)
+    const bruta = porConta.get(ct.nome)
+    const m = bruta && medidaEfetiva(ct, bruta)
     if (fam === 'outro' || fam === familiaEscritor || !m || m.estado !== 'ok' || m.longa === null) continue
     if ((m.curta ?? 0) > 80 || m.longa > teto) continue
     const folga = 100 - m.longa
     if (!melhor || folga > melhor.folga) melhor = { ct, folga, h: horasAte(m.resetLongaTs, agora) }
   }
   if (!melhor) return null
-  return { conta: melhor.ct.nome, peso: melhor.ct.peso, semMedidor: false, ritmo: null, livre: melhor.folga, horas: melhor.h >= 0 ? melhor.h : null }
+  return { conta: melhor.ct.nome, peso: melhor.ct.peso, semMedidor: false, ritmo: null, livre: melhor.folga, horas: melhor.h >= 0 ? melhor.h : null, modelo: modeloEfetivo(melhor.ct) }
 }

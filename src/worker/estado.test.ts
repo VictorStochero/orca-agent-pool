@@ -26,7 +26,7 @@ test('cota: medidaTs em ms (unidade do pool) dá "há N min" e marca medida anti
   const home = mkdtempSync(join(tmpdir(), 'estado-'))
   try {
     const c = structuredClone(PADRAO)
-    c.pool.contas.push({ nome: 'a', agente: 'claude', config: null, comando: null, vagas: 1, peso: 1, papeis: [], ativo: true, origem: 'manual' })
+    c.pool.contas.push({ nome: 'a', agente: 'claude', config: null, comando: null, modelo: null, vagas: 1, peso: 1, papeis: [], ativo: true, origem: 'manual' })
     const agora = 1_800_000_000_000
     const m = (min: number): Medida => ({ conta: 'a', curta: 90, longa: 10, resetLongaTs: null, estado: 'ok', medidaTs: agora - min * 60_000 })
     const nova = montarEstado(paths(home), c, null, { ...AMBIENTE_VAZIO, medidas: [m(2)] }, agora).pool.contas[0].cota
@@ -45,7 +45,7 @@ test('cota: limites separados passam para a cota; ausentes viram lista vazia', (
   const home = mkdtempSync(join(tmpdir(), 'estado-'))
   try {
     const c = structuredClone(PADRAO)
-    c.pool.contas.push({ nome: 'a', agente: 'antigravity', config: null, comando: null, vagas: 1, peso: 1, papeis: [], ativo: true, origem: 'orca' })
+    c.pool.contas.push({ nome: 'a', agente: 'antigravity', config: null, comando: null, modelo: null, vagas: 1, peso: 1, papeis: [], ativo: true, origem: 'orca' })
     const limites = [{ nome: 'Gemini', curta: 80, longa: 10 }, { nome: 'Argon', curta: null, longa: 79 }]
     const m: Medida = { conta: 'a', curta: 0, longa: 0, resetLongaTs: null, estado: 'ok', medidaTs: 1, limites }
     const cota = montarEstado(paths(home), c, null, { ...AMBIENTE_VAZIO, medidas: [m] }, 1).pool.contas[0].cota
@@ -65,7 +65,7 @@ test('sessões: conta Claude manual lista as abertas; as demais ficam null; o to
       writeFileSync(join(home, pasta, 'sessions', '1.json'), JSON.stringify({ pid: process.pid, kind: 'interactive', name: nome, cwd: 'C:\\x', status: 'idle' }))
     }
     const c = structuredClone(PADRAO)
-    const base = { comando: null, vagas: 1, peso: 1, papeis: [], ativo: true }
+    const base = { comando: null, modelo: null, vagas: 1, peso: 1, papeis: [], ativo: true }
     c.pool.contas.push(
       { ...base, nome: 'a', agente: 'claude', config: null, origem: 'manual' },
       { ...base, nome: 'a2', agente: 'claude', config: '~/.claude/', origem: 'manual' },
@@ -83,6 +83,26 @@ test('sessões: conta Claude manual lista as abertas; as demais ficam null; o to
     assert.equal(por.o, null)
     assert.equal(por.x, null)
     assert.equal(e.pool.sessoes, 2)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('cota e alertas seguem o limite do modelo da conta; modelo e limite seguido vão na conta', () => {
+  const home = mkdtempSync(join(tmpdir(), 'estado-'))
+  try {
+    const c = structuredClone(PADRAO)
+    c.pool.contas.push({ nome: 'agy', agente: 'antigravity', config: null, comando: null, modelo: null, vagas: 1, peso: 1, papeis: [], ativo: true, origem: 'orca' })
+    c.pool.contas.push({ nome: 'cl', agente: 'claude', config: null, comando: null, modelo: null, vagas: 1, peso: 1, papeis: [], ativo: true, origem: 'manual' })
+    const limites = [{ nome: 'Gemini Models', curta: 0, longa: 0 }, { nome: 'Gemini 4 Argon', curta: null, longa: 90 }]
+    const agy: Medida = { conta: 'agy', curta: 0, longa: 90, resetLongaTs: null, estado: 'ok', medidaTs: 1, limites }
+    const cl: Medida = { conta: 'cl', curta: 1, longa: 2, resetLongaTs: null, estado: 'ok', medidaTs: 1 }
+    const [a, b] = montarEstado(paths(home), c, null, { ...AMBIENTE_VAZIO, medidas: [agy, cl] }, 1).pool.contas
+    assert.deepEqual([a.cota?.longa, a.cota?.alerta_longa, a.modelo_efetivo, a.limite_seguido], [0, false, 'gemini-3.8-flash-high', 'Gemini Models'])
+    assert.deepEqual([b.cota?.longa, b.modelo_efetivo, b.limite_seguido], [2, null, null])
+    c.pool.contas[0].modelo = 'gemini-4-argon-high'
+    const [argon] = montarEstado(paths(home), c, null, { ...AMBIENTE_VAZIO, medidas: [agy] }, 1).pool.contas
+    assert.deepEqual([argon.cota?.longa, argon.cota?.alerta_longa, argon.limite_seguido], [90, true, 'Gemini 4 Argon'])
   } finally {
     rmSync(home, { recursive: true, force: true })
   }

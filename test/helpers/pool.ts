@@ -2,7 +2,7 @@ import type { Config, Conta } from '../../src/core/tipos.ts'
 
 export function conta(nome: string, extra: Partial<Conta> = {}): Conta {
   return {
-    nome, agente: 'claude', config: null, comando: null, vagas: 2, peso: 1,
+    nome, agente: 'claude', config: null, comando: null, modelo: null, vagas: 2, peso: 1,
     papeis: ['escritor', 'revisor', 'segunda-opiniao'], ativo: true, origem: 'manual', ...extra
   }
 }

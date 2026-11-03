@@ -16,8 +16,8 @@ test('cache por conta dura cinco minutos, renova sem cota velha e nunca contém 
     mkdirSync(join(home, '.claude'))
     writeFileSync(join(home, '.claude', '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: token, expiresAt: 999999999 } }))
     const c: Config = { versao: 1, pool: { teto: 0, ramMinGb: 0, escolha: 'ritmo', contas: [
-      { nome: '../conta', agente: 'claude', config: null, comando: null, vagas: 1, peso: 1, papeis: [], ativo: true, origem: 'manual' },
-      { nome: 'codex', agente: 'codex', config: null, comando: null, vagas: 1, peso: 1, papeis: [], ativo: true, origem: 'orca' },
+      { nome: '../conta', agente: 'claude', config: null, comando: null, modelo: null, vagas: 1, peso: 1, papeis: [], ativo: true, origem: 'manual' },
+      { nome: 'codex', agente: 'codex', config: null, comando: null, modelo: null, vagas: 1, peso: 1, papeis: [], ativo: true, origem: 'orca' },
     ] }, fila: { modo: 'banco', vagas: 2, vagasPorProjeto: 1, teto: 3, processos: 8, esperaMaxS: 300 } }
     let chamadas = 0
     const orca = { run: async () => { chamadas++; return { code: 0, stderr: '', stdout: JSON.stringify({ ok: true, result: { rateLimits: { codex: { provider: 'codex', status: 'ok', session: { usedPercent: 30 } } } } }) } } }
@@ -51,7 +51,7 @@ test('a chamada publica as medidas juntas depois de concluir a coleta', async ()
   try {
     mkdirSync(join(home, '.claude'))
     writeFileSync(join(home, '.claude', '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: 'falso', expiresAt: 999999999 } }))
-    const conta = { agente: 'claude', config: null, comando: null, vagas: 1, peso: 1, papeis: [], ativo: true, origem: 'manual' as const }
+    const conta = { agente: 'claude', config: null, comando: null, modelo: null, vagas: 1, peso: 1, papeis: [], ativo: true, origem: 'manual' as const }
     const c: Config = { versao: 1, pool: { teto: 0, ramMinGb: 0, escolha: 'ritmo', contas: [{ ...conta, nome: 'a' }, { ...conta, nome: 'b' }] }, fila: { modo: 'banco', vagas: 2, vagasPorProjeto: 1, teto: 3, processos: 8, esperaMaxS: 300 } }
     const p = paths(home)
     const orca = { run: async () => ({ code: 0, stdout: '{}', stderr: '' }) }

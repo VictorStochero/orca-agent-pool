@@ -29,11 +29,13 @@ export type Cota = {
   /** Limites separados (ex.: Fable, grupos do antigravity); vazio quando não há. */
   limites: { nome: string; curta: number | null; longa: number | null }[]
   /** `sem_login` e `erro` pedem ação do usuário; `antiga` = medida com mais de 30 min; `sem_medida` = nada lido. */
-  estado: 'ok' | 'sem_login' | 'erro' | 'antiga' | 'sem_medida'
+  estado: 'ok' | 'sem_login' | 'erro' | 'antiga' | 'sem_medida' | 'nao_configurada'
   /** Comando que resolve (`sem_login`), quando houver. */
   acao?: string | null
   /** Detalhe técnico do medidor quando `estado` é `erro`; o painel monta a frase. */
   erro?: string | null
+  /** Por que a conta está `nao_configurada` (pasta ou CLI ausente), já separado; o painel monta a frase. */
+  motivo?: { tipo: 'pasta_ausente' | 'cli_ausente'; valor: string } | null
 }
 
 export type Ocupante = { dispatch: string | null; desde: string | null }
@@ -55,6 +57,12 @@ export type Conta = {
   config: string | null
   /** Comando personalizado da conta manual. */
   comando: string | null
+  /** Modelo gravado na conta; null = padrão do agente. */
+  modelo: string | null
+  /** Modelo que o pool manda usar (o da conta ou o padrão do agente); null = nenhum. */
+  modelo_efetivo: string | null
+  /** Nome do limite separado que o modelo consome; null = limite geral. */
+  limite_seguido: string | null
   /** false = "Não utilizar": listada e medida, mas fora do trabalho e do teto. */
   ativo: boolean
 }
@@ -94,7 +102,9 @@ export type IdRequisito = 'orca' | 'orchestration' | 'skill' | 'lancador' | 'hoo
 /** Situação de um requisito, em código e dados; o painel monta a frase no idioma. */
 export type DetalheRequisito =
   | { codigo: 'nao_verificado' | 'versao' | 'versao_antiga'; valor: string }
-  | { codigo: 'instalada' | 'instalada_editada' | 'nao_instalada' | 'desatualizada' | 'sem_origem' | 'instalado' | 'nao_instalado' | 'hooks_nenhum' }
+  | { codigo: 'instalada' | 'instalada_editada' | 'nao_instalada' | 'desatualizada' | 'sem_origem' | 'nao_instalado' | 'hooks_nenhum' }
+  /** `valor`: caminho do lançador instalado. */
+  | { codigo: 'instalado'; valor?: string }
   | { codigo: 'hooks'; agentes: { agente: string; situacao: 'instalado' | 'ausente' | 'erro' | 'removido'; erro?: string }[] }
 
 /** `instalar`: o painel mostra o botão e executa por `requisitos.instalar`. */
@@ -107,13 +117,13 @@ export type RequisitoItem = {
 
 export type Requisitos = { ok: boolean; itens: RequisitoItem[] }
 
-/** Estado dos hooks de imposição por agente; `detalhe` traz o erro quando `estado` é `erro`. */
+/** Estado dos hooks por agente; `detalhe` traz o erro quando `estado` é `erro`. */
 export type EstadoHookAgente = { agente: string; estado: 'instalado' | 'ausente' | 'erro'; detalhe?: string }
 
 declare module 'orca' {
   interface PluginRequests {
-    /** Orca ≥ 1.4.246, skill orchestration, skill agent-pool, lançador e hooks; guardado por 60 s. */
-    'requisitos.ler': { output: Requisitos }
+    /** Orca ≥ 1.4.246, skill orchestration, skill agent-pool, lançador e hooks; guardado por 60 s, a menos que `forcar`. */
+    'requisitos.ler': { input: { forcar?: boolean } | undefined; output: Requisitos }
     /** `orchestration`, `skill`, `lancador` ou `hooks`; devolve `requisitos.ler` novo. Outro id: erro `instalacao_recusada`. */
     'requisitos.instalar': { input: { id: 'orchestration' | 'skill' | 'lancador' | 'hooks' }; output: Requisitos }
     /** Estado da máquina lido do núcleo (a cota vem da última medição do ciclo; ler nunca mede). */
@@ -125,7 +135,7 @@ declare module 'orca' {
     'config.gravar': { input: { valores: Record<string, string> }; output: Estado }
     /** Ciclo de atualização enquanto o painel está aberto; resolve ao fechar ou a cada renovação. */
     'auto.assistir': { output: true }
-    /** Imposição: um item por agente com hook (claude, codex). */
+    /** Hooks: um item por agente com hook (claude, codex). */
     'hooks.estado': { output: EstadoHookAgente[] }
     /** Remove só o nosso hook do agente; devolve a lista atualizada. Agente desconhecido: erro `agente_invalido`. */
     'hooks.remover': { input: { agente: string }; output: EstadoHookAgente[] }

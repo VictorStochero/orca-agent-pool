@@ -28,7 +28,7 @@ export const pt = {
     conta_existente: 'conta já existe', conta_inexistente: 'conta inexistente', conta_repetida: 'conta repetida',
     ordem_incompleta: 'ordem incompleta', chave_desconhecida: 'chave desconhecida',
     agente_desconhecido: 'agente desconhecido', variavel_sem_suporte: 'variável sem suporte',
-    agente_nao_provado: 'agente sem imposição comprovada', config_ocupada: 'outra gravação da configuração em andamento'
+    agente_nao_provado: 'agente sem hook comprovado', config_ocupada: 'outra gravação da configuração em andamento'
   } as Record<string, string>,
   errosMedida: { claude_usage_unavailable: 'uso indisponível (/usage não respondeu)' } as Record<string, string>,
   // Códigos que o worker embute em mensagens (hook, orca, skill); `orca_saiu:N` leva o código de saída.
@@ -60,7 +60,13 @@ export const pt = {
     falta: '✗ falta',
     instalar: 'Instalar',
     instalando: 'Instalando…',
-    nomes: { orca: 'Orca', orchestration: 'Skill orchestration', skill: 'Skill agent-pool', lancador: 'Lançador agent-pool', hooks: 'Hooks de imposição' },
+    verificar: 'Verificar agora',
+    verificando: 'Verificando…',
+    naoVerificados: 'Requisitos não verificados.',
+    instalados: 'Requisitos instalados. O painel já está pronto.',
+    respostaInvalida: 'Resposta inesperada do worker ao instalar.',
+    leituraInvalida: 'Não consegui reler os requisitos. Atualize para tentar de novo.',
+    nomes: { orca: 'Orca', orchestration: 'Skill orchestration', skill: 'Skill agent-pool', lancador: 'Lançador agent-pool', hooks: 'Hooks dos agentes' },
     detalhe: {
       nao_verificado: (v: string) => `não verificado: ${v}`,
       versao: (v: string) => `versão ${v}`,
@@ -79,9 +85,9 @@ export const pt = {
   dicaLinha: 'Clique numa linha para ver os detalhes.',
   configuracoes: {
     titulo: 'Configurações',
-    descricao: 'Fila, pool, contas, imposição e painel',
+    descricao: 'Fila, pool, contas, hooks, instalação e painel',
     assuntos: 'Assuntos das configurações',
-    abas: { fila: 'Fila', pool: 'Pool', contas: 'Contas', imposicao: 'Imposição', painel: 'Painel' },
+    abas: { fila: 'Fila', pool: 'Pool', contas: 'Contas', imposicao: 'Hooks', instalacao: 'Instalação', painel: 'Painel' },
     contasAbas: { assuntos: 'Assuntos das contas', configurar: 'Configurar', cadastrar: 'Cadastrar' },
     linhas: {
       fila: 'Como os testes esperam a vez — ~/.agents/agent-pool/config.json',
@@ -158,8 +164,9 @@ export const pt = {
     colSemanal: 'Semanal',
     percentual: (v: number | null, alerta: boolean) => `${alerta ? '⚠ ' : ''}${pct(v)}`,
     janelasValor: (curta: number | null, longa: number | null) => `5h ${pct(curta)} · semana ${pct(longa)}`,
-    limiteValor: (curta: number | null, longa: number | null) => [curta !== null && `5h ${pct(curta)}`, longa !== null && `semana ${pct(longa)}`].filter(Boolean).join(' · ') || '-',
     semLogin: 'sem login',
+    naoConfigurada: 'não configurada nesta máquina',
+    motivosNaoConfigurada: { pasta_ausente: (v: string) => `pasta ${v} não existe`, cli_ausente: (v: string) => `${v} não instalado` },
     erroMedida: (detalhe?: string | null) => (detalhe && pt.errosMedida[detalhe]) || detalhe || 'erro na medição',
     vagasDaConta: (usadas: number, vagas: number) => `${usadas}/${vagas || '∞'}`,
     naoUtilizada: 'não utilizada',
@@ -193,9 +200,12 @@ export const pt = {
     config: 'Diretório de config (CLAUDE_CONFIG_DIR etc.)',
     comandoCli: 'Comando do CLI',
     comandoDaConta: 'Comando do CLI da conta',
+    modelo: 'Modelo',
+    modeloValor: (id: string, limite: string | null) => `${id} · ${limite ?? 'Geral'}`,
     novaConfig: 'Diretório de config',
     dicas: {
       naoUtilizar: 'A conta continua listada e medida, mas não recebe trabalho nem conta no teto. Desmarque para voltar a usar.',
+      modelo: 'Modelo que o pool manda o agente usar (--model). O limite seguido sai do nome: Fable → limite Fable; no Antigravity, argon → Gemini 4 Argon, flash ou gemini → Gemini Models, claude ou gpt → Claude and GPT models. Vazio = padrão do agente (no Antigravity, gemini-3.8-flash-high).',
       novoComando: 'Comando que abre o CLI desta conta, por exemplo claude-work ou CLAUDE_CONFIG_DIR=~/.claude-work claude. Informe o comando, o diretório de config ou os dois.',
       novoConfig: 'Pasta de configuração do CLI, por exemplo ~/.claude-work. Informe o diretório de config, o comando ou os dois.',
       vagas: 'Quantos agentes desta conta podem trabalhar ao mesmo tempo. 0 = sem limite próprio (o teto da máquina continua valendo).',
@@ -232,12 +242,12 @@ export const pt = {
     novaCriar: 'Adicionar conta'
   },
   imposicao: {
-    titulo: 'Imposição',
-    descricao: 'Hooks orientam os agentes a usar a fila de testes.',
+    titulo: 'Hooks',
+    descricao: 'Os hooks fazem os agentes usar a fila de testes.',
     estados: { instalado: 'Instalado', ausente: 'Ausente', erro: 'Erro' },
-    remover: 'Remover imposição',
+    remover: 'Remover hook',
     reinstalar: 'Reinstalar',
-    indisponivel: 'Não foi possível ler a imposição.'
+    indisponivel: 'Não foi possível ler os hooks.'
   }
 }
 
@@ -255,7 +265,7 @@ export const en: typeof pt = {
     conta_existente: 'account already exists', conta_inexistente: 'account does not exist', conta_repetida: 'duplicate account',
     ordem_incompleta: 'incomplete order', chave_desconhecida: 'unknown key',
     agente_desconhecido: 'unknown agent', variavel_sem_suporte: 'unsupported variable',
-    agente_nao_provado: 'agent without proven enforcement', config_ocupada: 'another configuration write is in progress'
+    agente_nao_provado: 'agent without a proven hook', config_ocupada: 'another configuration write is in progress'
   },
   errosMedida: { claude_usage_unavailable: 'usage unavailable (/usage did not respond)' },
   codigosTexto: {
@@ -275,8 +285,11 @@ export const en: typeof pt = {
   requisitos: {
     titulo: 'Requirements', explica: 'Install all requirements below to use the panel.', tabela: 'Panel requirements',
     colRequisito: 'Requirement', colSituacao: 'Status', ok: '✓ ready', falta: '✗ missing',
-    instalar: 'Install', instalando: 'Installing…',
-    nomes: { orca: 'Orca', orchestration: 'Orchestration skill', skill: 'agent-pool skill', lancador: 'agent-pool launcher', hooks: 'Enforcement hooks' },
+    instalar: 'Install', instalando: 'Installing…', verificar: 'Check now', verificando: 'Checking…', naoVerificados: 'Requirements not checked.',
+    instalados: 'Requirements installed. The panel is ready.',
+    respostaInvalida: 'Unexpected worker response while installing.',
+    leituraInvalida: 'Could not read the requirements again. Refresh to retry.',
+    nomes: { orca: 'Orca', orchestration: 'Orchestration skill', skill: 'agent-pool skill', lancador: 'agent-pool launcher', hooks: 'Agent hooks' },
     detalhe: {
       nao_verificado: (v) => `not verified: ${v}`, versao: (v) => `version ${v}`, versao_antiga: (v) => `version ${v}; update Orca`,
       instalada: 'installed', instalada_editada: 'installed (edited by you)', nao_instalada: 'not installed', desatualizada: 'outdated',
@@ -286,8 +299,8 @@ export const en: typeof pt = {
   },
   dicaLinha: 'Click a row to see details.',
   configuracoes: {
-    titulo: 'Settings', descricao: 'Queue, pool, accounts, enforcement and panel', assuntos: 'Settings sections',
-    abas: { fila: 'Queue', pool: 'Pool', contas: 'Accounts', imposicao: 'Enforcement', painel: 'Panel' },
+    titulo: 'Settings', descricao: 'Queue, pool, accounts, hooks, installation and panel', assuntos: 'Settings sections',
+    abas: { fila: 'Queue', pool: 'Pool', contas: 'Accounts', imposicao: 'Hooks', instalacao: 'Installation', painel: 'Panel' },
     contasAbas: { assuntos: 'Account sections', configurar: 'Configure', cadastrar: 'Add' },
     linhas: {
       fila: 'How tests wait for a slot — ~/.agents/agent-pool/config.json',
@@ -327,7 +340,10 @@ export const en: typeof pt = {
     colConta: 'Account', colVagas: 'Slots', colSessoes: 'Sessions', col5h: '5h', colSemanal: 'Weekly',
     percentual: (v, alerta) => `${alerta ? '⚠ ' : ''}${pct(v)}`,
     janelasValor: (curta, longa) => `5h ${pct(curta)} · week ${pct(longa)}`,
-    limiteValor: (curta, longa) => [curta !== null && `5h ${pct(curta)}`, longa !== null && `week ${pct(longa)}`].filter(Boolean).join(' · ') || '-', semLogin: 'not signed in', erroMedida: (detalhe) => (detalhe && en.errosMedida[detalhe]) || detalhe || 'measurement failed',
+    semLogin: 'not signed in',
+    naoConfigurada: 'not set up on this machine',
+    motivosNaoConfigurada: { pasta_ausente: (v) => `folder ${v} does not exist`, cli_ausente: (v) => `${v} not installed` },
+    erroMedida: (detalhe) => (detalhe && en.errosMedida[detalhe]) || detalhe || 'measurement failed',
     vagasDaConta: (usadas, vagas) => `${usadas}/${vagas || '∞'}`,
     naoUtilizada: 'not used', situacao: 'Status', naoUtilizadaDetalhe: 'Not used: still listed and measured, but receives no work and does not count towards the cap.',
     agente: 'Agent', peso: 'Weight', pesoDaConta: 'Account weight', papeis: 'Roles', janelas: 'Resets', semMedida: 'no measurement',
@@ -337,9 +353,10 @@ export const en: typeof pt = {
     teto: 'Machine cap (0 = unlimited)', ramMin: 'Minimum free RAM (GB)', escolha: 'Writer selection', rotulo: 'Orca account',
     naoUtilizar: 'Do not use', remover: 'Remove from pool',
     confirmarRemocao: (nome) => `Remove ${nome} from the configuration?`, confirmar: 'Confirm removal', cancelar: 'Cancel',
-    config: 'Config directory (CLAUDE_CONFIG_DIR etc.)', comandoCli: 'CLI command', comandoDaConta: 'Account CLI command', novaConfig: 'Config directory',
+    config: 'Config directory (CLAUDE_CONFIG_DIR etc.)', comandoCli: 'CLI command', comandoDaConta: 'Account CLI command', modelo: 'Model', modeloValor: (id, limite) => `${id} · ${limite ?? 'General'}`, novaConfig: 'Config directory',
     dicas: {
       naoUtilizar: 'The account stays listed and measured, but receives no work and does not count towards the cap. Uncheck to use it again.',
+      modelo: 'Model the pool tells the agent to use (--model). The followed limit comes from the name: Fable → Fable limit; on Antigravity, argon → Gemini 4 Argon, flash or gemini → Gemini Models, claude or gpt → Claude and GPT models. Empty = the agent default (on Antigravity, gemini-3.8-flash-high).',
       novoComando: 'Command to open this account, for example claude-work or CLAUDE_CONFIG_DIR=~/.claude-work claude. Provide a command, a config directory, or both.',
       novoConfig: 'CLI configuration folder, for example ~/.claude-work. Provide a config directory, a command, or both.',
       vagas: 'Concurrent agents for this account. 0 = no account limit (the machine cap still applies).',
@@ -361,9 +378,9 @@ export const en: typeof pt = {
     subir: 'Move up', descer: 'Move down', nova: 'New manual account', novaNome: 'Name', novaCriar: 'Add account'
   },
   imposicao: {
-    titulo: 'Enforcement', descricao: 'Hooks guide agents to use the test queue.',
-    estados: { instalado: 'Installed', ausente: 'Not installed', erro: 'Error' }, remover: 'Remove enforcement', reinstalar: 'Reinstall',
-    indisponivel: 'Could not read enforcement status.'
+    titulo: 'Hooks', descricao: 'Hooks make agents use the test queue.',
+    estados: { instalado: 'Installed', ausente: 'Not installed', erro: 'Error' }, remover: 'Remove hook', reinstalar: 'Reinstall',
+    indisponivel: 'Could not read the hooks.'
   }
 }
 

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -12,6 +12,7 @@ test('conta Claude deslogada: medidor -> cache sem_login com acao -> estado com 
   const home = mkdtempSync(join(tmpdir(), 'sem-login-'))
   try {
     const p = paths(home)
+    mkdirSync(join(home, '.claude-work'))
     const c = cfg([conta('work', { config: '~/.claude-work' })])
     const orca = { run: async () => ({ code: 1, stdout: '', stderr: '' }) }
     const d = { home, agora: 1_700_000_000_000, executarUsage: async () => 'Not logged in', fetch: (async () => { throw new Error('não deveria medir sem credencial') }) as typeof fetch }

@@ -4,13 +4,14 @@ import { escolherSegunda, rankearEscritores } from '../../core/pool/escolha.ts'
 import { ramLivreGb } from '../../core/pool/memoria.ts'
 import { pegar } from '../../core/pool/vagas.ts'
 import { medirTodas } from '../../core/medidas/cache.ts'
+import { caminhoDeBusca } from '../../core/orca.ts'
 import { caminhos, comJson, donoValido, emitir, SemVaga, Uso, type Ctx } from '../ctx.ts'
 import { textoEscolha, textosPara } from '../textos.ts'
 
 const FAMILIAS = [...new Set(CATALOGO.map((a) => a.familia))].filter((f) => f !== 'outro') as string[]
 
-const medidas = (ctx: Ctx, c: ReturnType<typeof carregar>) =>
-  medirTodas(c, caminhos(ctx), ctx.orca, { home: ctx.home, fetch: ctx.fetch, agora: ctx.agora() })
+const medidas = async (ctx: Ctx, c: ReturnType<typeof carregar>) =>
+  medirTodas(c, caminhos(ctx), ctx.orca, { home: ctx.home, fetch: ctx.fetch, agora: ctx.agora(), path: await caminhoDeBusca(ctx.env) })
 
 function valorDe(args: string[], flag: string): string | undefined {
   const i = args.indexOf(flag)

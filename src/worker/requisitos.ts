@@ -11,6 +11,8 @@ export type DepsRequisitos = {
   orca: (args: string[]) => Promise<string>
   skill: () => { estado: 'ok' | 'ausente' | 'desatualizada' | 'editada' | 'sem_origem' }
   lancador: () => boolean
+  /** Caminho do lançador mostrado no detalhe quando instalado. */
+  caminhoLancador?: string
   /** Hooks dos agentes que os suportam; `removido` = o usuário tirou de propósito (não trava a tela). */
   hooks: () => { agente: string; estado: 'instalado' | 'ausente' | 'erro'; detalhe?: string; removido?: boolean }[]
   /** Instala o item; rejeita se não conseguir. */
@@ -82,7 +84,7 @@ export function criarRequisitos(deps: DepsRequisitos) {
     })
 
     const lancadorOk = deps.lancador()
-    itens.push({ id: 'lancador', ok: lancadorOk, detalhe: { codigo: lancadorOk ? 'instalado' : 'nao_instalado' }, ...(!lancadorOk && { instalar: true as const }) })
+    itens.push({ id: 'lancador', ok: lancadorOk, detalhe: lancadorOk ? { codigo: 'instalado', ...(deps.caminhoLancador && { valor: deps.caminhoLancador }) } : { codigo: 'nao_instalado' }, ...(!lancadorOk && { instalar: true as const }) })
 
     const hooks = deps.hooks()
     const faltam = hooks.filter((h) => h.estado !== 'instalado' && !h.removido)
@@ -133,6 +135,12 @@ export function criarRequisitos(deps: DepsRequisitos) {
       } finally {
         guardado = undefined
       }
+      return ler()
+    },
+    /** Releitura na hora: espera a coleta em voo (começada antes do pedido) e coleta de novo. */
+    async reler(): Promise<Requisitos> {
+      await emVoo?.catch(() => undefined)
+      guardado = undefined
       return ler()
     },
     /** Descarta o que está guardado (hooks ou lançador mudaram por outro caminho). */

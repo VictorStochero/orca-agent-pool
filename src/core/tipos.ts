@@ -6,6 +6,8 @@ export type Conta = {
   agente: string
   config: string | null
   comando: string | null
+  /** `--model` que o pool manda usar; null = padrão do agente. */
+  modelo: string | null
   vagas: number
   peso: number
   papeis: Papel[]
@@ -35,7 +37,8 @@ export type Medida = {
   curta: number | null
   longa: number | null
   resetLongaTs: number | null
-  estado: 'ok' | 'sem_login' | 'erro' | 'sem_medida'
+  /** `nao_configurada`: pasta da conta ou CLI ausente nesta máquina; `erro` traz `pasta_ausente:<caminho>` ou `cli_ausente:<executável>`. */
+  estado: 'ok' | 'sem_login' | 'erro' | 'sem_medida' | 'nao_configurada'
   /** Limites separados da conta (ex.: Fable, grupos do antigravity); ausente quando não há. */
   limites?: Limite[]
   acao?: string

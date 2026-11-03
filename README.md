@@ -15,9 +15,9 @@ An [Orca](https://github.com/stablyai/orca) plugin that lets many coding agents 
 - [CLI](#cli) · [Troubleshooting](#troubleshooting) · [Uninstall](#uninstall) · [Development](#development) · [Changelog](#changelog)
 
 ## Features
-- **Agent pool**: your agent accounts (Claude Code, Codex, OpenCode, Antigravity, …) with **slots**, **weight** and **roles**. The writer for each task is the account with the most quota left × its weight, or the first one in your order. Accounts Orca already knows join automatically; extra CLIs, such as a second Claude login in its own `CLAUDE_CONFIG_DIR`, are added by hand.
+- **Agent pool**: your agent accounts (Claude Code, Codex, OpenCode, Antigravity, …) with **slots**, **weight** and **roles**. The writer for each task is the account with the most quota left × its weight, or the first one in your order. Quota follows the separate limit of the model the account uses (for example Fable, or Antigravity's Gemini groups), and `writer`/`second` print the model to pass as `--model`. Accounts Orca already knows join automatically; extra CLIs, such as a second Claude login in its own `CLAUDE_CONFIG_DIR`, are added by hand.
 - **Test queue**: every test run waits for its turn, per machine and per shared resource, for Laravel (artisan/Pest), Python (pytest), JavaScript/TypeScript (vitest, jest, npm/pnpm/yarn/bun), Go, Rust, .NET and RSpec.
-- **Enforcement**: an optional hook for Claude Code and Codex that turns away a bare test command and tells the agent the queued form, so the rules hold even when an agent forgets them.
+- **Hooks**: an optional hook for Claude Code and Codex that turns away a bare test command and tells the agent the queued form, so the rules hold even when an agent forgets them.
 - **Panel**: tests waiting and running, the pool with quotas, alerts (for example an account that must log in again) and every setting, in English or Portuguese following Orca's language.
 - Works with Orca's native orchestration (`orca orchestration worker-start`, `send`, `worker_done`).
 
@@ -27,13 +27,13 @@ An [Orca](https://github.com/stablyai/orca) plugin that lets many coding agents 
 
 ## Install
 1. In Orca, open **Settings → Plugins** and install **Agent Pool & Test Queue** from the catalog.
-   Not listed yet? Choose **Add plugin → From a Git URL…** and paste `https://github.com/VictorStochero/orca-agent-pool#v1.0.6`.
+   Not listed yet? Choose **Add plugin → From a Git URL…** and paste `https://github.com/VictorStochero/orca-agent-pool#v1.0.7`.
 2. Approve the access it asks for (a trusted worker and its own storage).
 3. Open the **Agent Pool** panel. On first activation the plugin:
    1. creates `~/.agents/agent-pool/` (`config.json` and `state/`);
    2. writes the launcher `~/.agents/bin/agent-pool` (plus `agent-pool.cmd` on Windows);
    3. installs the `agent-pool` skill into `~/.agents/skills/agent-pool` and links it into each detected agent's skills folder (a copy you edited is never overwritten);
-   4. installs the enforcement hooks (see [below](#what-it-changes-on-your-machine)).
+   4. installs the agent hooks (see [below](#what-it-changes-on-your-machine)).
 
 The panel stays on a **Requirements** screen until all of this is in place, including Orca's own `orchestration` skill, which it can install for you. Agents always call the launcher by its full path; add `~/.agents/bin` to your `PATH` if you want the short name `agent-pool` in your own terminal.
 
@@ -56,16 +56,16 @@ orca orchestration worker-start ...
 ~/.agents/bin/agent-pool slot release <dispatch-id>
 ```
 
-A reservation that is never swapped expires after 10 minutes, and a slot whose dispatch Orca reports as finished is freed on the next read. With enforcement on, a bare `php artisan test` is refused with the exact command to run instead.
+A reservation that is never swapped expires after 10 minutes, and a slot whose dispatch Orca reports as finished is freed on the next read. With the hooks installed, a bare `php artisan test` is refused with the exact command to run instead.
 
 ## The panel
-| Settings · Accounts | Settings · Enforcement |
+| Settings · Accounts | Settings · Hooks |
 |---|---|
-| ![Accounts settings](assets/settings-accounts.png) | ![Enforcement settings](assets/settings-enforcement.png) |
+| ![Accounts settings](assets/settings-accounts.png) | ![Hooks settings](assets/settings-enforcement.png) |
 
 - **Tests in the queue**: what is running and waiting, per queue, with the process and how long it has waited.
 - **Agent pool**: slots in use per account (`2/∞` for an account without its own limit), open Claude sessions per account (including the ones you open yourself; display only, they don't take slots), 5-hour and weekly quota, and the details of each account on click.
-- **Settings**: tabs for the queue, the pool, the accounts (**Configure** an account or **Add** a custom one), **Enforcement** (install, reinstall or remove the hook per agent) and the panel itself.
+- **Settings**: tabs for the queue, the pool, the accounts (**Configure** an account or **Add** a custom one), **Hooks** (install, reinstall or remove the hook per agent), **Installation** (the requirements table with each item's detail, always visible, plus **Check now** to read them again on demand) and the panel itself.
 
 ## The test queue
 Run tests with `agent-pool test` (detects the runner) or `agent-pool test -- <command>`.
@@ -109,6 +109,7 @@ Everything is editable in the panel; the same keys work with `agent-pool config 
 | `conta.<name>.papeis` | `escritor`, `revisor`, `verificador`, `mecanico`, `segunda-opiniao`, `orquestra` | roles (writer, reviewer, verifier, mechanical, second opinion, coordinator) |
 | `conta.<name>.ativo` | `sim` · `nao` | `nao` keeps the account listed and measured but gives it no new work |
 | `conta.<name>.config` / `.comando` | a config folder (e.g. `~/.claude-work`) / a command | how the account's CLI is opened |
+| `conta.<name>.modelo` | a model id (e.g. `gemini-3.8-flash-high`), empty = the agent default | the `--model` the pool tells the coordinator to use; the account's quota follows the separate limit of that model (Fable on Claude; Gemini 4 Argon, Gemini Models or Claude and GPT models on Antigravity, which defaults to Flash) |
 | `conta.<name>.adicionar` / `.remover` | agent id or `auto` / `1` | add a custom account / remove one |
 
 ## What it changes on your machine
@@ -119,8 +120,8 @@ The plugin runs as a **trusted worker** (Node.js with your user's access) and us
 | `~/.agents/agent-pool/` | configuration, locks, waiting list, quota cache, backups | delete the folder |
 | `~/.agents/bin/agent-pool[.cmd]` | the launcher | delete the file |
 | `~/.agents/skills/agent-pool` + links | the skill | delete the folder and links |
-| Claude Code `settings.json` (`hooks.PreToolUse`, matcher `Bash\|PowerShell`) in `~/.claude` and in the config folder of each Claude account of the pool | one hook that sends test commands through the queue | Settings → Enforcement → Remove |
-| Codex `~/.codex/hooks.json` + hook trust in `~/.codex/config.toml` | the same hook for Codex | Settings → Enforcement → Remove |
+| Claude Code `settings.json` (`hooks.PreToolUse`, matcher `Bash\|PowerShell`) in `~/.claude` and in the config folder of each Claude account of the pool | one hook that sends test commands through the queue | Settings → Hooks → Remove |
+| Codex `~/.codex/hooks.json` + hook trust in `~/.codex/config.toml` | the same hook for Codex | Settings → Hooks → Remove |
 
 Before the first write to an agent's config file the original is backed up to `~/.agents/agent-pool/state/backup/`. Our hook is recognized by its command (the launcher path followed by `hook claude` or `hook codex`); removing it leaves the rest of the file as it was. Files that are symbolic links stay links: the plugin writes to the link's target.
 
@@ -142,7 +143,7 @@ agent-pool status [--json]                    queue and pool at a glance
 agent-pool config get | set key=value …       read or change the configuration
 agent-pool measure [account]                  measure quotas now
 agent-pool doctor                             check config, Orca, launcher, skill and hooks
-agent-pool hook <claude|codex>                the enforcement hook (called by the agents)
+agent-pool hook <claude|codex>                the agent hook (called by the agents)
 ```
 Exit codes: `0` ok, `2` invalid usage, `75` no slot or the wait ran out (try again).
 
@@ -153,12 +154,13 @@ Exit codes: `0` ok, `2` invalid usage, `75` no slot or the wait ran out (try aga
 | An agent says `agent-pool: command not found` | agents must call `~/.agents/bin/agent-pool` by its full path (the skill and the hook already do) |
 | `exit 75` / "queue busy" | another test holds the slot of that resource, or the pool is full: wait and run again |
 | An account shows **needs login** | log in with that account's CLI (the panel shows the command) |
+| An account shows **not set up on this machine** | its CLI is not installed (e.g. `codex` not in the PATH) or its own folder (e.g. `~/.claude-team`) does not exist. It raises no alert and is left out of the writer and second-opinion choice; it comes back by itself once the CLI or the folder appears. Remove it in **Settings → Accounts** if you will not use it |
 | The panel is stuck on **Requirements** | install what it lists (it can install the skill and the hooks for you) |
 | A test was refused by the hook | run the command the hook printed: `"…/agent-pool" test -- <your command>` |
 | A test is shown as **stopped** | its process ended without freeing the slot; the next test that needs that slot takes it back |
 
 ## Uninstall
-1. In the panel: **Settings → Enforcement → Remove** for each agent (this takes our hook out of the agents' config files).
+1. In the panel: **Settings → Hooks → Remove** for each agent (this takes our hook out of the agents' config files).
 2. In Orca: remove **Agent Pool & Test Queue** in **Settings → Plugins**.
 3. Optionally delete `~/.agents/agent-pool/`, `~/.agents/bin/agent-pool*` and `~/.agents/skills/agent-pool` (plus its links in the agents' `skills` folders).
 
@@ -172,10 +174,11 @@ npm run check          # orca plugin check against a throwaway home
 orca plugin dev load . # load this folder into Orca (the real install)
 ```
 - Never run `orca plugin check` bare: it starts the real worker, which writes the hooks, launcher and skill into your real home. `npm run check` runs it against a temporary home.
-- `orca plugin dev load` and `dev watch` are a real install: the launcher points at this folder. Before deleting the folder, use **Remove** in Settings → Enforcement (or install the plugin from the catalog), or the agents' hook will call a launcher that no longer exists.
+- `orca plugin dev load` and `dev watch` are a real install: the launcher points at this folder. Before deleting the folder, use **Remove** in Settings → Hooks (or install the plugin from the catalog), or the agents' hook will call a launcher that no longer exists.
 - Tests isolate `HOME` and `USERPROFILE`, and a guard fails the suite if it touches your real home.
 
 ## Changelog
+- **1.0.7**: an optional **Model** per account, passed as `--model` by `writer` and `second`; the pool follows the separate limit of that model (Fable; Antigravity's Gemini Models, Claude and GPT models or Gemini 4 Argon), and Antigravity defaults to Gemini 3.8 Flash so a second opinion no longer burns the Argon limit; account details are readable in a narrow panel; an account whose CLI or own folder does not exist on the machine shows as "not set up on this machine" instead of raising a login alert; the requirements screen stays (with the error) when an install fails, and a notice confirms when everything is installed; the Enforcement settings are now called Hooks; a new Installation tab in Settings lists the requirements and checks them again on demand.
 - **1.0.6**: a test whose `agent-pool test` was killed (for example by an Orca update on Windows) keeps its slot and shows as running while the test itself still runs; the pool shows open Claude sessions per account and their total; tables fit a narrow panel without horizontal scrolling; a long cell no longer hides the whole table; the queue mode radio selects one option; the Queue column shows each test's real queue; waiting tests pick up new slot and cap settings; the queue no longer fails with `ENOTEMPTY` when Windows holds a file in a lock folder.
 - **1.0.5**: an account's details list its separate limits: per-model weekly limits of Claude accounts (such as Fable) and the quota groups Orca reports for an agent (such as Antigravity's Gemini, Claude/GPT and Gemini 4 Argon).
 - **1.0.4**: the panel no longer shows a false "Orca unavailable" and empty quotas when Orca restarts the idle worker (it shows the recorded quotas and "checking" until the first collection); a Claude account with an expired token is no longer reported as "usage unavailable" when `claude /usage` is slow (45 s timeout, then the usage endpoint with the renewed token).
@@ -191,8 +194,8 @@ orca plugin dev load . # load this folder into Orca (the real install)
 
 ## Português
 
-Plugin do Orca que deixa vários agentes de código dividirem uma máquina com segurança: **pool de agentes** (contas com vagas, peso e papéis; o escritor de cada tarefa é a conta com mais cota sobrando × peso, ou a primeira da sua ordem), **fila de testes** para qualquer linguagem (por máquina e por recurso disputado, como o mesmo banco de testes), **imposição** opcional por hook no Claude Code e no Codex, e um **painel** no Orca, em português ou inglês conforme o idioma do Orca, com tudo configurável.
+Plugin do Orca que deixa vários agentes de código dividirem uma máquina com segurança: **pool de agentes** (contas com vagas, peso e papéis; o escritor de cada tarefa é a conta com mais cota sobrando × peso, ou a primeira da sua ordem), **fila de testes** para qualquer linguagem (por máquina e por recurso disputado, como o mesmo banco de testes), **hooks** opcionais no Claude Code e no Codex, e um **painel** no Orca, em português ou inglês conforme o idioma do Orca, com tudo configurável.
 
-**Instalação:** pelo catálogo de plugins do Orca (Configurações → Plugins) ou por **Add plugin → From a Git URL…** com `https://github.com/VictorStochero/orca-agent-pool#v1.0.6`; aprove o acesso e abra o painel **Agent Pool**. O plugin grava só em `~/.agents/` (configuração, lançador `~/.agents/bin/agent-pool` e a skill) e instala o hook de imposição no Claude Code e no Codex, com backup antes e remoção em Configurações → Imposição.
+**Instalação:** pelo catálogo de plugins do Orca (Configurações → Plugins) ou por **Add plugin → From a Git URL…** com `https://github.com/VictorStochero/orca-agent-pool#v1.0.7`; aprove o acesso e abra o painel **Agent Pool**. O plugin grava só em `~/.agents/` (configuração, lançador `~/.agents/bin/agent-pool` e a skill) e instala o hook no Claude Code e no Codex, com backup antes e remoção em Configurações → Hooks.
 
 **Uso pelos agentes:** `~/.agents/bin/agent-pool writer --reserve <tag>` antes do `worker-start`, `slot swap` para o dispatch real, `agent-pool test -- <comando>` para todo teste e `slot release` no fim. Contas Claude personalizadas são medidas com a credencial da própria conta, enviada só à API da Anthropic e nunca gravada ou exibida. Problemas: `~/.agents/bin/agent-pool doctor`. Os detalhes de modos da fila, executores, configuração e comandos estão nas seções em inglês acima.

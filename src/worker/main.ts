@@ -9,7 +9,7 @@ import { detectar, sincronizarDetectadas } from '../core/deteccao.ts'
 import { medidasGravadas, medirTodas } from '../core/medidas/cache.ts'
 import { versao } from '../core/index.ts'
 import { importarLegado } from '../core/legado.ts'
-import { criarOrcaCli } from '../core/orca.ts'
+import { caminhoDeBusca, criarOrcaCli } from '../core/orca.ts'
 import { paths } from '../core/paths.ts'
 import { ramLivreGb } from '../core/pool/memoria.ts'
 import { encerradoNoOrca, recuperar } from '../core/pool/vagas.ts'
@@ -142,6 +142,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     },
     skill: () => ({ estado: estadoSkill(join(RAIZ_PLUGIN, 'skill', 'agent-pool'), home, versao) }),
     lancador: () => existsSync(lancador),
+    caminhoLancador: `~${lancador.slice(home.length)}`, // o lançador fica sempre em <casa>/.agents/bin
     hooks: () => {
       let c: Config
       try {
@@ -162,9 +163,9 @@ export default function activate(orca: OrcaWorkerApi): void {
       else await instalarPendentes()
     }
   })
-  const lerRequisitos = async () => {
+  const lerRequisitos = async (forcar = false) => {
     marcadosRemovidos = await removidos()
-    return requisitos.ler()
+    return forcar ? requisitos.reler() : requisitos.ler()
   }
 
   // --- ciclo: detecção, medição e recuperação de vagas (único lugar que mede) ---
@@ -175,11 +176,12 @@ export default function activate(orca: OrcaWorkerApi): void {
     } catch {
       return // config ilegível: não mede nem sobrescreve
     }
-    const detectadas = await detectar(cli, process.env.PATH ?? process.env.Path ?? '')
+    const path = await caminhoDeBusca()
+    const detectadas = await detectar(cli, path)
     // Relê sob a trava: uma gravação do painel durante a detecção não é desfeita.
     let novo = sincronizarDetectadas(c, detectadas)
     if (JSON.stringify(novo) !== JSON.stringify(c)) novo = atualizarConfig(p, (atual) => sincronizarDetectadas(atual, detectadas), () => importarLegado(home))
-    const medidas = await medirTodas(novo, p, cli, { home, fetch, agora: Date.now() })
+    const medidas = await medirTodas(novo, p, cli, { home, fetch, agora: Date.now(), path })
     await recuperar(p, novo, encerradoNoOrca(cli))
     const ramGb = await ramLivreGb(cli)
     const v = await cli.run(['--version'])
@@ -207,8 +209,13 @@ export default function activate(orca: OrcaWorkerApi): void {
     }
     return estado()
   })
-  orca.panels.handle('requisitos.ler', () => lerRequisitos())
-  orca.panels.handle('requisitos.instalar', ({ id }) => requisitos.instalar(id))
+  orca.panels.handle('requisitos.ler', (entrada) => lerRequisitos(entrada?.forcar === true))
+  orca.panels.handle('requisitos.instalar', ({ id }) =>
+    requisitos.instalar(id).catch((e) => {
+      orca.log(`requisitos.instalar ${String(id)}: ${mensagem(e)}`)
+      throw e
+    })
+  )
   orca.panels.handle('auto.assistir', (_entrada, { signal }) => vigia!.vigiar(signal))
 
   const agenteHook = (agente: unknown): AgenteHook => {

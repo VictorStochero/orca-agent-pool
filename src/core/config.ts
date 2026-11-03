@@ -24,6 +24,8 @@ export const PADRAO: Config = {
 
 const PAPEIS: readonly Papel[] = ['orquestra', 'revisor', 'verificador', 'escritor', 'segunda-opiniao', 'mecanico']
 const NOME = /^[a-z0-9_-]{1,32}$/
+// Começa com letra ou número: o valor vai como `--model <id>` e não pode virar outra opção (ex.: `--help`).
+const MODELO = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$/
 const FILA_INT: Record<string, [keyof Config['fila'], number, number]> = {
   'fila.vagas': ['vagas', 1, 99],
   'fila.vagas_projeto': ['vagasPorProjeto', 1, 99],
@@ -63,6 +65,7 @@ export function validar(c: Config): ErroValidacao[] {
     else if (agente && !agente.provado && x.papeis.some((p) => PAPEIS_TRABALHO.includes(p))) ruim(`${k}.papeis`, 'agente_nao_provado')
     if (typeof x.ativo !== 'boolean') ruim(`${k}.ativo`)
     for (const campo of ['config', 'comando'] as const) if (x[campo] != null && typeof x[campo] !== 'string') ruim(`${k}.${campo}`)
+    if (x.modelo !== null && !(typeof x.modelo === 'string' && MODELO.test(x.modelo))) ruim(`${k}.modelo`)
     if (x.origem !== 'orca' && x.origem !== 'manual') ruim(`${k}.origem`)
   }
   return e
@@ -85,9 +88,11 @@ export function carregar(p: Paths): Config {
   if (cru === null || typeof cru !== 'object' || Array.isArray(cru)) recusa('config', 'config_invalida')
   if (cru.versao !== 1) recusa('versao', typeof cru.versao === 'number' ? 'versao_nao_suportada' : 'config_invalida')
   if (!cru.pool || typeof cru.pool !== 'object' || !Array.isArray(cru.pool.contas) || !cru.fila || typeof cru.fila !== 'object') recusa('config', 'config_invalida')
+  // Config anterior ao campo `modelo`: ausente vira null.
+  const contas = cru.pool.contas.map((x: any) => (x && typeof x === 'object' && !('modelo' in x) ? { ...x, modelo: null } : x))
   const c: Config = {
     versao: 1,
-    pool: { ...PADRAO.pool, ...cru.pool },
+    pool: { ...PADRAO.pool, ...cru.pool, contas },
     fila: { ...PADRAO.fila, ...cru.fila }
   }
   const erros = validar(c)
@@ -121,7 +126,7 @@ function aplicarContaNova(n: Config, nome: string, valor: string, m: Record<stri
   }
   if (!agente) recusa(chave, 'agente_desconhecido')
   n.pool.contas.push({
-    nome, agente: agente!.id, config, comando, vagas: 1, peso: 1,
+    nome, agente: agente!.id, config, comando, modelo: null, vagas: 1, peso: 1,
     papeis: [...agente!.papeisPadrao], ativo: true, origem: 'manual'
   })
 }
@@ -145,6 +150,9 @@ function aplicarCampo(x: Conta, campo: string, v: string, chave: string): void {
   } else if (campo === 'comando') {
     if (v !== '' && !/^[~A-Za-z0-9_./:\\@+= -]+$/.test(v)) recusa(chave, 'valor_invalido')
     x.comando = v || null
+  } else if (campo === 'modelo') {
+    if (v !== '' && !MODELO.test(v)) recusa(chave, 'valor_invalido')
+    x.modelo = v || null
   }
 }
 
@@ -179,7 +187,7 @@ export function aplicar(c: Config, mudancas: Record<string, string>): Config {
     } else if (chave === 'pool.ordem') {
       ordem = lista(v)
     } else {
-      const k = /^conta\.([a-z0-9_-]{1,32})\.(vagas|peso|papeis|config|comando|ativo|adicionar|remover)$/.exec(chave)
+      const k = /^conta\.([a-z0-9_-]{1,32})\.(vagas|peso|papeis|config|comando|modelo|ativo|adicionar|remover)$/.exec(chave)
       if (!k) recusa(chave, 'chave_desconhecida')
       const [, nome, campo] = k!
       if (campo === 'adicionar') adicionar.push([nome, v])

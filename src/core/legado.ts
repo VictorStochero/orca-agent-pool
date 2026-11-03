@@ -23,6 +23,7 @@ function contaDe(nome: string, resto: string): Conta {
     agente,
     config: kv.config || null,
     comando: kv.comando || null,
+    modelo: null,
     vagas: kv.vagas !== undefined ? Number(kv.vagas) : 1,
     peso: kv.peso !== undefined ? Number(kv.peso) : 1,
     papeis: (kv.papeis !== undefined ? (kv.papeis ? kv.papeis.split(',') : []) : (acharAgente(agente)?.papeisPadrao ?? [])) as Papel[],

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { criarOrcaCli, resolverOrca } from '../src/core/orca.ts'
+import { caminhoDeBusca, criarOrcaCli, resolverOrca } from '../src/core/orca.ts'
 
 test('criarOrcaCli completa APPDATA e usa o orca.exe ao lado do execPath', () => {
   const raiz = mkdtempSync(join(tmpdir(), 'ap-orca-'))
@@ -42,4 +42,10 @@ test('run devolve código, stdout e stderr sem lançar', async () => {
   assert.equal(lento.code, 124)
   const ausente = await criarOrcaCli({ ORCA_CMD: 'nao-existe-orca-xyz' }, 'linux', '/x').run([])
   assert.equal(ausente.code, 127)
+})
+
+test('caminhoDeBusca: PATH do processo (qualquer caixa) e, no Windows, mais o do sistema', async () => {
+  assert.equal(await caminhoDeBusca({ Path: '/a:/b' }, 'linux', async () => 'nunca'), '/a:/b')
+  assert.equal(await caminhoDeBusca({ PATH: String.raw`C:\a` }, 'win32', async () => String.raw`C:\npm;C:\b`), String.raw`C:\a;C:\npm;C:\b`)
+  assert.equal(await caminhoDeBusca({}, 'win32', async () => ''), '')
 })
