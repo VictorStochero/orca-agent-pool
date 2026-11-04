@@ -7,8 +7,8 @@ import { rodarNaFila, type EventoFila } from '../src/core/fila/rodar.ts'
 import { limitarProcessos, processosDoComando } from '../src/core/fila/processos.ts'
 import { tmp } from './fila-util.ts'
 
-const lim = (cmd: string, teto = 4) => limitarProcessos(cmd.split(' '), teto)
-const texto = (cmd: string, teto = 4) => lim(cmd, teto).comando.join(' ')
+const lim = (cmd: string, teto = 4, nucleos = 16) => limitarProcessos(cmd.split(' '), teto, nucleos)
+const texto = (cmd: string, teto = 4, nucleos = 16) => lim(cmd, teto, nucleos).comando.join(' ')
 
 describe('Laravel / Pest / ParaTest', () => {
   it('--processes=N e --processes N viram min(N, teto)', () => {
@@ -25,6 +25,9 @@ describe('Laravel / Pest / ParaTest', () => {
     assert.equal(texto('docker compose exec app php artisan test --parallel --processes=8'), 'docker compose exec app php artisan test --parallel --processes=4')
     assert.equal(texto('sail artisan test --parallel'), 'sail artisan test --parallel --processes=4')
   })
+  it('--parallel de outro programa não é tocado', () => {
+    for (const c of ['pnpm -r --parallel test', './gradlew test --parallel', 'ctest --parallel 8']) assert.equal(texto(c), c)
+  })
   it('pedido menor ou igual ao teto fica como veio; sem --parallel não mexe', () => {
     assert.deepEqual(lim('php artisan test --parallel --processes=2'), { comando: 'php artisan test --parallel --processes=2'.split(' '), ajustes: [] })
     assert.equal(texto('php artisan test --parallel --processes=4'), 'php artisan test --parallel --processes=4')
@@ -40,7 +43,7 @@ describe('pytest-xdist', () => {
     assert.equal(texto('uv run pytest --numprocesses 8'), 'uv run pytest --numprocesses 4')
     assert.equal(texto('pytest --numprocesses=8'), 'pytest --numprocesses=4')
   })
-  it('auto e logical viram o teto; menor fica; sem flag fica', () => {
+  it('auto e logical (16 núcleos) viram o teto; menor fica; sem flag fica', () => {
     assert.equal(texto('pytest -n auto'), 'pytest -n 4')
     assert.equal(texto('pytest -nlogical'), 'pytest -n4')
     assert.equal(texto('pytest --numprocesses=auto'), 'pytest --numprocesses=4')
@@ -52,12 +55,29 @@ describe('pytest-xdist', () => {
   })
 })
 
+describe('valor simbólico resolvido pelos núcleos', () => {
+  it('pytest: auto e logical valem min(núcleos, teto)', () => {
+    assert.equal(texto('pytest -n auto', 4, 2), 'pytest -n 2')
+    assert.equal(texto('pytest -n auto', 4, 16), 'pytest -n 4')
+    assert.equal(texto('pytest --numprocesses=logical', 4, 2), 'pytest --numprocesses=2')
+  })
+  it('--processes=auto do Laravel vale min(núcleos, teto)', () => {
+    assert.equal(texto('php artisan test --parallel --processes=auto', 4, 16), 'php artisan test --parallel --processes=4')
+    assert.equal(texto('php artisan test --parallel --processes=auto', 4, 2), 'php artisan test --parallel --processes=2')
+  })
+  it('percentual do --maxWorkers é fração dos núcleos, limitada pelo teto', () => {
+    assert.equal(texto('npx jest --maxWorkers=25%', 8, 16), 'npx jest --maxWorkers=4')
+    assert.equal(texto('npx jest --maxWorkers=50%', 4, 16), 'npx jest --maxWorkers=4')
+    assert.equal(texto('npx jest --maxWorkers=25%', 8, 2), 'npx jest --maxWorkers=1')
+  })
+})
+
 describe('vitest / jest', () => {
   it('--maxWorkers=N e --maxWorkers N viram min(N, teto)', () => {
     assert.equal(texto('npx vitest run --maxWorkers=8'), 'npx vitest run --maxWorkers=4')
     assert.equal(texto('npx jest --maxWorkers 8 --ci'), 'npx jest --maxWorkers 4 --ci')
   })
-  it('percentual vira o teto; menor e ausente ficam', () => {
+  it('percentual (16 núcleos) limitado pelo teto; menor e ausente ficam', () => {
     assert.equal(texto('npx jest --maxWorkers=50%'), 'npx jest --maxWorkers=4')
     assert.equal(texto('npx jest --maxWorkers 50%'), 'npx jest --maxWorkers 4')
     assert.equal(texto('npx jest --maxWorkers=2'), 'npx jest --maxWorkers=2')
@@ -93,11 +113,11 @@ describe('rodarNaFila com comando explícito', () => {
     const eventos: EventoFila[] = []
     const c = cfg(8)
     const cod = await rodarNaFila({
-      dir: tmp(), comando: [process.execPath, '-e', script, '--', '--parallel', '--processes=8'], config: c, p: paths(tmp()),
+      dir: tmp(), comando: [process.execPath, '-e', script, 'artisan', '--parallel', '--processes=8'], config: c, p: paths(tmp()),
       env: { SAIDA: saida }, lerConfig: () => cfg(4), avisar: (e) => eventos.push(e)
     })
     assert.equal(cod, 0)
-    assert.deepEqual(JSON.parse(readFileSync(saida, 'utf8')), ['--parallel', '--processes=4'])
+    assert.deepEqual(JSON.parse(readFileSync(saida, 'utf8')), ['artisan', '--parallel', '--processes=4'])
     assert.deepEqual(eventos, [{ codigo: 'processos_ajustados', de: '--processes=8', para: '--processes=4' }])
   })
 
@@ -105,10 +125,10 @@ describe('rodarNaFila com comando explícito', () => {
     const saida = join(tmp(), 'argv.json')
     const eventos: EventoFila[] = []
     await rodarNaFila({
-      dir: tmp(), comando: [process.execPath, '-e', script, '--', '--parallel', '--processes=2'], config: cfg(4), p: paths(tmp()),
+      dir: tmp(), comando: [process.execPath, '-e', script, 'artisan', '--parallel', '--processes=2'], config: cfg(4), p: paths(tmp()),
       env: { SAIDA: saida }, avisar: (e) => eventos.push(e)
     })
-    assert.deepEqual(JSON.parse(readFileSync(saida, 'utf8')), ['--parallel', '--processes=2'])
+    assert.deepEqual(JSON.parse(readFileSync(saida, 'utf8')), ['artisan', '--parallel', '--processes=2'])
     assert.deepEqual(eventos, [])
   })
 })

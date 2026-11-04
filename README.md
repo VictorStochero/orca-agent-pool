@@ -27,7 +27,7 @@ An [Orca](https://github.com/stablyai/orca) plugin that lets many coding agents 
 
 ## Install
 1. In Orca, open **Settings → Plugins** and install **Agent Pool & Test Queue** from the catalog.
-   Not listed yet? Choose **Add plugin → From a Git URL…** and paste `https://github.com/VictorStochero/orca-agent-pool#v1.0.8`.
+   Not listed yet? Choose **Add plugin → From a Git URL…** and paste `https://github.com/VictorStochero/orca-agent-pool#v1.0.9`.
 2. Approve the access it asks for (a trusted worker and its own storage).
 3. Open the **Agent Pool** panel. On first activation the plugin:
    1. creates `~/.agents/agent-pool/` (`config.json` and `state/`);
@@ -88,7 +88,7 @@ The machine-wide cap (`fila.teto`) applies in every mode. A new mode applies to 
 | `*.csproj` / `*.sln` | `dotnet test` | `-m:N` |
 | `Gemfile` + `spec/` | `rspec` | — |
 
-With an explicit command (`agent-pool test -- <command>`) `fila.processos` is a cap on the parallelism flags the agent passed: `--processes=N` (with `--parallel`; `--parallel` alone gets `--processes=<cap>`), pytest-xdist `-n N` / `--numprocesses N` (`auto` too) and `--maxWorkers=N` (percentages too) are lowered to the cap and the queue says so on stderr. A smaller request is left as it came. `go -p`, `cargo --test-threads` and `dotnet -m:` are not capped.
+With an explicit command (`agent-pool test -- <command>`) `fila.processos` is a cap on the parallelism flags the agent passed: `--processes=N` (with `--parallel` on a Laravel/Pest/ParaTest command; `--parallel` alone gets `--processes=<cap>`), pytest-xdist `-n N` / `--numprocesses N` and `--maxWorkers=N` are lowered to the cap and the queue says so on stderr. A symbolic value (`auto`, `logical`, `25%`) becomes the number of cores it stands for, limited by the cap. A smaller request is left as it came. `go -p`, `cargo --test-threads` and `dotnet -m:` are not capped.
 
 After a parallel Laravel run the queue drops the `<database>_test_N` copies it created.
 
@@ -159,8 +159,8 @@ Exit codes: `0` ok, `2` invalid usage, `75` no slot or the wait ran out (try aga
 | An account shows **not set up on this machine** | its CLI is not installed (e.g. `codex` not in the PATH) or its own folder (e.g. `~/.claude-team`) does not exist. It raises no alert and is left out of the writer and second-opinion choice; it comes back by itself once the CLI or the folder appears. Remove it in **Settings → Accounts** if you will not use it |
 | The panel is stuck on **Requirements** | install what it lists (it can install the skill and the hooks for you) |
 | A test was refused by the hook | run the command the hook printed: `"…/agent-pool" test -- <your command>` |
-| `orca orchestration worker-start` was refused by the hook | reserve a slot first, with `"…/agent-pool" writer --reserve <tag>` or `"…/agent-pool" slot take <account> res-<tag>` (in the same command or before it); after the receipt, `slot swap res-<tag> <dispatch>` |
-| A test is shown as **stopped** | its process ended without freeing the slot; the next test that needs that slot takes it back |
+| `orca orchestration worker-start` was refused by the hook | reserve a slot first, with `"…/agent-pool" writer --reserve <tag>` or `"…/agent-pool" slot take <account> res-<tag>` in a previous command, or before `worker-start` in the same `&&` chain without a pipe; after the receipt, `slot swap res-<tag> <dispatch>` |
+| A test is shown as **stopped** | its process ended without freeing the slot; the next panel collection or test start reclaims dead locks in every queue and the machine-wide cap; a live orphan on Windows keeps its slot |
 
 ## Uninstall
 1. In the panel: **Settings → Hooks → Remove** for each agent (this takes our hook out of the agents' config files).
@@ -181,6 +181,7 @@ orca plugin dev load . # load this folder into Orca (the real install)
 - Tests isolate `HOME` and `USERPROFILE`, and a guard fails the suite if it touches your real home.
 
 ## Changelog
+- **1.0.9**: the queue clears the locks and waits of dead tests on its own (at every test start and every panel refresh), the machine cap included, so a killed agent no longer leaves a test "stopped"; the hook lets `orca orchestration worker-start` through on a reservation in the same command only when it is chained with `&&` (no pipe, no `;`), and backticks no longer hide a test or a `worker-start`; `fila.processos` caps `--processes` only for Laravel/Pest/ParaTest (a `--parallel` of other tools stays as written), and `auto` or a percentage resolves by the CPU count, never above the cap; the agent-pool skill is also linked for Antigravity (`~/.gemini/config/skills`).
 - **1.0.8**: an agent session opened with `--agent <role>` takes a slot of its account for as long as it stays open (on Windows only when the process matches the session's start time), and a pending `res-` reservation adds to it; the panel lists the live agents under Slots in use; the hook refuses `orca orchestration worker-start` (also `orca-ide` and `orca-dev`) without a pending reservation, unless the same command reserves first; `fila.processos` caps the parallel flags of an explicit test command (`--processes`, `-n`, `--maxWorkers`) and adds `--processes` to a bare `--parallel`.
 - **1.0.7**: an optional **Model** per account, passed as `--model` by `writer` and `second`; the pool follows the separate limit of that model (Fable; Antigravity's Gemini Models, Claude and GPT models or Gemini 4 Argon), and Antigravity defaults to Gemini 3.8 Flash so a second opinion no longer burns the Argon limit; account details are readable in a narrow panel; an account whose CLI or own folder does not exist on the machine shows as "not set up on this machine" instead of raising a login alert; the requirements screen stays (with the error) when an install fails, and a notice confirms when everything is installed; the Enforcement settings are now called Hooks; a new Installation tab in Settings lists the requirements and checks them again on demand.
 - **1.0.6**: a test whose `agent-pool test` was killed (for example by an Orca update on Windows) keeps its slot and shows as running while the test itself still runs; the pool shows open Claude sessions per account and their total; tables fit a narrow panel without horizontal scrolling; a long cell no longer hides the whole table; the queue mode radio selects one option; the Queue column shows each test's real queue; waiting tests pick up new slot and cap settings; the queue no longer fails with `ENOTEMPTY` when Windows holds a file in a lock folder.
@@ -200,6 +201,6 @@ orca plugin dev load . # load this folder into Orca (the real install)
 
 Plugin do Orca que deixa vários agentes de código dividirem uma máquina com segurança: **pool de agentes** (contas com vagas, peso e papéis; o escritor de cada tarefa é a conta com mais cota sobrando × peso, ou a primeira da sua ordem), **fila de testes** para qualquer linguagem (por máquina e por recurso disputado, como o mesmo banco de testes), **hooks** opcionais no Claude Code e no Codex, e um **painel** no Orca, em português ou inglês conforme o idioma do Orca, com tudo configurável.
 
-**Instalação:** pelo catálogo de plugins do Orca (Configurações → Plugins) ou por **Add plugin → From a Git URL…** com `https://github.com/VictorStochero/orca-agent-pool#v1.0.8`; aprove o acesso e abra o painel **Agent Pool**. O plugin grava só em `~/.agents/` (configuração, lançador `~/.agents/bin/agent-pool` e a skill) e instala o hook no Claude Code e no Codex, com backup antes e remoção em Configurações → Hooks.
+**Instalação:** pelo catálogo de plugins do Orca (Configurações → Plugins) ou por **Add plugin → From a Git URL…** com `https://github.com/VictorStochero/orca-agent-pool#v1.0.9`; aprove o acesso e abra o painel **Agent Pool**. O plugin grava só em `~/.agents/` (configuração, lançador `~/.agents/bin/agent-pool` e a skill) e instala o hook no Claude Code e no Codex, com backup antes e remoção em Configurações → Hooks.
 
 **Uso pelos agentes:** `~/.agents/bin/agent-pool writer --reserve <tag>` antes do `worker-start`, `slot swap` para o dispatch real, `agent-pool test -- <comando>` para todo teste e `slot release` no fim. Contas Claude personalizadas são medidas com a credencial da própria conta, enviada só à API da Anthropic e nunca gravada ou exibida. Problemas: `~/.agents/bin/agent-pool doctor`. Os detalhes de modos da fila, executores, configuração e comandos estão nas seções em inglês acima.

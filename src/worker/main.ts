@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import type { OrcaWorkerApi } from 'orca/worker'
 import { aplicar, atualizarConfig, carregar, ErroConfig, PADRAO } from '../core/config.ts'
 import { detectar, sincronizarDetectadas } from '../core/deteccao.ts'
+import { limparTravasMortas } from '../core/fila/travas.ts'
 import { medidasGravadas, medirTodas } from '../core/medidas/cache.ts'
 import { versao } from '../core/index.ts'
 import { importarLegado } from '../core/legado.ts'
@@ -170,6 +171,7 @@ export default function activate(orca: OrcaWorkerApi): void {
 
   // --- ciclo: detecção, medição e recuperação de vagas (único lugar que mede) ---
   const atualizar = async () => {
+    limparTravasMortas(p)
     let c: Config
     try {
       c = carregar(p)

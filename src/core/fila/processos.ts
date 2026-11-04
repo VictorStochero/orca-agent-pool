@@ -1,18 +1,24 @@
+import { availableParallelism } from 'node:os'
+
 /** Mudança feita numa flag de paralelismo; `de` null = flag acrescentada. */
 export type Ajuste = { de: string | null; para: string }
 
 const NUM = /^\d+$/
-const NUNCA = /(?!)/
 const PYTEST = /^(pytest|py\.test)$/
+const LARAVEL = /^(artisan|pest|paratest|sail)$/
 
-/** Valor novo se o pedido passa do teto (ou é simbólico, como `auto`); null se fica como veio. */
-function novoValor(v: string, teto: number, simbolico: RegExp): string | null {
+/** Quantos processos o valor simbólico (`auto`, `25%`) representa, ou null se não é simbólico. */
+type Resolver = (v: string) => number | null
+
+/** Valor novo se o pedido passa do teto ou é simbólico (vira `min(resolvido, teto)`); null se fica como veio. */
+function novoValor(v: string, teto: number, resolver: Resolver): string | null {
   if (NUM.test(v)) return Number(v) > teto ? String(teto) : null
-  return simbolico.test(v) ? String(teto) : null
+  const n = resolver(v)
+  return n === null ? null : String(Math.min(n, teto))
 }
 
 /** Reescreve as flags `longas` (e `-n`, se `curta`) nas formas `--f N`, `--f=N`, `-nN`. */
-function limitarFlag(argv: string[], teto: number, longas: string[], curta: boolean, simbolico: RegExp) {
+function limitarFlag(argv: string[], teto: number, longas: string[], curta: boolean, resolver: Resolver) {
   const comando = [...argv]
   const ajustes: Ajuste[] = []
   let achou = false
@@ -23,7 +29,7 @@ function limitarFlag(argv: string[], teto: number, longas: string[], curta: bool
     if (nome && a === nome && comando[i + 1] !== undefined) {
       achou = true
       const v = comando[i + 1]
-      const nv = novoValor(v, teto, simbolico)
+      const nv = novoValor(v, teto, resolver)
       if (nv) {
         ajustes.push({ de: `${a} ${v}`, para: `${a} ${nv}` })
         comando[i + 1] = nv
@@ -32,14 +38,14 @@ function limitarFlag(argv: string[], teto: number, longas: string[], curta: bool
     } else if (nome) {
       achou = true
       const v = a.slice(nome.length + 1)
-      const nv = novoValor(v, teto, simbolico)
+      const nv = novoValor(v, teto, resolver)
       if (nv) {
         ajustes.push({ de: a, para: `${nome}=${nv}` })
         comando[i] = `${nome}=${nv}`
       }
     } else if (curta && /^-n[^-=]/.test(a)) {
       achou = true
-      const nv = novoValor(a.slice(2), teto, simbolico)
+      const nv = novoValor(a.slice(2), teto, resolver)
       if (nv) {
         ajustes.push({ de: a, para: `-n${nv}` })
         comando[i] = `-n${nv}`
@@ -56,7 +62,7 @@ const base = (t: string) => (t.replace(/\\/g, '/').split('/').pop() ?? '').toLow
  * Laravel/Pest/ParaTest (`--parallel`, ganha `--processes=<teto>` se faltar), pytest-xdist e vitest/jest.
  */
 // shortcut: `go test -p`, `cargo test -- --test-threads` e `dotnet test -m:` não são limitados; acrescentar a forma de cada um se o agente passar a usá-las.
-export function limitarProcessos(argv: string[], teto: number): { comando: string[]; ajustes: Ajuste[] } {
+export function limitarProcessos(argv: string[], teto: number, nucleos = availableParallelism()): { comando: string[]; ajustes: Ajuste[] } {
   if (!Number.isInteger(teto) || teto < 1) return { comando: argv, ajustes: [] }
   let comando = argv
   const ajustes: Ajuste[] = []
@@ -65,15 +71,19 @@ export function limitarProcessos(argv: string[], teto: number): { comando: strin
     ajustes.push(...r.ajustes)
     return r
   }
-  const paralelo = comando.indexOf('--parallel')
+  const automatico: Resolver = (v) => (/^(auto|logical)$/.test(v) ? nucleos : null)
+  const paralelo = comando.some((a) => LARAVEL.test(base(a))) ? comando.indexOf('--parallel') : -1
   if (paralelo >= 0) {
-    if (!passo(limitarFlag(comando, teto, ['--processes'], false, NUNCA)).achou) {
+    if (!passo(limitarFlag(comando, teto, ['--processes'], false, automatico)).achou) {
       comando = [...comando.slice(0, paralelo + 1), `--processes=${teto}`, ...comando.slice(paralelo + 1)]
       ajustes.push({ de: null, para: `--processes=${teto}` })
     }
   }
-  if (comando.some((a) => PYTEST.test(base(a)))) passo(limitarFlag(comando, teto, ['--numprocesses'], true, /^(auto|logical)$/))
-  passo(limitarFlag(comando, teto, ['--maxWorkers'], false, /^\d+%$/))
+  if (comando.some((a) => PYTEST.test(base(a)))) passo(limitarFlag(comando, teto, ['--numprocesses'], true, automatico))
+  passo(limitarFlag(comando, teto, ['--maxWorkers'], false, (v) => {
+    const pct = /^(\d+)%$/.exec(v)
+    return pct ? Math.max(1, Math.floor((nucleos * Number(pct[1])) / 100)) : null
+  }))
   return { comando, ajustes }
 }
 

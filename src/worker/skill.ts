@@ -7,7 +7,7 @@ import type { Pastas } from '../hooks/comum.ts'
 
 const MANIFESTO = '.agent-pool-skill.json'
 /** Pasta de skills lida por cada agente; os demais leem `~/.agents/skills` direto. */
-const PASTA_AGENTE: Record<string, string> = { claude: '.claude/skills', codex: '.codex/skills' }
+const PASTA_AGENTE: Record<string, string> = { claude: '.claude/skills', codex: '.codex/skills', antigravity: '.gemini/config/skills' }
 
 export type ResultadoSkill = {
   copia: 'instalada' | 'atualizada' | 'ja' | 'editada' | 'forcada' | 'sem_origem' | 'erro'

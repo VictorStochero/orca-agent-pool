@@ -31,7 +31,12 @@ describe('decidir', () => {
       'FOO=1 vendor/bin/phpunit', 'python manage.py test', 'cd app\nnpm test', 'composer install\nphp artisan test')
   })
   it('enxerga substituição de comando, mas não texto em aspas simples', () => {
-    bloqueados('out=$(npm test)', 'echo "$(pytest)"', 'echo `npm test`', 'grep "$(php artisan test)" README.md')
+    bloqueados('out=$(npm test)', 'echo "$(pytest)"', 'echo `npm test`', 'echo `cd api; php artisan test`', 'grep "$(php artisan test)" README.md')
+    // crase sem par (continuação do PowerShell, heredoc, comentário) não desliga a divisão do resto do comando
+    bloqueados('Copy-Item a b `\nphp artisan test', "cat > n.md <<'EOF'\nuse ` aqui\nEOF\nnpm test", '# nota com ` solta\nnpm test')
+    // teste como 1º comando dentro da crase, com separador ainda dentro dela
+    bloqueados('echo `npm test | tail -5`', 'out=`npm test 2>&1 | tail -1`', 'echo `pytest; echo fim`', 'echo `php artisan test && echo ok`')
+    livres('echo `date`; ls', 'Copy-Item a b `\nGet-ChildItem')
     livres("grep '$(php artisan test)' README.md", 'grep -l -E "artisan test|pest" *.yml')
   })
   it('lista de testes e migração de outro ambiente passam', () => {
@@ -57,7 +62,7 @@ describe('decidir', () => {
     for (const c of ['orca orchestration worker-start --agent claude', 'out=$(orca orchestration worker-start --task t)',
       'bash -c "orca orchestration worker-start --task t"', 'slot take pessoal res-x; orca orchestration worker-start --task t',
       'FOO=1 orca.exe orchestration worker-start', 'orca-ide orchestration worker-start --task t',
-      'ORCA_DEV_REPO_ROOT=/x orca-dev.cmd orchestration worker-start', 'env X=1 "C:/bin/orca.cmd" orchestration worker-start']) {
+      'ORCA_DEV_REPO_ROOT=/x orca-dev.cmd orchestration worker-start', 'echo `cd api; orca orchestration worker-start --task t`', 'Remove-Item x `\norca orchestration worker-start --task t', 'echo `orca orchestration worker-start --task t | tail -1`', 'env X=1 "C:/bin/orca.cmd" orchestration worker-start']) {
       const d = sem(c)
       assert.equal(d.permitir, false, c)
       assert.equal(d.motivo, 'reserva', c)
@@ -70,10 +75,10 @@ describe('decidir', () => {
   it('libera worker-start quando o mesmo comando reserva antes', () => {
     const sem = (comando: string) => decidir({ comando, agente: 'claude', reservaViva: false }).permitir
     for (const c of [
-      'R=$(~/.agents/bin/agent-pool writer --reserve x 2>&1); echo $R; orca orchestration worker-start --task t',
+      'R=$(~/.agents/bin/agent-pool writer --reserve x 2>&1) && echo $R && orca orchestration worker-start --task t',
       '~/.agents/bin/agent-pool slot take pessoal res-x && orca orchestration worker-start --task t',
-      'agent-pool.cmd slot take pessoal res-x; orca orchestration worker-start',
-      'agent-pool slot take pessoal res-x; out=$(orca orchestration worker-start)'
+      'agent-pool.cmd slot take pessoal res-x && orca orchestration worker-start',
+      'agent-pool slot take pessoal res-x && out=$(orca orchestration worker-start)'
     ]) assert.equal(sem(c), true, c)
     for (const c of [
       'agent-pool writer; orca orchestration worker-start',
@@ -82,6 +87,32 @@ describe('decidir', () => {
       'agent-pool slot take pessoal ctx_1 && orca orchestration worker-start',
       'echo "agent-pool writer --reserve x"; orca orchestration worker-start'
     ]) assert.equal(sem(c), false, c)
+  })
+  for (const separador of [';', '\n', '||', '&', '| tail -1 &&']) {
+    it(`nega worker-start após reserva separada por ${JSON.stringify(separador)}`, () => {
+      for (const reserva of ['agent-pool slot take pessoal res-x', 'agent-pool writer --reserve x', 'R=$(agent-pool writer --reserve x 2>&1)']) {
+        const d = decidir({ comando: `${reserva} ${separador} orca orchestration worker-start`, agente: 'claude', reservaViva: false })
+        assert.equal(d.permitir, false, reserva)
+        assert.equal(d.motivo, 'reserva', reserva)
+      }
+    })
+  }
+  it('nega reserva posterior, substituição com pipe e substituição que mascara a falha', () => {
+    for (const c of [
+      'orca orchestration worker-start && agent-pool writer --reserve x',
+      'R=$(agent-pool writer --reserve x | tail -1) && orca orchestration worker-start',
+      'R=$(agent-pool writer --reserve x; echo ok) && orca orchestration worker-start',
+      'echo $(agent-pool writer --reserve x) && orca orchestration worker-start',
+      'agent-pool writer --reserve x && echo ok; orca orchestration worker-start',
+      'agent-pool writer --reserve x && echo ok | tail -1 && orca orchestration worker-start'
+    ]) assert.equal(decidir({ comando: c, agente: 'claude', reservaViva: false }).permitir, false, c)
+  })
+  it('nega reserva que pode ser pulada por || e atribuição com código de outra substituição', () => {
+    for (const c of [
+      'true || agent-pool writer --reserve x && orca orchestration worker-start',
+      'R=$(agent-pool writer --reserve x)$(echo ok) && orca orchestration worker-start',
+      'R=$(agent-pool writer --reserve x) S=$(echo ok) && orca orchestration worker-start'
+    ]) assert.equal(decidir({ comando: c, agente: 'claude', reservaViva: false }).permitir, false, c)
   })
   it('libera worker-start com reserva viva (ou sem a informação)', () => {
     const c = 'orca orchestration worker-start --agent claude'

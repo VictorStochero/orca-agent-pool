@@ -189,6 +189,19 @@ export function limparEsperaMorta(p: Paths, vivo: (pid: number) => boolean = viv
   for (const d of pastas(p.espera)) if (!vivo(Number(d))) removerMelhorEsforco(join(p.espera, d))
 }
 
+/** Recupera travas e esperas mortas de todas as filas, inclusive o teto da máquina. */
+export function limparTravasMortas(p: Paths, vivo: (pid: number) => boolean = vivoPadrao, orfao: (f: { pid: number; inicio: number }) => boolean = orfaoVivo): void {
+  limparEsperaMorta(p, vivo)
+  for (const fila of pastas(p.fila)) {
+    for (const vaga of pastas(join(p.fila, fila))) {
+      const dir = join(p.fila, fila, vaga)
+      const info = lerInfo(dir)
+      const dono = info?.pid ?? null
+      if (dono === null || !travaViva(info!, vivo, orfao)) recuperar(dir, dono)
+    }
+  }
+}
+
 const pastas = (dir: string): string[] => {
   try {
     return readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.startsWith('.')).map((d) => d.name)

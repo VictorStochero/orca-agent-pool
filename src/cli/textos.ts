@@ -58,7 +58,7 @@ códigos: 0 ok, 2 uso inválido, 75 sem vaga ou espera esgotada`,
   hookNegado: (lancador: string, trecho: string, prefixo = '') =>
     `Execute o trecho de teste pela fila: troque \`${trecho}\` por \`${prefixo}"${lancador}" test -- ${trecho}\` (se sair 75, espere e rode de novo).`,
   hookSemReserva: (lancador: string, prefixo = '') =>
-    `\`worker-start\` sem reserva de vaga. Reserve antes com \`${prefixo}"${lancador}" writer --reserve <tag>\` (escritor) ou \`${prefixo}"${lancador}" slot take <conta> res-<tag>\` e, depois do recibo do worker-start, \`${prefixo}"${lancador}" slot swap res-<tag> <dispatch>\`.`
+    `\`worker-start\` sem reserva de vaga. Reserve num comando anterior, ou encadeie a reserva com \`&&\` antes do worker-start, sem pipe: \`${prefixo}"${lancador}" writer --reserve <tag>\` (escritor) ou \`${prefixo}"${lancador}" slot take <conta> res-<tag>\` e, depois do recibo do worker-start, \`${prefixo}"${lancador}" slot swap res-<tag> <dispatch>\`.`
 }
 
 type Textos = { [K in keyof typeof pt]: (typeof pt)[K] }
@@ -108,7 +108,7 @@ exit codes: 0 ok, 2 invalid usage, 75 no slot or wait timed out`,
   hookNegado: (lancador, trecho, prefixo = '') =>
     `Run the test part through the queue: replace \`${trecho}\` with \`${prefixo}"${lancador}" test -- ${trecho}\` (if it exits 75, wait and run again).`,
   hookSemReserva: (lancador, prefixo = '') =>
-    `\`worker-start\` without a slot reservation. Reserve first with \`${prefixo}"${lancador}" writer --reserve <tag>\` (writer) or \`${prefixo}"${lancador}" slot take <account> res-<tag>\` and, after the worker-start receipt, \`${prefixo}"${lancador}" slot swap res-<tag> <dispatch>\`.`
+    `\`worker-start\` without a slot reservation. Reserve in a previous command, or chain the reservation with \`&&\` before worker-start, without a pipe: \`${prefixo}"${lancador}" writer --reserve <tag>\` (writer) or \`${prefixo}"${lancador}" slot take <account> res-<tag>\` and, after the worker-start receipt, \`${prefixo}"${lancador}" slot swap res-<tag> <dispatch>\`.`
 }
 
 export const textos = { en, pt }

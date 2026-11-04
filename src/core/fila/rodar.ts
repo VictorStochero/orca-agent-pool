@@ -8,7 +8,7 @@ import { detectarExecutor, type Executor } from './executores.ts'
 import { limparBancosLaravel } from './limpeza.ts'
 import { limitarProcessos, processosDoComando } from './processos.ts'
 import { chaveFila, detectarRecurso, nomeProjeto } from './recurso.ts'
-import { TETO, anotarFilho, limparEsperaMorta, publicar, removerMelhorEsforco, soltarVaga, tomarVaga, vivoPadrao, type InfoTrava } from './travas.ts'
+import { TETO, anotarFilho, limparTravasMortas, publicar, removerMelhorEsforco, soltarVaga, tomarVaga, vivoPadrao, type InfoTrava } from './travas.ts'
 
 const POLL_MS = 250
 
@@ -81,7 +81,7 @@ export async function rodarNaFila(o: OpcoesRodar): Promise<number> {
 
   const dirEspera = join(p.espera, String(process.pid))
   const info = (fila: string): InfoTrava => ({ pid: process.pid, inicio: agora(), recurso, worktree: o.dir, projeto, comando: comando.join(' '), fila })
-  limparEsperaMorta(p)
+  limparTravasMortas(p, vivoPadrao, o.orfao)
 
   let sinal: NodeJS.Signals | null = null
   let filho: ChildProcess | null = null

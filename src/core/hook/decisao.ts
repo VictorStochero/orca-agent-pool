@@ -11,10 +11,11 @@ const BUSCA = /^(grep|egrep|fgrep|rg|findstr|select-string)$/
 const SO_LISTA = /--(list-tests|collect-only|listTests)\b|\bvitest\s+list\b/
 
 /** Divide em trechos nos separadores fora de aspas. */
-function trechos(s: string): string[] {
-  const saida: string[] = []
+function trechos(s: string): { texto: string; separador: string }[] {
+  const saida: { texto: string; separador: string }[] = []
   let atual = ''
   let aspa = ''
+  let substituicao = 0
   for (let i = 0; i < s.length; i++) {
     const c = s[i]
     if (aspa) {
@@ -26,13 +27,20 @@ function trechos(s: string): string[] {
     } else if (c === '"' || c === "'") {
       aspa = c
       atual += c
-    } else if (SEPARADORES.has(c) && !(c === '&' && (s[i - 1] === '>' || s[i + 1] === '>'))) {
-      saida.push(atual)
+    } else if (c === '$' && s[i + 1] === '(') {
+      substituicao++
+      atual += c + s[++i]
+    } else if (c === ')' && substituicao > 0) {
+      substituicao--
+      atual += c
+    } else if (!substituicao && SEPARADORES.has(c) && !(c === '&' && (s[i - 1] === '>' || s[i + 1] === '>'))) {
+      const separador = (c === '&' || c === '|') && s[i + 1] === c ? c + s[++i] : c
+      saida.push({ texto: atual.trim(), separador })
       atual = ''
     } else atual += c
   }
-  saida.push(atual)
-  return saida.map((t) => t.trim()).filter(Boolean)
+  saida.push({ texto: atual.trim(), separador: '' })
+  return saida
 }
 
 /** Palavras do trecho sem as aspas. */
@@ -60,10 +68,10 @@ function palavras(s: string): string[] {
   return out
 }
 
-/** Corpos de $(...) e `...` fora de aspas simples (a análise do trecho não os vê). */
+/** Corpos de $(...) e `...` fora de aspas simples (a análise do trecho não os vê); crase sem par vale até o fim do trecho. */
 function substituicoes(s: string): string[] {
   const sem = s.replace(/'[^']*'/g, "''")
-  return [...sem.matchAll(/\$\(([^)]*)\)|`([^`]*)`/g)].map((m) => m[1] ?? m[2])
+  return [...sem.matchAll(/\$\(([^)]*)\)|`([^`]*)`?/g)].map((m) => m[1] ?? m[2])
 }
 
 const base = (t: string) => (t.replace(/\\/g, '/').split('/').pop() ?? '').toLowerCase().replace(/\.(exe|cmd|bat)$/, '')
@@ -104,9 +112,10 @@ function ehTeste(t: string[]): boolean {
   return false
 }
 
-/** Palavras do trecho sem agrupamento `( … )` / `{ …; }`, `VAR=x` nem `env`: não mudam o que roda. */
+/** Palavras do trecho sem agrupamento `( … )` / `{ …; }`, crase nas pontas, `VAR=x` nem `env`: não mudam o que roda. */
 function comando(trecho: string): string[] {
-  let t = palavras(trecho).map((w) => w.replace(/^[({]+|[)}]+$/g, '')).filter(Boolean)
+  // A crase não segura o corte (sem par, desligaria o resto do comando): o separador dentro dela corta e a ponta sai aqui.
+  let t = palavras(trecho).map((w) => w.replace(/^[({`]+|[)}`]+$/g, '')).filter(Boolean)
   for (;;) {
     while (t.length && /^[A-Za-z_]\w*=/.test(t[0])) t = t.slice(1)
     if (base(t[0] ?? '') !== 'env') break
@@ -116,10 +125,15 @@ function comando(trecho: string): string[] {
   return t
 }
 
-/** O comando reserva vaga (`agent-pool writer --reserve` ou `slot take <conta> res-<tag>`) em algum trecho, inclusive em `$(…)`? */
+/** Sucesso do trecho implica sucesso da reserva, inclusive atribuição cujo código é o da substituição. */
 function reserva(texto: string): boolean {
-  if (substituicoes(texto).some(reserva)) return true
-  return trechos(texto).some((trecho) => {
+  const partes = trechos(texto)
+  if (partes.some((p) => p.separador !== '' && p.separador !== '&&')) return false
+  return partes.some(({ texto: trecho }) => {
+    if (/^[A-Za-z_]\w*=(?:"?\$\([\s\S]*\)"?|`[^`]*`)\s*$/.test(trecho)) {
+      const subs = substituicoes(trecho)
+      return subs.length === 1 && reserva(subs[0])
+    }
     const t = comando(trecho)
     if (base(t[0] ?? '') !== 'agent-pool') return false
     return (t[1] === 'writer' && t.includes('--reserve')) || (t[1] === 'slot' && t[2] === 'take' && /^res-/.test(t[4] ?? ''))
@@ -127,11 +141,17 @@ function reserva(texto: string): boolean {
 }
 
 function acha(texto: string, reservaViva: boolean): Negado | null {
-  for (const sub of substituicoes(texto)) {
-    const x = acha(sub, reservaViva)
-    if (x) return x
-  }
-  for (const trecho of trechos(texto)) {
+  let encadeada = false
+  let anterior = ''
+  for (const { texto: trecho, separador } of trechos(texto)) {
+    if (anterior !== '&&') encadeada = false
+    const temReserva = reservaViva || encadeada
+    for (const sub of substituicoes(trecho)) {
+      const x = acha(sub, temReserva)
+      if (x) return x
+    }
+    encadeada = separador === '&&' && (encadeada || (!['|', '||'].includes(anterior) && reserva(trecho)))
+    anterior = separador
     const t = comando(trecho)
     if (!t.length) continue
     const e = base(t[0])
@@ -140,18 +160,19 @@ function acha(texto: string, reservaViva: boolean): Negado | null {
     if (SHELLS.test(e)) {
       const k = t.findIndex((a, n) => n > 0 && /^-(l?c|command)$/i.test(a))
       if (k > 0 && t[k + 1] !== undefined) {
-        const x = acha(t[k + 1], reservaViva)
+        const x = acha(t[k + 1], temReserva)
         if (x) return x
         continue
       }
     }
-    if (!reservaViva && /^orca(-ide|-dev)?$/.test(e) && t[1] === 'orchestration' && t[2] === 'worker-start' && !t.some((a) => a === '--help' || a === '-h')) {
-      return { trecho: trecho.replace(/^[({\s]+/, '').replace(/[)}\s]+$/, ''), motivo: 'reserva' }
+    if (!temReserva && /^orca(-ide|-dev)?$/.test(e) && t[1] === 'orchestration' && t[2] === 'worker-start' && !t.some((a) => a === '--help' || a === '-h')) {
+      // shortcut: sem consultar o Orca, send não revela dispatch novo; o agente reaberto conta vaga ao abrir a sessão (agente vivo).
+      return { trecho: trecho.replace(/^[({`\s]+/, '').replace(/[)}`\s]+$/, ''), motivo: 'reserva' }
     }
     if (SO_LISTA.test(trecho)) continue
     // `pip install pytest` e afins não rodam teste
     if (/^(pip3?|uv|poetry|pipenv|npm|pnpm|yarn|bun|composer)$/.test(e) && /^(install|add|i|ci|sync|remove|uninstall|require)$/.test(t[1] ?? '')) continue
-    if (ehTeste(t)) return { trecho: trecho.replace(/^[({\s]+/, '').replace(/[)}\s]+$/, ''), motivo: 'teste' }
+    if (ehTeste(t)) return { trecho: trecho.replace(/^[({`\s]+/, '').replace(/[)}`\s]+$/, ''), motivo: 'teste' }
   }
   return null
 }
@@ -159,7 +180,6 @@ function acha(texto: string, reservaViva: boolean): Negado | null {
 /** Teste fora de `agent-pool test` e `orca orchestration worker-start` sem reserva são negados com o comando certo. */
 export function decidir(e: Entrada): Decisao {
   const texto = e.comando.replace(/\r\n/g, '\n')
-  // Reserva e worker-start na mesma chamada: o hook roda antes de a reserva existir.
-  const negado = acha(texto, (e.reservaViva ?? true) || reserva(texto))
+  const negado = acha(texto, e.reservaViva ?? true)
   return negado ? { permitir: false, ...negado } : { permitir: true }
 }
