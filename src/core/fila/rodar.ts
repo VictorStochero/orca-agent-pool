@@ -8,7 +8,7 @@ import { detectarExecutor, type Executor } from './executores.ts'
 import { limparBancosLaravel } from './limpeza.ts'
 import { limitarProcessos, processosDoComando } from './processos.ts'
 import { chaveFila, detectarRecurso, nomeProjeto } from './recurso.ts'
-import { TETO, anotarFilho, limparTravasMortas, publicar, removerMelhorEsforco, soltarVaga, tomarVaga, vivoPadrao, type InfoTrava } from './travas.ts'
+import { TETO, anotar, limparTravasMortas, publicar, removerMelhorEsforco, soltarVaga, tomarVaga, vivoPadrao, type InfoTrava } from './travas.ts'
 
 const POLL_MS = 250
 
@@ -51,16 +51,11 @@ export async function rodarNaFila(o: OpcoesRodar): Promise<number> {
     argv = argv.slice(1)
   }
   const envTeste = { ...env, ...atribuicoes }
-  const detectado = detectarExecutor(o.dir, envTeste)
-  let comando = argv
-  if (!comando) {
-    if (!detectado) {
-      avisar({ codigo: 'sem_stack' })
-      return 2
-    }
-    comando = [...detectado.comando, ...detectado.paralelo(config.processos)]
+  const executor: Executor | null = argv ? { nome: 'custom', comando: argv, paralelo: () => [] } : detectarExecutor(o.dir, envTeste)
+  if (!executor) {
+    avisar({ codigo: 'sem_stack' })
+    return 2
   }
-  const executor: Executor | null = argv ? { nome: 'custom', comando: argv, paralelo: () => [] } : detectado
   const recurso = detectarRecurso(o.dir, envTeste, executor)
   const projeto = nomeProjeto(o.dir)
   const chave = chaveFila(config.modo, recurso, projeto)
@@ -79,8 +74,10 @@ export async function rodarNaFila(o: OpcoesRodar): Promise<number> {
     }
   }
 
+  /** fila.processos relido na espera: teto nas flags de paralelismo do comando explícito; paralelismo do executor detectado. */
+  const ajustado = () => (argv ? limitarProcessos(argv, atual.processos) : { comando: [...executor.comando, ...executor.paralelo(atual.processos)], ajustes: [] })
   const dirEspera = join(p.espera, String(process.pid))
-  const info = (fila: string): InfoTrava => ({ pid: process.pid, inicio: agora(), recurso, worktree: o.dir, projeto, comando: comando.join(' '), fila })
+  const info = (fila: string): InfoTrava => ({ pid: process.pid, inicio: agora(), recurso, worktree: o.dir, projeto, comando: ajustado().comando.join(' '), fila })
   limparTravasMortas(p, vivoPadrao, o.orfao)
 
   let sinal: NodeJS.Signals | null = null
@@ -96,18 +93,21 @@ export async function rodarNaFila(o: OpcoesRodar): Promise<number> {
   /** Pega uma vaga em `dir` esperando a vez; null se o tempo estourar ou vier sinal. */
   async function pegar(dir: string, n: () => number, nome: string): Promise<number | null> {
     let avisou = false
+    let publicado: string | null = null
     try {
       for (;;) {
         reler()
-        const vaga = tomarVaga(dir, n(), info(nome), vivoPadrao, o.orfao)
+        const i = info(nome)
+        const vaga = tomarVaga(dir, n(), i, vivoPadrao, o.orfao)
         if (vaga !== null) return vaga
         if (sinal || agora() >= limite) return null
         if (!avisou) {
           removerMelhorEsforco(dirEspera)
-          publicar(dirEspera, info(nome))
+          publicar(dirEspera, i)
           avisar({ codigo: 'aguardando', fila: nome })
           avisou = true
-        }
+        } else if (i.comando !== publicado) anotar(dirEspera, { comando: i.comando })
+        publicado = i.comando
         await dormir(POLL_MS)
       }
     } finally {
@@ -126,22 +126,17 @@ export async function rodarNaFila(o: OpcoesRodar): Promise<number> {
       return 75
     }
 
-    // Comando explícito: fila.processos (relido na espera) é teto nas flags de paralelismo do agente.
-    let lancado = comando
-    if (argv) {
-      const r = limitarProcessos(comando, atual.processos)
-      lancado = r.comando
-      for (const a of r.ajustes) avisar({ codigo: 'processos_ajustados', ...a })
-    }
+    const { comando: lancado, ajustes } = ajustado()
+    for (const a of ajustes) avisar({ codigo: 'processos_ajustados', ...a })
     const code = await new Promise<number>((resolve) => {
       filho = lancar(lancado, o.dir, { CI: '1', ...envTeste })
       if (filho.pid) {
         const f = { pid: filho.pid, inicio: agora() }
-        anotarFilho(join(base, String(vagaFila)), f)
-        anotarFilho(join(baseTeto, String(vagaTeto)), f)
+        anotar(join(base, String(vagaFila)), { filho: f, comando: lancado.join(' ') })
+        anotar(join(baseTeto, String(vagaTeto)), { filho: f, comando: lancado.join(' ') })
       }
       filho.on('error', (e) => {
-        avisar({ codigo: 'falha_inicio', comando: comando[0], erro: e.message })
+        avisar({ codigo: 'falha_inicio', comando: lancado[0], erro: e.message })
         resolve(127)
       })
       filho.on('close', (c, s) => resolve(c ?? 128 + (constants.signals[s as NodeJS.Signals] ?? 0)))

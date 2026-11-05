@@ -112,16 +112,16 @@ export function publicarArquivos(dir: string, arquivos: Record<string, string>):
 export const publicar = (dir: string, info: Partial<InfoTrava> & { pid: number }): boolean =>
   publicarArquivos(dir, { 'info.json': JSON.stringify(info) })
 
-/** Grava o filho na trava (arquivo temporário + rename, o leitor concorrente nunca vê a trava pela metade). Best effort. */
-export function anotarFilho(dir: string, filho: { pid: number; inicio: number }): void {
+/** Regrava campos da trava ou da espera (arquivo temporário + rename, o leitor concorrente nunca vê a trava pela metade). Best effort. */
+export function anotar(dir: string, campos: Partial<InfoTrava>): void {
   try {
     const info = lerInfo(dir)
     if (!info) return
     const tmp = join(dir, `.info-${process.pid}-${Math.random().toString(36).slice(2)}`)
-    writeFileSync(tmp, JSON.stringify({ ...info, filho }))
+    writeFileSync(tmp, JSON.stringify({ ...info, ...campos }))
     renameSync(tmp, join(dir, 'info.json'))
   } catch {
-    // sem a anotação a trava vale como antes (só o dono)
+    // sem a anotação fica o que já estava gravado (na trava, só o dono)
   }
 }
 

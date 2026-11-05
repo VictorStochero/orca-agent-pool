@@ -218,10 +218,13 @@ test('rodarNaFila: vaga de dono morto com órfão morto é recuperada', async ()
 test('rodarNaFila anota o filho (pid e hora) na vaga da fila e na do teto', async () => {
   const p = paths(tmp())
   const saida = join(tmp(), 'filhos.json')
-  const script = `const fs=require('fs'),path=require('path');const r=[];
+  // O filho relê até as duas travas trazerem o filho: a anotação do pai vem logo depois do spawn.
+  const script = `const fs=require('fs'),path=require('path');let r=[];
 const ach=(d)=>{for(const e of fs.readdirSync(d,{withFileTypes:true})){const c=path.join(d,e.name);
 if(e.isDirectory()&&!e.name.startsWith('.'))ach(c);else if(e.name==='info.json')r.push([path.basename(d),path.basename(path.dirname(d)),JSON.parse(fs.readFileSync(c,'utf8')).filho])}};
-ach(process.argv[1]);fs.writeFileSync(process.argv[2],JSON.stringify(r))`
+const fim=Date.now()+5000;
+do{r=[];try{ach(process.argv[1])}catch{}if(r.length===2&&r.every((x)=>x[2]))break;Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,20)}while(Date.now()<fim);
+fs.writeFileSync(process.argv[2],JSON.stringify(r))`
   const code = await rodarNaFila({ dir: tmp(), comando: [process.execPath, '-e', script, p.fila, saida], config: cfg(), p, env: {}, agora: () => 5_000 })
   assert.equal(code, 0)
   const r = JSON.parse(readFileSync(saida, 'utf8')) as [string, string, { pid: number; inicio: number } | undefined][]

@@ -5,7 +5,8 @@ import { describe, it } from 'node:test'
 import { paths } from '../src/core/paths.ts'
 import { rodarNaFila, type EventoFila } from '../src/core/fila/rodar.ts'
 import { limitarProcessos, processosDoComando } from '../src/core/fila/processos.ts'
-import { tmp } from './fila-util.ts'
+import { TETO, listarTestes, publicar, soltarVaga } from '../src/core/fila/travas.ts'
+import { arquivos, tmp } from './fila-util.ts'
 
 const lim = (cmd: string, teto = 4, nucleos = 16) => limitarProcessos(cmd.split(' '), teto, nucleos)
 const texto = (cmd: string, teto = 4, nucleos = 16) => lim(cmd, teto, nucleos).comando.join(' ')
@@ -130,5 +131,54 @@ describe('rodarNaFila com comando explícito', () => {
     })
     assert.deepEqual(JSON.parse(readFileSync(saida, 'utf8')), ['artisan', '--parallel', '--processes=2'])
     assert.deepEqual(eventos, [])
+  })
+
+  it('espera e trava mostram o comando que vai ser lançado, não o pedido', async () => {
+    const p = paths(tmp())
+    const saida = join(tmp(), 'trava.json')
+    const teto = join(p.fila, TETO)
+    assert.ok(publicar(join(teto, '1'), { pid: process.pid }))
+    let atual = { ...cfg(6), teto: 1 }
+    const esperas: (string | null | undefined)[] = []
+    // O filho só lê a trava depois que o pai anota o filho nela (a anotação traz o comando lançado).
+    const leTrava = `const fs = require('fs'); const fim = Date.now() + 5000; let s
+do { try { s = fs.readFileSync(process.env.TRAVA, 'utf8'); if (JSON.parse(s).filho) break } catch {} Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20) } while (Date.now() < fim)
+fs.writeFileSync(process.env.SAIDA, s)`
+    const code = await rodarNaFila({
+      dir: tmp(), config: atual, p, lerConfig: () => atual,
+      comando: [process.execPath, '-e', leTrava, 'artisan', '--parallel', '--processes=8'],
+      env: { SAIDA: saida, TRAVA: join(p.fila, 'geral', '1', 'info.json') },
+      // Na espera do teto a config cai de 6 para 4: a espera e a trava (gravada com 6) acompanham.
+      dormir: async () => {
+        esperas.push(listarTestes(p).find((t) => t.estado === 'aguardando')?.comando)
+        if (esperas.length === 1) atual = { ...atual, processos: 4 }
+        else soltarVaga(teto, 1)
+      }
+    })
+    assert.equal(code, 0)
+    assert.deepEqual(esperas.map((c) => c?.match(/--processes=\d+$/)?.[0]), ['--processes=6', '--processes=4'])
+    assert.match(JSON.parse(readFileSync(saida, 'utf8')).comando, /--processes=4$/)
+  })
+})
+
+describe('rodarNaFila sem comando (executor detectado)', () => {
+  it('a espera acompanha o fila.processos relido', async () => {
+    const p = paths(tmp())
+    assert.ok(publicar(join(p.fila, TETO, '1'), { pid: process.pid }))
+    let atual = { modo: 'banco' as const, vagas: 2, vagasPorProjeto: 1, teto: 1, processos: 6, esperaMaxS: 1 }
+    const esperas: (string | null | undefined)[] = []
+    let t = 0
+    // O teto fica ocupado e a espera estoura (75): só a linha aguardando importa, sem lançar php.
+    const code = await rodarNaFila({
+      dir: arquivos(tmp(), { artisan: '' }), config: atual, p, env: {}, lerConfig: () => atual, agora: () => t,
+      dormir: async (ms) => {
+        t += ms
+        esperas.push(listarTestes(p).find((x) => x.estado === 'aguardando')?.comando)
+        atual = { ...atual, processos: 4 }
+      }
+    })
+    assert.equal(code, 75)
+    assert.match(esperas[0] ?? '', /--parallel --processes=6$/)
+    assert.match(esperas.at(-1) ?? '', /--parallel --processes=4$/)
   })
 })
