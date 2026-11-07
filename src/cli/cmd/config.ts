@@ -1,5 +1,6 @@
-import { aplicar, atualizarConfig, carregar } from '../../core/config.ts'
-import { caminhos, Uso, type Ctx } from '../ctx.ts'
+import { atualizarConfig, carregar } from '../../core/config.ts'
+import { aplicar } from '../../core/config-chaves.ts'
+import { type Ctx, caminhos, Uso } from '../ctx.ts'
 import { textosPara } from '../textos.ts'
 
 /** agent-pool config get [chave.pontilhada] | set chave=valor … */
@@ -21,7 +22,7 @@ export async function config(ctx: Ctx, args: string[]): Promise<number> {
       if (i < 1) throw new Uso(`${t.esperavaPar}: ${par}`)
       mudancas[par.slice(0, i)] = par.slice(i + 1)
     }
-    atualizarConfig(p, (c) => aplicar(c, mudancas))
+    await atualizarConfig(p, c => aplicar(c, mudancas))
     ctx.out(`ok ${Object.keys(mudancas).length} ${t.alteracoes}`)
     return 0
   }

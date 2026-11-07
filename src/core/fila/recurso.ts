@@ -16,20 +16,41 @@ function lerJson(arquivo: string): Record<string, unknown> | null {
   }
 }
 
-/** Valor de uma chave: ambiente, depois .env.testing, depois .env. */
+function lerTexto(arquivo: string): string | null {
+  try {
+    return readFileSync(arquivo, 'utf8')
+  } catch {
+    return null
+  }
+}
+
+/** `<env name="K" value="V"/>` ou `<server .../>` do phpunit, fora de comentário; os atributos vêm em qualquer ordem. */
+function valorNoPhpunit(texto: string, chave: string): string | undefined {
+  for (const [tag] of texto.replace(/<!--[\s\S]*?-->/g, '').matchAll(/<(?:env|server)\s[^>]*>/g)) {
+    const atributo = (nome: string) => new RegExp(`\\b${nome}\\s*=\\s*(["'])(.*?)\\1`).exec(tag)?.[2]
+    if (atributo('name') === chave) return atributo('value') || undefined
+  }
+  return undefined
+}
+
+function valorNoDotenv(texto: string, chave: string): string | undefined {
+  for (const linha of texto.split(/\r?\n/)) {
+    const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/.exec(linha)
+    if (m?.[1] === chave) return m[2].replace(/^(["'])(.*)\1$/, '$2')
+  }
+  return undefined
+}
+
+/** Valor de uma chave na ordem do Laravel: ambiente, phpunit.xml (o phpunit define antes do .env, que não sobrescreve), .env.testing, .env. */
 export function valorEnv(dir: string, env: NodeJS.ProcessEnv, chave: string): string | undefined {
   if (env[chave]) return env[chave]
+  const phpunit = lerTexto(join(dir, 'phpunit.xml')) ?? lerTexto(join(dir, 'phpunit.xml.dist'))
+  const dePhpunit = phpunit ? valorNoPhpunit(phpunit, chave) : undefined
+  if (dePhpunit) return dePhpunit
   for (const f of ['.env.testing', '.env']) {
-    let texto: string
-    try {
-      texto = readFileSync(join(dir, f), 'utf8')
-    } catch {
-      continue
-    }
-    for (const linha of texto.split(/\r?\n/)) {
-      const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/.exec(linha)
-      if (m?.[1] === chave) return m[2].replace(/^(["'])(.*)\1$/, '$2') || undefined
-    }
+    const texto = lerTexto(join(dir, f))
+    const valor = texto ? valorNoDotenv(texto, chave) : undefined
+    if (valor !== undefined) return valor || undefined
   }
   return undefined
 }
@@ -64,7 +85,8 @@ export function detectarRecurso(dir: string, env: NodeJS.ProcessEnv, executor: E
   const host = valorEnv(dir, env, 'DB_HOST')
   const porta = valorEnv(dir, env, 'DB_PORT')
   const conexao = valorEnv(dir, env, 'DB_CONNECTION')
-  if ((host || porta || conexao) && conexao !== 'sqlite') return formatar(normMotor(conexao ?? 'mysql'), host ?? '127.0.0.1', porta, valorEnv(dir, env, 'DB_DATABASE'))
+  if ((host || porta || conexao) && conexao !== 'sqlite')
+    return formatar(normMotor(conexao ?? 'mysql'), host ?? '127.0.0.1', porta, valorEnv(dir, env, 'DB_DATABASE'))
 
   const exe = executor ? basename(executor.comando[0]) : ''
   return CONTAINERS.has(exe) ? `container ${exe}` : 'geral'
@@ -83,8 +105,10 @@ export function nomeProjeto(dir: string): string {
   try {
     const comum = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
       cwd: dir,
-      stdio: ['ignore', 'pipe', 'ignore']
-    }).toString().trim()
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+      .toString()
+      .trim()
     if (comum) return basename(dirname(comum))
   } catch {
     // fora de um repositório git

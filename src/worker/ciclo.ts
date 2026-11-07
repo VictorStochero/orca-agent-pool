@@ -1,7 +1,7 @@
 // Vigília do painel: enquanto a tela está aberta, o worker atualiza a cada período e avisa por 'estado.mudou'.
-const CICLO_MS = 60_000
-const INTERVALO_MIN_S = 15
-const INTERVALO_MAX_S = 3600
+import { INTERVALO_S } from '../protocol.ts'
+
+const CICLO_MS = INTERVALO_S.padrao * 1000
 // O painel renova a vigília antes do teto de 120 s do plugin.request; a graça cobre o intervalo entre uma e outra.
 const RENOVA_MS = 100_000
 const GRACA_MS = 3_000
@@ -9,10 +9,17 @@ const GRACA_MS = 3_000
 /** Segundos guardados -> ms: ausente ou não numérico usa 60 s; número fora da faixa cai no limite. */
 export function intervaloMs(valor: unknown): number {
   if (typeof valor !== 'number' || !Number.isFinite(valor)) return CICLO_MS
-  return Math.min(INTERVALO_MAX_S, Math.max(INTERVALO_MIN_S, Math.round(valor))) * 1000
+  return Math.min(INTERVALO_S.max, Math.max(INTERVALO_S.min, Math.round(valor))) * 1000
 }
 
-type OpcoesCiclo = { coletar: () => Promise<unknown>; avisar: () => void; erro: (mensagem: string) => void; periodoMs?: number; gracaMs?: number; renovaMs?: number }
+type OpcoesCiclo = {
+  coletar: () => Promise<unknown>
+  avisar: () => void
+  erro: (mensagem: string) => void
+  periodoMs?: number
+  gracaMs?: number
+  renovaMs?: number
+}
 
 /** Coleta a cada `periodoMs` só enquanto há painel vigiando; se a coleta anterior não terminou, pula o ciclo. */
 export function criarCiclo(o: OpcoesCiclo) {
@@ -57,7 +64,7 @@ export function criarCiclo(o: OpcoesCiclo) {
       graca = undefined
       vigias++
       relogio ??= setInterval(() => void ciclo(), periodoMs)
-      return new Promise((resolve) => {
+      return new Promise(resolve => {
         const fim = () => {
           clearTimeout(vence)
           signal.removeEventListener('abort', fim)
@@ -67,6 +74,6 @@ export function criarCiclo(o: OpcoesCiclo) {
         const vence = setTimeout(fim, renovaMs)
         signal.addEventListener('abort', fim, { once: true })
       })
-    }
+    },
   }
 }

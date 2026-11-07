@@ -6,7 +6,7 @@ const TABELA: readonly [agente: string, modelo: RegExp, limite: string][] = [
   ['claude', /fable/i, 'Fable'],
   ['antigravity', /argon/i, 'Gemini 4 Argon'],
   ['antigravity', /claude|gpt/i, 'Claude and GPT models'],
-  ['antigravity', /gemini|flash/i, 'Gemini Models']
+  ['antigravity', /gemini|flash/i, 'Gemini Models'],
 ]
 
 /** Nome do limite separado que o modelo consome; null = limite geral. */
@@ -21,7 +21,7 @@ export const modeloEfetivo = (c: Conta): string | null => c.modelo ?? acharAgent
 /** Limite que a conta segue, se a medida o traz. */
 export function limiteSeguido(c: Conta, m: Medida | undefined) {
   const nome = limiteDoModelo(c.agente, modeloEfetivo(c))?.toLowerCase()
-  return (nome && m?.limites?.find((l) => l.nome.toLowerCase() === nome)) || null
+  return (nome && m?.limites?.find(l => l.nome.toLowerCase() === nome)) || null
 }
 
 /** Medida com curta/longa do limite seguido; janela que ele não tem (ex.: Fable e Argon sem 5h) fica a geral. */

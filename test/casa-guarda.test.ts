@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync, readdirSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
@@ -7,9 +7,9 @@ import { test } from 'node:test'
 test('suítes do CLI, dos hooks e do worker usam guardarCasaReal', () => {
   const dir = import.meta.dirname
   const sem = readdirSync(dir)
-    .filter((f) => f.endsWith('.test.ts') && f !== 'casa-guarda.test.ts')
-    .filter((f) => /from '\.\.\/src\/(cli|hooks|worker)\//.test(readFileSync(join(dir, f), 'utf8')))
-    .filter((f) => !/^\s*guardarCasaReal\(\)/m.test(readFileSync(join(dir, f), 'utf8')))
+    .filter(f => f.endsWith('.test.ts') && f !== 'casa-guarda.test.ts')
+    .filter(f => /from '\.\.\/src\/(cli|hooks|worker)\//.test(readFileSync(join(dir, f), 'utf8')))
+    .filter(f => !/^\s*guardarCasaReal\(\)/m.test(readFileSync(join(dir, f), 'utf8')))
   assert.deepEqual(sem, [])
 })
 

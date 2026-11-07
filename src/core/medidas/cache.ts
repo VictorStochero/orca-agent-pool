@@ -1,30 +1,44 @@
-import { createHash, randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, rmSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
-import type { Config, Conta, Medida, OrcaCli } from '../tipos.ts'
-import type { Paths } from '../paths.ts'
+import { gravarAtomico } from '../atomico.ts'
 import { acharAgente, executavelDe, programaDe } from '../catalogo.ts'
 import { instalado } from '../deteccao.ts'
-import { medirClaude, pastaDaConta, type DependenciasMedida } from './claude.ts'
-import { medirOrca, type CotaOrca } from './orca.ts'
+import { expandirHome, type Paths } from '../paths.ts'
+import type { Config, Conta, Medida, OrcaCli } from '../tipos.ts'
+import { type DependenciasMedida, medirClaude, pastaDaConta } from './claude.ts'
+import { type CotaOrca, medirOrca } from './orca.ts'
+import { percentual } from './percentual.ts'
 
 function chave(conta: Conta): string {
-  return createHash('sha256').update(JSON.stringify([conta.nome, conta.agente, conta.config, conta.origem])).digest('hex')
+  return createHash('sha256')
+    .update(JSON.stringify([conta.nome, conta.agente, conta.config, conta.origem]))
+    .digest('hex')
 }
 
 function formaValida(medida: Medida | undefined): medida is Medida {
   try {
     if (!medida || !Number.isFinite(medida.medidaTs)) return false
     if (!['ok', 'erro', 'sem_login', 'sem_medida'].includes(medida.estado)) return false // `nao_configurada` nunca é gravada
-    const percentual = (n: unknown) => n === null || typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 100
-    if (![medida.curta, medida.longa].every(percentual)) return false
-    if (medida.limites !== undefined && !(Array.isArray(medida.limites) && medida.limites.every(l => typeof l?.nome === 'string' && l.nome !== '' && percentual(l.curta) && percentual(l.longa)))) return false
+    const valido = (n: unknown) => n === null || percentual(n) !== null // o cache aceita "sem medida" (null)
+    if (![medida.curta, medida.longa].every(valido)) return false
+    if (
+      medida.limites !== undefined &&
+      !(
+        Array.isArray(medida.limites) &&
+        medida.limites.every(l => typeof l?.nome === 'string' && l.nome !== '' && valido(l.curta) && valido(l.longa))
+      )
+    )
+      return false
     return medida.resetLongaTs === null || Number.isFinite(medida.resetLongaTs)
-  } catch { return false }
+  } catch {
+    return false
+  }
 }
 
 function ler(medida: Medida | undefined, conta: Conta, agora: number, cacheMin: number): Medida | null {
-  if (!formaValida(medida) || medida.conta !== conta.nome || medida.medidaTs > agora || agora - medida.medidaTs >= cacheMin * 60_000) return null
+  if (!formaValida(medida) || medida.conta !== conta.nome || medida.medidaTs > agora || agora - medida.medidaTs >= cacheMin * 60_000)
+    return null
   return medida
 }
 
@@ -32,7 +46,9 @@ function lerArquivo(p: Paths): Record<string, Medida> {
   try {
     const json = JSON.parse(readFileSync(join(p.medidas, 'contas.json'), 'utf8'))
     if (json && typeof json === 'object' && !Array.isArray(json)) return json
-  } catch { /* Cache ausente ou ilegível exige coleta nova. */ }
+  } catch {
+    /* Cache ausente ou ilegível exige coleta nova. */
+  }
   return {}
 }
 
@@ -55,37 +71,60 @@ function cliAusente(conta: Conta, d: DependenciasMedida): string | null {
   // Com caminho, confere o próprio arquivo (a pasta dele faz as vezes de PATH).
   if (programa && /[\\/]/.test(programa)) {
     if (/[$%]/.test(programa)) return null // variável que só o shell expande: não dá para conferir aqui
-    const arquivo = /^~[\\/]/.test(programa) ? join(d.home, programa.slice(2)) : programa
+    const arquivo = expandirHome(programa, d.home)
     return instalado(basename(arquivo), dirname(arquivo)) ? null : `cli_ausente:${programa}`
   }
   const exe = programa ? executavelDe(programa) : null
-  const candidatos = exe ? [exe] : acharAgente(conta.agente)?.comandos ?? []
-  return candidatos.length && !candidatos.some((x) => instalado(x, d.path!)) ? `cli_ausente:${candidatos[0]}` : null
+  const candidatos = exe ? [exe] : (acharAgente(conta.agente)?.comandos ?? [])
+  return candidatos.length && !candidatos.some(x => instalado(x, d.path!)) ? `cli_ausente:${candidatos[0]}` : null
 }
 
-const naoConfigurada = (conta: Conta, d: DependenciasMedida, motivo: string): Medida =>
-  ({ conta: conta.nome, medidaTs: d.agora, curta: null, longa: null, resetLongaTs: null, estado: 'nao_configurada', erro: motivo })
+const naoConfigurada = (conta: Conta, d: DependenciasMedida, motivo: string): Medida => ({
+  conta: conta.nome,
+  medidaTs: d.agora,
+  curta: null,
+  longa: null,
+  resetLongaTs: null,
+  estado: 'nao_configurada',
+  erro: motivo,
+})
 
-export async function medirTodas(c: Config, p: Paths, orca: OrcaCli, d: DependenciasMedida, cacheMin = 5): Promise<Medida[]> {
+/** Mede as contas (ou só `soConta`, mesclando no cache as medidas das outras) e grava o cache. */
+export async function medirTodas(
+  c: Config,
+  p: Paths,
+  orca: OrcaCli,
+  d: DependenciasMedida,
+  cacheMin = 5,
+  soConta?: string,
+): Promise<Medida[]> {
   let nativas: Map<string, CotaOrca> | undefined
   let falhouOrca = false
   const medidas: Medida[] = []
   const destino = join(p.medidas, 'contas.json')
   const anteriores = lerArquivo(p)
-  const atualizadas: Record<string, Medida> = {}
+  const atualizadas: Record<string, Medida> = soConta ? { ...anteriores } : {}
   let mudou = false
   const medir = async (conta: Conta): Promise<Medida> => {
     if (conta.agente === 'claude' && conta.origem === 'manual') return medirClaude(conta, d)
     if (!nativas && !falhouOrca) {
-      try { nativas = await medirOrca(orca) } catch { falhouOrca = true }
+      try {
+        nativas = await medirOrca(orca)
+      } catch {
+        falhouOrca = true
+      }
     }
     return {
-      conta: conta.nome, medidaTs: d.agora, curta: null, longa: null, resetLongaTs: null,
+      conta: conta.nome,
+      medidaTs: d.agora,
+      curta: null,
+      longa: null,
+      resetLongaTs: null,
       estado: falhouOrca ? 'erro' : 'sem_medida',
-      ...(nativas?.get(conta.agente)),
+      ...nativas?.get(conta.agente),
     }
   }
-  for (const conta of c.pool.contas) {
+  for (const conta of c.pool.contas.filter(x => !soConta || x.nome === soConta)) {
     const pasta = pastaAusente(conta, d)
     if (pasta) {
       medidas.push(naoConfigurada(conta, d, pasta))
@@ -93,7 +132,7 @@ export async function medirTodas(c: Config, p: Paths, orca: OrcaCli, d: Dependen
     }
     const id = chave(conta)
     const cache = ler(anteriores[id], conta, d.agora, cacheMin)
-    const medida = cache ?? await medir(conta)
+    const medida = cache ?? (await medir(conta))
     const cli = medida.estado === 'ok' ? null : cliAusente(conta, d)
     if (cli) {
       medidas.push(naoConfigurada(conta, d, cli)) // não vai ao cache: volta a medir quando o CLI aparecer
@@ -105,11 +144,7 @@ export async function medirTodas(c: Config, p: Paths, orca: OrcaCli, d: Dependen
   }
   if (mudou) {
     mkdirSync(p.medidas, { recursive: true })
-    const temporario = `${destino}.${randomUUID()}.tmp`
-    try {
-      writeFileSync(temporario, JSON.stringify(atualizadas), { encoding: 'utf8', mode: 0o600, flag: 'wx' })
-      renameSync(temporario, destino)
-    } finally { rmSync(temporario, { force: true }) }
+    gravarAtomico(destino, JSON.stringify(atualizadas), 0o600)
   }
   return medidas
 }

@@ -1,8 +1,10 @@
 import { env } from 'orca'
+import type { CodigoErro } from '../protocol'
+import { erroMedida, textosComuns } from '../textos-comuns'
 
 const pct = (v: number | null) => (v === null ? '-' : `${v}%`)
 
-export const pt = {
+const pt = {
   titulo: 'Pool de agentes e fila de testes',
   atualizar: 'Atualizar',
   salvar: 'Salvar',
@@ -19,30 +21,19 @@ export const pt = {
     agente_invalido: 'Agente sem suporte a hooks',
     hooks_falhou: 'Não foi possível alterar o hook',
     instalacao_recusada: 'Instalação não permitida',
-    instalacao_falhou: 'Falha na instalação'
-  } as Record<string, string>,
+    instalacao_falhou: 'Falha na instalação',
+  } satisfies Record<Exclude<CodigoErro, 'config_recusada'>, string>,
   // Códigos de validação da config (os mesmos do CLI); o worker manda `chave: codigo`.
-  codigosConfig: {
-    valor_invalido: 'valor inválido', config_invalida: 'configuração inválida', versao_nao_suportada: 'versão não suportada',
-    ilegivel: 'não consegui ler a configuração', json_invalido: 'a configuração não é JSON válido',
-    conta_existente: 'conta já existe', conta_inexistente: 'conta inexistente', conta_repetida: 'conta repetida',
-    ordem_incompleta: 'ordem incompleta', chave_desconhecida: 'chave desconhecida',
-    agente_desconhecido: 'agente desconhecido', variavel_sem_suporte: 'variável sem suporte',
-    agente_nao_provado: 'agente sem hook comprovado', config_ocupada: 'outra gravação da configuração em andamento'
-  } as Record<string, string>,
-  errosMedida: { claude_usage_unavailable: 'uso indisponível (/usage não respondeu)' } as Record<string, string>,
+  codigosConfig: textosComuns.pt.codigosConfig,
   // Códigos que o worker embute em mensagens (hook, orca, skill); `orca_saiu:N` leva o código de saída.
-  codigosTexto: {
-    raiz_invalida: 'raiz não é um objeto', hooks_invalido: '"hooks" inválido', pretooluse_invalido: '"hooks.PreToolUse" inválido',
-    skill_sem_origem: 'arquivos da skill ausentes no plugin'
-  } as Record<string, string>,
+  codigosTexto: { ...textosComuns.pt.errosHook, ...textosComuns.pt.outrosCodigos },
   orcaSaiu: (n: string) => `orca saiu com código ${n}`,
   alertas: {
     config_ilegivel: (detalhe: string) => `config.json ilegível: ${detalhe}`,
     orca_indisponivel: 'Orca indisponível: cota nativa e vagas recuperadas não são atualizadas',
     sem_login: (conta: string) => `${conta}: sem login`,
-    erro_medida: (conta: string, detalhe?: string) => `${conta}: ${(detalhe && pt.errosMedida[detalhe]) || detalhe || 'erro na medição'}`,
-    teste_parado: (pid: number | null, onde: string) => `Teste parado (pid ${pid ?? '?'}) em ${onde}`
+    erro_medida: (conta: string, detalhe?: string) => `${conta}: ${pt.pool.erroMedida(detalhe)}`,
+    teste_parado: (pid: number | null, onde: string) => `Teste parado (pid ${pid ?? '?'}) em ${onde}`,
   },
   atualizadoEm: 'Atualizado',
   plugin: 'Plugin',
@@ -52,12 +43,35 @@ export const pt = {
   orcaVerificando: 'verificando',
   requisitos: {
     titulo: 'Requisitos',
-    explica: 'O painel só funciona com todos os requisitos abaixo instalados.',
-    tabela: 'Requisitos do painel',
-    colRequisito: 'Requisito',
-    colSituacao: 'Situação',
-    ok: '✓ ok',
-    falta: '✗ falta',
+    explica:
+      'Tudo abaixo é obrigatório para o plugin fazer o que promete. Nada é instalado sem o seu clique: abra cada item para ver o que ele faz e o que vai gravar.',
+    obrigatorio: 'Obrigatório',
+    instalado: 'instalado',
+    falta: 'falta',
+    abrir: 'abra para ver o que faz',
+    situacao: 'Situação',
+    vaiGravar: 'Ao clicar em Instalar, grava em:',
+    instalaOrca: 'Quem instala é o próprio Orca (orca skills install orchestration), na pasta de skills dele.',
+    oQueFaz: {
+      orca: 'O Orca roda este plugin: o painel, o worker e o comando agent-pool usam o runtime dele.',
+      orchestration:
+        'Skill do próprio Orca que dá aos agentes o orca orchestration (worker-start, send, worker_done): é com ela que o coordenador sobe os workers que o pool distribui.',
+      skill:
+        'Ensina os agentes o fluxo: reservar vaga com agent-pool writer --reserve antes do worker-start, passar a reserva ao dispatch com slot swap, rodar todo teste com agent-pool test e liberar a vaga no fim. Fica numa cópia em ~/.agents/skills/agent-pool, com um link na pasta de skills de cada agente das suas contas.',
+      lancador:
+        'O comando agent-pool que os agentes, a skill e os hooks chamam (writer, slot, test, hook). É um script curto que roda o CLI deste plugin com o runtime do Orca.',
+      hooks:
+        'Antes de cada comando de shell do Claude Code (Bash e PowerShell) e do Codex, o agente chama agent-pool hook. O hook só lê o comando, não envia nada pela rede e deixa passar todo o resto: recusa um teste solto (como php artisan test ou npm test), dizendo ao agente o comando pela fila, e recusa orca orchestration worker-start sem reserva de vaga. Antes de gravar, guarda uma cópia do arquivo original em ~/.agents/agent-pool/state/backup/. No Codex, o próprio Codex pede para você confiar no hook na primeira vez.',
+    },
+    porque: {
+      orca: 'Sem a versão 1.4.247 ou mais nova o plugin não roda. Atualize pelo Orca.',
+      orchestration: 'Sem ela não há workers para o pool distribuir.',
+      skill: 'Sem ela os agentes não sabem que o pool e a fila existem, e nada passa por eles.',
+      lancador:
+        'Sem ele nada do pool nem da fila funciona para os agentes. Depois de atualizar o plugin ou o Orca ele fica desatualizado e o painel pede para instalar de novo.',
+      hooks:
+        'Sem eles as regras valem só quando o agente lembra da skill: um teste solto pode derrubar a máquina ou corromper o banco de testes de outro agente, e um worker-start sem reserva passa do limite de vagas.',
+    },
     instalar: 'Instalar',
     instalando: 'Instalando…',
     verificar: 'Verificar agora',
@@ -66,7 +80,13 @@ export const pt = {
     instalados: 'Requisitos instalados. O painel já está pronto.',
     respostaInvalida: 'Resposta inesperada do worker ao instalar.',
     leituraInvalida: 'Não consegui reler os requisitos. Atualize para tentar de novo.',
-    nomes: { orca: 'Orca', orchestration: 'Skill orchestration', skill: 'Skill agent-pool', lancador: 'Lançador agent-pool', hooks: 'Hooks dos agentes' },
+    nomes: {
+      orca: 'Orca',
+      orchestration: 'Skill orchestration',
+      skill: 'Skill agent-pool',
+      lancador: 'Lançador agent-pool',
+      hooks: 'Hooks dos agentes',
+    },
     detalhe: {
       nao_verificado: (v: string) => `não verificado: ${v}`,
       versao: (v: string) => `versão ${v}`,
@@ -74,13 +94,24 @@ export const pt = {
       instalada: 'instalada',
       instalada_editada: 'instalada (editada por você)',
       nao_instalada: 'não instalada',
-      desatualizada: 'desatualizada',
+      desatualizada: 'desatualizada ou sem o link de um agente',
       sem_origem: 'arquivos da skill ausentes no plugin',
       instalado: 'instalado',
       nao_instalado: 'não instalado',
-      hooks_nenhum: 'nenhum agente com hook detectado',
-      situacoes: { instalado: 'instalado', ausente: 'ausente', erro: 'erro', removido: 'removido por você' } as Record<string, string>
-    }
+      desatualizado: 'desatualizado: aponta para outra versão do plugin ou do Orca',
+      hooks_nenhum: 'nenhum agente com hook nas suas contas',
+      situacoes: { instalado: 'instalado', ausente: 'ausente', desatualizado: 'desatualizado', erro: 'erro' } as Record<string, string>,
+    },
+  },
+  desinstalar: {
+    titulo: 'Desinstalar',
+    explica:
+      'O Orca não avisa o plugin quando ele é removido. Antes de remover o plugin em Configurações → Plugins, desinstale aqui: tira os hooks de todos os agentes e pastas de conta, a skill (cópia e links), o lançador e ~/.agents/agent-pool (configuração, fila, vagas e backups). Se um arquivo de agente não puder ser alterado, a skill, o lançador e ~/.agents/agent-pool ficam; os hooks que já saíram de outros arquivos não voltam.',
+    botao: 'Desinstalar tudo',
+    confirmar: 'Confirmar: remover tudo',
+    cancelar: 'Cancelar',
+    removendo: 'Removendo…',
+    feito: 'Tudo removido. Agora remova o plugin em Configurações → Plugins do Orca.',
   },
   dicaLinha: 'Clique numa linha para ver os detalhes.',
   configuracoes: {
@@ -93,19 +124,20 @@ export const pt = {
       fila: 'Como os testes esperam a vez — ~/.agents/agent-pool/config.json',
       pool: 'Limites da máquina e como o escritor é escolhido — ~/.agents/agent-pool/config.json',
       contas:
-        'Vagas, peso, papéis e ordem de cada conta — ~/.agents/agent-pool/config.json. As contas detectadas pelo Orca entram no pool sozinhas; as manuais são CLIs personalizados, cadastrados na aba "Cadastrar".',
-      painel: 'Este painel — guardado no Orca'
-    }
+        'Vagas, peso, papéis e ordem de cada conta — ~/.agents/agent-pool/config.json. As contas detectadas pelo Orca entram no pool sozinhas, marcadas como Não utilizar, até você ativá-las; as manuais são CLIs personalizados, cadastrados na aba "Cadastrar".',
+      painel: 'Este painel — guardado no Orca',
+    },
   },
   painel: {
     intervalo: 'Atualizar a cada (segundos)',
     dica: 'Coleta local feita pelo worker, sem IA e sem gastar tokens; valores baixos só aumentam o uso de CPU.',
-    invalido: (min: number, max: number) => `Informe um número inteiro de ${min} a ${max}.`
+    invalido: (min: number, max: number) => `Informe um número inteiro de ${min} a ${max}.`,
   },
 
   fila: {
     titulo: 'Testes na fila',
-    explica: 'Os testes esperam a vez numa fila para a máquina não sobrecarregar: cada fila libera um número de vagas e o teto limita o total de testes ao mesmo tempo.',
+    explica:
+      'Os testes esperam a vez numa fila para a máquina não sobrecarregar: cada fila libera um número de vagas e o teto limita o total de testes ao mesmo tempo.',
     modos: { global: 'Global', banco: 'Por banco', projeto: 'Por projeto' } as Record<string, string>,
     resumo: (execucao: number, aguardando: number, teto: number, modo: string) =>
       `${execucao} em execução · ${aguardando} aguardando · teto ${teto} · Modo ${modo}`,
@@ -135,19 +167,24 @@ export const pt = {
       vagas: 'Vagas',
       vagas_projeto: 'Vagas por projeto',
       teto: 'Teto da máquina',
-      processos: 'Processos (--parallel)'
+      processos: 'Processos (--parallel)',
+      limpar_bancos: 'Apagar os bancos <banco>_test_N depois do teste paralelo do Laravel',
     },
     dicas: {
       global: 'Uma fila única para a máquina inteira: todos os testes, de qualquer projeto, esperam a mesma vez.',
       banco:
-        'Uma fila por banco (endereço:porta/banco), compartilhada entre projetos, com 1 teste por vez em cada banco: testes que usam o mesmo banco esperam uns pelos outros; container e Python/JS têm filas próprias. Use quando os projetos dividem o banco de testes.',
+        'Uma fila por banco (endereço:porta/banco), compartilhada entre projetos, com 1 teste por vez em cada banco: testes que usam o mesmo banco esperam uns pelos outros; a fila geral (testes sem banco detectado) e as de container são filas à parte. Use quando os projetos dividem o banco de testes.',
       projeto:
         'Cada projeto tem a própria fila (vagas por projeto), independente dos outros; só o teto da máquina limita o total. Use quando cada projeto tem banco de testes próprio.',
-      vagas: 'Testes ao mesmo tempo em cada fila. No modo Por banco, cada banco tem 1 vaga e esta vale para as filas sem banco (container, Python/JS).',
+      vagas:
+        'Testes ao mesmo tempo em cada fila. No modo Por banco, cada banco tem 1 vaga e esta vale para as filas sem banco (fila geral e de container).',
       vagas_projeto: 'Testes ao mesmo tempo em cada projeto. Só vale no modo Por projeto.',
       teto: 'Máximo de testes ao mesmo tempo na máquina, somando todas as filas.',
-      processos: 'Processos em paralelo do teste. Também é o teto das flags de paralelismo que o agente passa (--processes, -n, --maxWorkers): pedido maior é reduzido a este valor.'
-    }
+      processos:
+        'Processos em paralelo do teste. Também é o teto das flags de paralelismo que o agente passa (--processes, -n, --maxWorkers): pedido maior é reduzido a este valor.',
+      limpar_bancos:
+        'Desligado por padrão. Ligado, a fila acrescenta --drop-databases ao artisan test paralelo (--parallel ou -p; Laravel 9 ou mais novo) e o Laravel apaga as cópias <banco>_test_1, _test_2… que criou, em qualquer banco, para não acumular bancos. O banco principal nunca é tocado.',
+    },
   },
 
   atencao: 'Atenção',
@@ -167,8 +204,8 @@ export const pt = {
     janelasValor: (curta: number | null, longa: number | null) => `5h ${pct(curta)} · semana ${pct(longa)}`,
     semLogin: 'sem login',
     naoConfigurada: 'não configurada nesta máquina',
-    motivosNaoConfigurada: { pasta_ausente: (v: string) => `pasta ${v} não existe`, cli_ausente: (v: string) => `${v} não instalado` },
-    erroMedida: (detalhe?: string | null) => (detalhe && pt.errosMedida[detalhe]) || detalhe || 'erro na medição',
+    motivosNaoConfigurada: textosComuns.pt.motivosNaoConfigurada,
+    erroMedida: (detalhe?: string | null) => erroMedida(textosComuns.pt, detalhe),
     vagasDaConta: (usadas: number, vagas: number) => `${usadas}/${vagas || '∞'}`,
     naoUtilizada: 'não utilizada',
     situacao: 'Situação',
@@ -206,15 +243,19 @@ export const pt = {
     novaConfig: 'Diretório de config',
     dicas: {
       naoUtilizar: 'A conta continua listada e medida, mas não recebe trabalho nem conta no teto. Desmarque para voltar a usar.',
-      modelo: 'Modelo que o pool manda o agente usar (--model). O limite seguido sai do nome: Fable → limite Fable; no Antigravity, argon → Gemini 4 Argon, flash ou gemini → Gemini Models, claude ou gpt → Claude and GPT models. Vazio = padrão do agente (no Antigravity, gemini-3.8-flash-high).',
-      novoComando: 'Comando que abre o CLI desta conta, por exemplo claude-work ou CLAUDE_CONFIG_DIR=~/.claude-work claude. Informe o comando, o diretório de config ou os dois.',
+      modelo:
+        'Modelo que o pool manda o agente usar (--model). O limite seguido sai do nome: Fable → limite Fable; no Antigravity, argon → Gemini 4 Argon, flash ou gemini → Gemini Models, claude ou gpt → Claude and GPT models. Vazio = padrão do agente (no Antigravity, gemini-3.8-flash-high).',
+      novoComando:
+        'Comando que abre o CLI desta conta, por exemplo claude-work ou CLAUDE_CONFIG_DIR=~/.claude-work claude. Informe o comando, o diretório de config ou os dois.',
       novoConfig: 'Pasta de configuração do CLI, por exemplo ~/.claude-work. Informe o diretório de config, o comando ou os dois.',
       vagas: 'Quantos agentes desta conta podem trabalhar ao mesmo tempo. 0 = sem limite próprio (o teto da máquina continua valendo).',
       peso: 'Prioridade na escolha do escritor: multiplica o ritmo da cota. Peso 10 é escolhido bem antes de peso 1 com a mesma folga. Ignorado quando a escolha é Ordem.',
-      config: 'Pasta de configuração do agente (por exemplo CLAUDE_CONFIG_DIR) que separa esta conta das outras do mesmo agente. Vazio = a conta padrão do sistema.',
+      config:
+        'Pasta de configuração do agente (por exemplo CLAUDE_CONFIG_DIR) que separa esta conta das outras do mesmo agente. Vazio = a conta padrão do sistema.',
       teto: 'Máximo de agentes trabalhando ao mesmo tempo na máquina, somando todas as contas. 0 = sem limite.',
       ramMin: 'Memória livre mínima (GB) para reservar uma vaga nova. 0 = desligado.',
-      escolha: 'Ritmo da cota: o escritor é a conta com mais cota sobrando × peso. Ordem da tabela: a primeira conta da tabela do Pool com vaga e cota abaixo do teto.'
+      escolha:
+        'Ritmo da cota: o escritor é a conta com mais cota sobrando × peso. Ordem da tabela: a primeira conta da tabela do Pool com vaga e cota abaixo do teto.',
     },
     // Do maior para o menor nível de responsabilidade; papel fora da lista vai para o fim.
     ordemPapeis: ['orquestra', 'revisor', 'verificador', 'escritor', 'segunda-opiniao', 'mecanico'],
@@ -224,7 +265,7 @@ export const pt = {
       verificador: 'Verificador',
       escritor: 'Escritor',
       'segunda-opiniao': 'Segunda opinião',
-      mecanico: 'Mecânico'
+      mecanico: 'Mecânico',
     } as Record<string, string>,
     dicasPapel: {
       escritor: 'Implementa a tarefa: código, testes e commit no worktree.',
@@ -232,7 +273,7 @@ export const pt = {
       verificador: 'Contraprova só leitura: tenta refutar os achados de uma revisão ou um diagnóstico.',
       mecanico: 'Tarefas mecânicas e conferíveis (fixtures, edição literal, mover por mapa) com modelo menor.',
       'segunda-opiniao': 'Revisão adversarial de outra família de modelo, só leitura, em entregas de alto risco.',
-      orquestra: 'Coordena os workers; conta só com este papel nunca é escolhida para trabalho.'
+      orquestra: 'Coordena os workers; conta só com este papel nunca é escolhida para trabalho.',
     } as Record<string, string>,
     escolherConta: 'Conta a configurar',
     ordemNaTabela: 'Posição na tabela do Pool (usada quando o escritor é escolhido pela ordem da tabela)',
@@ -240,152 +281,307 @@ export const pt = {
     descer: 'Descer',
     nova: 'Nova conta manual',
     novaNome: 'Nome',
-    novaCriar: 'Adicionar conta'
+    nomeInvalido: 'Nome inválido: use de 1 a 32 letras minúsculas, números, _ e -.',
+    novaCriar: 'Adicionar conta',
   },
   imposicao: {
     titulo: 'Hooks',
-    descricao: 'Os hooks fazem os agentes usar a fila de testes e reservar vaga antes do worker-start.',
-    estados: { instalado: 'Instalado', ausente: 'Ausente', erro: 'Erro' },
+    descricao:
+      'Os hooks fazem os agentes usar a fila de testes e reservar vaga antes do worker-start. São obrigatórios: remover um trava o painel em Requisitos até ele ser instalado de novo.',
+    estados: { instalado: 'Instalado', ausente: 'Ausente', desatualizado: 'Desatualizado', erro: 'Erro' },
     remover: 'Remover hook',
     reinstalar: 'Reinstalar',
-    indisponivel: 'Não foi possível ler os hooks.'
-  }
+    instalar: 'Instalar hook',
+    grava: 'Grava em:',
+    indisponivel: 'Não foi possível ler os hooks.',
+  },
 }
 
-export const en: typeof pt = {
-  titulo: 'Agent Pool & Test Queue', atualizar: 'Refresh', salvar: 'Save', gravando: 'Saving…', salvo: 'Saved.',
-  nadaAlterado: 'No changes.', carregando: 'Loading status', semDados: 'No data',
-  coletorNaoRespondeu: 'The worker did not respond.', coletorFalhou: (codigo) => `Worker failed (${codigo})`,
+const en: typeof pt = {
+  titulo: 'Agent Pool & Test Queue',
+  atualizar: 'Refresh',
+  salvar: 'Save',
+  gravando: 'Saving…',
+  salvo: 'Saved.',
+  nadaAlterado: 'No changes.',
+  carregando: 'Loading status',
+  semDados: 'No data',
+  coletorNaoRespondeu: 'The worker did not respond.',
+  coletorFalhou: codigo => `Worker failed (${codigo})`,
   erros: {
-    config_vazia: 'Nothing to save', agente_invalido: 'Agent without hook support', hooks_falhou: 'Could not change the hook',
-    instalacao_recusada: 'Install not allowed', instalacao_falhou: 'Installation failed'
+    config_vazia: 'Nothing to save',
+    agente_invalido: 'Agent without hook support',
+    hooks_falhou: 'Could not change the hook',
+    instalacao_recusada: 'Install not allowed',
+    instalacao_falhou: 'Installation failed',
   },
-  codigosConfig: {
-    valor_invalido: 'invalid value', config_invalida: 'invalid configuration', versao_nao_suportada: 'unsupported version',
-    ilegivel: 'could not read the configuration', json_invalido: 'the configuration is not valid JSON',
-    conta_existente: 'account already exists', conta_inexistente: 'account does not exist', conta_repetida: 'duplicate account',
-    ordem_incompleta: 'incomplete order', chave_desconhecida: 'unknown key',
-    agente_desconhecido: 'unknown agent', variavel_sem_suporte: 'unsupported variable',
-    agente_nao_provado: 'agent without a proven hook', config_ocupada: 'another configuration write is in progress'
-  },
-  errosMedida: { claude_usage_unavailable: 'usage unavailable (/usage did not respond)' },
-  codigosTexto: {
-    raiz_invalida: 'root is not an object', hooks_invalido: '"hooks" is invalid', pretooluse_invalido: '"hooks.PreToolUse" is invalid',
-    skill_sem_origem: 'skill files missing from the plugin'
-  },
-  orcaSaiu: (n) => `orca exited with code ${n}`,
+  codigosConfig: textosComuns.en.codigosConfig,
+  codigosTexto: { ...textosComuns.en.errosHook, ...textosComuns.en.outrosCodigos },
+  orcaSaiu: n => `orca exited with code ${n}`,
   alertas: {
-    config_ilegivel: (detalhe) => `config.json unreadable: ${detalhe}`,
+    config_ilegivel: detalhe => `config.json unreadable: ${detalhe}`,
     orca_indisponivel: 'Orca unavailable: native quota and slot recovery are not updated',
-    sem_login: (conta) => `${conta}: not signed in`,
-    erro_medida: (conta, detalhe) => `${conta}: ${(detalhe && en.errosMedida[detalhe]) || detalhe || 'measurement failed'}`,
-    teste_parado: (pid, onde) => `Stopped test (pid ${pid ?? '?'}) in ${onde}`
+    sem_login: conta => `${conta}: not signed in`,
+    erro_medida: (conta, detalhe) => `${conta}: ${en.pool.erroMedida(detalhe)}`,
+    teste_parado: (pid, onde) => `Stopped test (pid ${pid ?? '?'}) in ${onde}`,
   },
-  atualizadoEm: 'Updated', plugin: 'Plugin', orca: 'Orca',
-  orcaRodando: 'running', orcaForaDoAr: 'unavailable', orcaVerificando: 'checking',
+  atualizadoEm: 'Updated',
+  plugin: 'Plugin',
+  orca: 'Orca',
+  orcaRodando: 'running',
+  orcaForaDoAr: 'unavailable',
+  orcaVerificando: 'checking',
   requisitos: {
-    titulo: 'Requirements', explica: 'Install all requirements below to use the panel.', tabela: 'Panel requirements',
-    colRequisito: 'Requirement', colSituacao: 'Status', ok: '✓ ready', falta: '✗ missing',
-    instalar: 'Install', instalando: 'Installing…', verificar: 'Check now', verificando: 'Checking…', naoVerificados: 'Requirements not checked.',
+    titulo: 'Requirements',
+    explica:
+      'Everything below is required for the plugin to do its job. Nothing is installed until you click: open each item to see what it does and what it will write.',
+    obrigatorio: 'Required',
+    instalado: 'installed',
+    falta: 'missing',
+    abrir: 'open to see what it does',
+    situacao: 'Status',
+    vaiGravar: 'Clicking Install writes to:',
+    instalaOrca: 'Orca installs it itself (orca skills install orchestration), in its own skills folder.',
+    oQueFaz: {
+      orca: 'Orca runs this plugin: the panel, the worker and the agent-pool command use its runtime.',
+      orchestration:
+        "Orca's own skill that gives agents orca orchestration (worker-start, send, worker_done): the coordinator uses it to start the workers the pool hands out.",
+      skill:
+        'Teaches agents the flow: reserve a slot with agent-pool writer --reserve before worker-start, hand the reservation to the dispatch with slot swap, run every test with agent-pool test and release the slot at the end. It is a copy in ~/.agents/skills/agent-pool, linked into the skills folder of each agent in your accounts.',
+      lancador:
+        "The agent-pool command that agents, the skill and the hooks call (writer, slot, test, hook). It is a short script that runs this plugin's CLI with Orca's runtime.",
+      hooks:
+        'Before every shell command of Claude Code (Bash and PowerShell) and Codex, the agent calls agent-pool hook. The hook only reads the command, sends nothing over the network and lets everything else through: it refuses a bare test (such as php artisan test or npm test), telling the agent the queued command, and refuses orca orchestration worker-start without a slot reservation. Before writing, it keeps a copy of the original file in ~/.agents/agent-pool/state/backup/. In Codex, Codex itself asks you to trust the hook the first time.',
+    },
+    porque: {
+      orca: 'Without version 1.4.247 or newer the plugin does not run. Update Orca.',
+      orchestration: 'Without it there are no workers for the pool to hand out.',
+      skill: 'Without it agents do not know the pool and the queue exist, and nothing goes through them.',
+      lancador:
+        'Without it nothing in the pool or the queue works for agents. After a plugin or Orca update it becomes outdated and the panel asks you to install it again.',
+      hooks:
+        "Without them the rules hold only when the agent remembers the skill: a bare test can overload the machine or corrupt another agent's test database, and a worker-start without a reservation goes past the slot limit.",
+    },
+    instalar: 'Install',
+    instalando: 'Installing…',
+    verificar: 'Check now',
+    verificando: 'Checking…',
+    naoVerificados: 'Requirements not checked.',
     instalados: 'Requirements installed. The panel is ready.',
     respostaInvalida: 'Unexpected worker response while installing.',
     leituraInvalida: 'Could not read the requirements again. Refresh to retry.',
-    nomes: { orca: 'Orca', orchestration: 'Orchestration skill', skill: 'agent-pool skill', lancador: 'agent-pool launcher', hooks: 'Agent hooks' },
+    nomes: {
+      orca: 'Orca',
+      orchestration: 'Orchestration skill',
+      skill: 'agent-pool skill',
+      lancador: 'agent-pool launcher',
+      hooks: 'Agent hooks',
+    },
     detalhe: {
-      nao_verificado: (v) => `not verified: ${v}`, versao: (v) => `version ${v}`, versao_antiga: (v) => `version ${v}; update Orca`,
-      instalada: 'installed', instalada_editada: 'installed (edited by you)', nao_instalada: 'not installed', desatualizada: 'outdated',
-      sem_origem: 'skill files missing from the plugin', instalado: 'installed', nao_instalado: 'not installed', hooks_nenhum: 'no agent with hooks detected',
-      situacoes: { instalado: 'installed', ausente: 'missing', erro: 'error', removido: 'removed by you' }
-    }
+      nao_verificado: v => `not verified: ${v}`,
+      versao: v => `version ${v}`,
+      versao_antiga: v => `version ${v}; update Orca`,
+      instalada: 'installed',
+      instalada_editada: 'installed (edited by you)',
+      nao_instalada: 'not installed',
+      desatualizada: 'outdated or missing an agent link',
+      sem_origem: 'skill files missing from the plugin',
+      instalado: 'installed',
+      nao_instalado: 'not installed',
+      desatualizado: 'outdated: points to another plugin or Orca version',
+      hooks_nenhum: 'no agent with hooks in your accounts',
+      situacoes: { instalado: 'installed', ausente: 'missing', desatualizado: 'outdated', erro: 'error' },
+    },
+  },
+  desinstalar: {
+    titulo: 'Uninstall',
+    explica:
+      'Orca does not tell the plugin when it is removed. Before removing the plugin in Settings → Plugins, uninstall here: it takes the hooks out of every agent and account folder and removes the skill (copy and links), the launcher and ~/.agents/agent-pool (configuration, queue, slots and backups). If an agent file cannot be changed, the skill, the launcher and ~/.agents/agent-pool stay; hooks already removed from other files are not put back.',
+    botao: 'Uninstall everything',
+    confirmar: 'Confirm: remove everything',
+    cancelar: 'Cancel',
+    removendo: 'Removing…',
+    feito: "Everything removed. Now remove the plugin in Orca's Settings → Plugins.",
   },
   dicaLinha: 'Click a row to see details.',
   configuracoes: {
-    titulo: 'Settings', descricao: 'Queue, pool, accounts, hooks, installation and panel', assuntos: 'Settings sections',
+    titulo: 'Settings',
+    descricao: 'Queue, pool, accounts, hooks, installation and panel',
+    assuntos: 'Settings sections',
     abas: { fila: 'Queue', pool: 'Pool', contas: 'Accounts', imposicao: 'Hooks', instalacao: 'Installation', painel: 'Panel' },
     contasAbas: { assuntos: 'Account sections', configurar: 'Configure', cadastrar: 'Add' },
     linhas: {
       fila: 'How tests wait for a slot — ~/.agents/agent-pool/config.json',
       pool: 'Machine limits and writer selection — ~/.agents/agent-pool/config.json',
-      contas: 'Slots, weight, roles and account order — ~/.agents/agent-pool/config.json. Orca accounts join automatically; add custom CLIs in the "Add" tab.',
-      painel: 'This panel — stored in Orca'
-    }
+      contas:
+        'Slots, weight, roles and account order — ~/.agents/agent-pool/config.json. Orca accounts join automatically, turned off until you enable them; add custom CLIs in the "Add" tab.',
+      painel: 'This panel — stored in Orca',
+    },
   },
   painel: {
-    intervalo: 'Refresh every (seconds)', dica: 'The worker collects local data without AI or tokens; shorter intervals increase CPU usage.',
-    invalido: (min, max) => `Enter a whole number from ${min} to ${max}.`
+    intervalo: 'Refresh every (seconds)',
+    dica: 'The worker collects local data without AI or tokens; shorter intervals increase CPU usage.',
+    invalido: (min, max) => `Enter a whole number from ${min} to ${max}.`,
   },
   fila: {
-    titulo: 'Queued tests', explica: 'Tests wait in queues to avoid overloading the machine. Each queue has slots, and the machine cap limits concurrent tests across all queues.',
+    titulo: 'Queued tests',
+    explica:
+      'Tests wait in queues to avoid overloading the machine. Each queue has slots, and the machine cap limits concurrent tests across all queues.',
     modos: { global: 'Global', banco: 'Per database', projeto: 'Per project' },
     resumo: (execucao, aguardando, teto, modo) => `${execucao} running · ${aguardando} waiting · cap ${teto} · Mode ${modo}`,
-    comoFunciona: 'How the queue works', semTestes: 'No queued tests', tabela: 'Queued tests',
-    colProjeto: 'Project', colFila: 'Queue', colEstado: 'Status', colHa: 'Since', filaGlobal: 'Global',
-    filaProjeto: (nome) => `Project ${nome}`, filaBanco: (endereco) => `Database ${endereco}`,
-    filaContainer: 'Container', filaGeral: 'General', filaTeto: 'Machine cap',
+    comoFunciona: 'How the queue works',
+    semTestes: 'No queued tests',
+    tabela: 'Queued tests',
+    colProjeto: 'Project',
+    colFila: 'Queue',
+    colEstado: 'Status',
+    colHa: 'Since',
+    filaGlobal: 'Global',
+    filaProjeto: nome => `Project ${nome}`,
+    filaBanco: endereco => `Database ${endereco}`,
+    filaContainer: 'Container',
+    filaGeral: 'General',
+    filaTeto: 'Machine cap',
     estados: { execucao: 'Running', aguardando: 'Waiting for a slot', parado: '⚠ Stopped' },
-    dicaParado: 'The process ended and left a slot locked.', ondeRoda: 'Runs on', comando: 'Command', pid: 'PID', worktree: 'Worktree',
-    situacao: 'Status', configurarDescricao: 'the mode applies to tests started afterwards; slots and cap also to tests already waiting',
-    campos: { modo: 'Queue mode', vagas: 'Slots', vagas_projeto: 'Slots per project', teto: 'Machine cap', processos: 'Processes (--parallel)' },
+    dicaParado: 'The process ended and left a slot locked.',
+    ondeRoda: 'Runs on',
+    comando: 'Command',
+    pid: 'PID',
+    worktree: 'Worktree',
+    situacao: 'Status',
+    configurarDescricao: 'the mode applies to tests started afterwards; slots and cap also to tests already waiting',
+    campos: {
+      modo: 'Queue mode',
+      vagas: 'Slots',
+      vagas_projeto: 'Slots per project',
+      teto: 'Machine cap',
+      processos: 'Processes (--parallel)',
+      limpar_bancos: 'Drop the <database>_test_N databases after a parallel Laravel test',
+    },
     dicas: {
       global: 'One queue for the whole machine: tests from every project wait for the same slots.',
-      banco: 'One queue per database (address:port/database), shared by projects, with 1 test at a time per database. Use when projects share a test database. Containers and tests without a database have their own queues.',
-      projeto: 'Each project has its own queue and slots. Only the machine cap limits the total. Use when each project has its own test database.',
-      vagas: 'Concurrent tests in each queue. In Per database mode each database gets 1 slot and this applies to the queues without a database (container, Python/JS).', vagas_projeto: 'Concurrent tests in each project. Only applies in Per project mode.',
+      banco:
+        'One queue per database (address:port/database), shared by projects, with 1 test at a time per database. Use when projects share a test database. Containers and tests without a database have their own queues.',
+      projeto:
+        'Each project has its own queue and slots. Only the machine cap limits the total. Use when each project has its own test database.',
+      vagas:
+        'Concurrent tests in each queue. In Per database mode each database gets 1 slot and this applies to the queues without a database (general and container queues).',
+      vagas_projeto: 'Concurrent tests in each project. Only applies in Per project mode.',
       teto: 'Maximum concurrent tests on the machine across all queues.',
-      processos: 'Parallel processes of the test. Also a cap on the parallelism flags an agent passes (--processes, -n, --maxWorkers): a larger request is lowered to this value.'
-    }
+      processos:
+        'Parallel processes of the test. Also a cap on the parallelism flags an agent passes (--processes, -n, --maxWorkers): a larger request is lowered to this value.',
+      limpar_bancos:
+        'Off by default. When on, the queue adds --drop-databases to a parallel artisan test (--parallel or -p; Laravel 9 or newer) and Laravel drops the <database>_test_1, _test_2… copies it created, on any database, so they do not pile up. The main database is never touched.',
+    },
   },
   atencao: 'Attention',
   pool: {
-    titulo: 'Agent pool', resumo: (usadas, teto, sessoes, escolha) => `Agents ${usadas}/${teto || '∞'} · Sessions ${sessoes} · Writer ${escolha === 'ordem' ? 'by table order' : 'by quota pace'}`,
-    escolhaOpcoes: { ritmo: 'Quota pace', ordem: 'Table order' }, semContas: 'No registered accounts.', tabela: 'Pool accounts',
-    colConta: 'Account', colVagas: 'Slots', colSessoes: 'Sessions', col5h: '5h', colSemanal: 'Weekly',
+    titulo: 'Agent pool',
+    resumo: (usadas, teto, sessoes, escolha) =>
+      `Agents ${usadas}/${teto || '∞'} · Sessions ${sessoes} · Writer ${escolha === 'ordem' ? 'by table order' : 'by quota pace'}`,
+    escolhaOpcoes: { ritmo: 'Quota pace', ordem: 'Table order' },
+    semContas: 'No registered accounts.',
+    tabela: 'Pool accounts',
+    colConta: 'Account',
+    colVagas: 'Slots',
+    colSessoes: 'Sessions',
+    col5h: '5h',
+    colSemanal: 'Weekly',
     percentual: (v, alerta) => `${alerta ? '⚠ ' : ''}${pct(v)}`,
     janelasValor: (curta, longa) => `5h ${pct(curta)} · week ${pct(longa)}`,
     semLogin: 'not signed in',
     naoConfigurada: 'not set up on this machine',
-    motivosNaoConfigurada: { pasta_ausente: (v) => `folder ${v} does not exist`, cli_ausente: (v) => `${v} not installed` },
-    erroMedida: (detalhe) => (detalhe && en.errosMedida[detalhe]) || detalhe || 'measurement failed',
+    motivosNaoConfigurada: textosComuns.en.motivosNaoConfigurada,
+    erroMedida: detalhe => erroMedida(textosComuns.en, detalhe),
     vagasDaConta: (usadas, vagas) => `${usadas}/${vagas || '∞'}`,
-    naoUtilizada: 'not used', situacao: 'Status', naoUtilizadaDetalhe: 'Not used: still listed and measured, but receives no work and does not count towards the cap.',
-    agente: 'Agent', peso: 'Weight', pesoDaConta: 'Account weight', papeis: 'Roles', janelas: 'Resets', semMedida: 'no measurement',
-    aviso: 'Notice', medidaHa: 'Measured', semLeitura: '—', problema: 'Problem', acao: 'To resolve',
-    medidaAntiga: (min) => `Old measurement: ${min} min ago. Run agent-pool measure before relying on this quota.`,
-    minutos: (n) => `${n} min`, vagasEmUso: 'Slots in use', nenhuma: 'none', vagas: 'Account slots',
-    teto: 'Machine cap (0 = unlimited)', ramMin: 'Minimum free RAM (GB)', escolha: 'Writer selection', rotulo: 'Orca account',
-    naoUtilizar: 'Do not use', remover: 'Remove from pool',
-    confirmarRemocao: (nome) => `Remove ${nome} from the configuration?`, confirmar: 'Confirm removal', cancelar: 'Cancel',
-    config: 'Config directory (CLAUDE_CONFIG_DIR etc.)', comandoCli: 'CLI command', comandoDaConta: 'Account CLI command', modelo: 'Model', modeloValor: (id, limite) => `${id} · ${limite ?? 'General'}`, novaConfig: 'Config directory',
+    naoUtilizada: 'not used',
+    situacao: 'Status',
+    naoUtilizadaDetalhe: 'Not used: still listed and measured, but receives no work and does not count towards the cap.',
+    agente: 'Agent',
+    peso: 'Weight',
+    pesoDaConta: 'Account weight',
+    papeis: 'Roles',
+    janelas: 'Resets',
+    semMedida: 'no measurement',
+    aviso: 'Notice',
+    medidaHa: 'Measured',
+    semLeitura: '—',
+    problema: 'Problem',
+    acao: 'To resolve',
+    medidaAntiga: min => `Old measurement: ${min} min ago. Run agent-pool measure before relying on this quota.`,
+    minutos: n => `${n} min`,
+    vagasEmUso: 'Slots in use',
+    nenhuma: 'none',
+    vagas: 'Account slots',
+    teto: 'Machine cap (0 = unlimited)',
+    ramMin: 'Minimum free RAM (GB)',
+    escolha: 'Writer selection',
+    rotulo: 'Orca account',
+    naoUtilizar: 'Do not use',
+    remover: 'Remove from pool',
+    confirmarRemocao: nome => `Remove ${nome} from the configuration?`,
+    confirmar: 'Confirm removal',
+    cancelar: 'Cancel',
+    config: 'Config directory (CLAUDE_CONFIG_DIR etc.)',
+    comandoCli: 'CLI command',
+    comandoDaConta: 'Account CLI command',
+    modelo: 'Model',
+    modeloValor: (id, limite) => `${id} · ${limite ?? 'General'}`,
+    novaConfig: 'Config directory',
     dicas: {
-      naoUtilizar: 'The account stays listed and measured, but receives no work and does not count towards the cap. Uncheck to use it again.',
-      modelo: 'Model the pool tells the agent to use (--model). The followed limit comes from the name: Fable → Fable limit; on Antigravity, argon → Gemini 4 Argon, flash or gemini → Gemini Models, claude or gpt → Claude and GPT models. Empty = the agent default (on Antigravity, gemini-3.8-flash-high).',
-      novoComando: 'Command to open this account, for example claude-work or CLAUDE_CONFIG_DIR=~/.claude-work claude. Provide a command, a config directory, or both.',
+      naoUtilizar:
+        'The account stays listed and measured, but receives no work and does not count towards the cap. Uncheck to use it again.',
+      modelo:
+        'Model the pool tells the agent to use (--model). The followed limit comes from the name: Fable → Fable limit; on Antigravity, argon → Gemini 4 Argon, flash or gemini → Gemini Models, claude or gpt → Claude and GPT models. Empty = the agent default (on Antigravity, gemini-3.8-flash-high).',
+      novoComando:
+        'Command to open this account, for example claude-work or CLAUDE_CONFIG_DIR=~/.claude-work claude. Provide a command, a config directory, or both.',
       novoConfig: 'CLI configuration folder, for example ~/.claude-work. Provide a config directory, a command, or both.',
       vagas: 'Concurrent agents for this account. 0 = no account limit (the machine cap still applies).',
       peso: 'Writer priority: multiplies quota pace. With equal quota, weight 10 is preferred over weight 1. Ignored in Table order mode.',
       config: 'Agent configuration folder (such as CLAUDE_CONFIG_DIR) that separates accounts. Empty = system default account.',
       teto: 'Maximum concurrent agents across all accounts. 0 = unlimited.',
       ramMin: 'Minimum free memory (GB) to reserve a slot. 0 = disabled.',
-      escolha: 'Quota pace: the account with the most free quota × weight. Table order: the first eligible account with a free slot and quota below the limit.'
+      escolha:
+        'Quota pace: the account with the most free quota × weight. Table order: the first eligible account with a free slot and quota below the limit.',
     },
     ordemPapeis: ['orquestra', 'revisor', 'verificador', 'escritor', 'segunda-opiniao', 'mecanico'],
-    nomesPapel: { orquestra: 'Coordinator', revisor: 'Reviewer', verificador: 'Verifier', escritor: 'Writer', 'segunda-opiniao': 'Second opinion', mecanico: 'Mechanic' },
-    dicasPapel: {
-      escritor: 'Implements the task: code, tests and a local worktree commit.', revisor: 'Reviews behavior and architecture before merge and publication.',
-      verificador: 'Read-only cross-check of review findings or a diagnosis.', mecanico: 'Mechanical, verifiable tasks such as fixtures or literal edits.',
-      'segunda-opiniao': 'Read-only adversarial review from a different model family for high-risk changes.',
-      orquestra: 'Coordinates workers. An account with only this role is never selected for work.'
+    nomesPapel: {
+      orquestra: 'Coordinator',
+      revisor: 'Reviewer',
+      verificador: 'Verifier',
+      escritor: 'Writer',
+      'segunda-opiniao': 'Second opinion',
+      mecanico: 'Mechanic',
     },
-    escolherConta: 'Account to configure', ordemNaTabela: 'Pool table position (used when selecting writers by table order)',
-    subir: 'Move up', descer: 'Move down', nova: 'New manual account', novaNome: 'Name', novaCriar: 'Add account'
+    dicasPapel: {
+      escritor: 'Implements the task: code, tests and a local worktree commit.',
+      revisor: 'Read-only merge gate: reviews behavior and architecture before shipping.',
+      verificador: 'Read-only cross-check of review findings or a diagnosis.',
+      mecanico: 'Mechanical, verifiable tasks such as fixtures or literal edits, with a smaller model.',
+      'segunda-opiniao': 'Read-only adversarial review from a different model family for high-risk changes.',
+      orquestra: 'Coordinates workers. An account with only this role is never selected for work.',
+    },
+    escolherConta: 'Account to configure',
+    ordemNaTabela: 'Pool table position (used when selecting writers by table order)',
+    subir: 'Move up',
+    descer: 'Move down',
+    nova: 'New manual account',
+    novaNome: 'Name',
+    nomeInvalido: 'Invalid name: use 1 to 32 lowercase letters, numbers, _ and -.',
+    novaCriar: 'Add account',
   },
   imposicao: {
-    titulo: 'Hooks', descricao: 'Hooks make agents use the test queue and reserve a slot before worker-start.',
-    estados: { instalado: 'Installed', ausente: 'Not installed', erro: 'Error' }, remover: 'Remove hook', reinstalar: 'Reinstall',
-    indisponivel: 'Could not read the hooks.'
-  }
+    titulo: 'Hooks',
+    descricao:
+      'Hooks make agents use the test queue and reserve a slot before worker-start. They are required: removing one locks the panel on Requirements until it is installed again.',
+    estados: { instalado: 'Installed', ausente: 'Not installed', desatualizado: 'Outdated', erro: 'Error' },
+    remover: 'Remove hook',
+    reinstalar: 'Reinstall',
+    instalar: 'Install hook',
+    grava: 'Writes to:',
+    indisponivel: 'Could not read the hooks.',
+  },
 }
 
-export const textos = { en, pt }
-export const textosPara = (locale = 'en'): typeof pt => locale.toLowerCase().startsWith('pt') ? pt : en
+export const textosPara = (locale = 'en'): typeof pt => (locale.toLowerCase().startsWith('pt') ? pt : en)
 export const t: typeof pt = new Proxy(en, { get: (_alvo, chave: keyof typeof pt) => textosPara(env.locale)[chave] })

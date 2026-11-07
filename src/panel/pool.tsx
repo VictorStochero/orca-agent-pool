@@ -1,0 +1,117 @@
+// Seção Pool (só leitura) e os campos de configuração do pool.
+import { atom, Card, Input, read, Select, Stack, set, Text } from 'orca'
+import type { Conta, Estado } from '../protocol'
+import { ComDica, type Detalhe, type Linha, Mensagem, Salvar, se, TabelaExpansivel } from './comum'
+import { edicoes, mudar } from './estado'
+import { t } from './textos'
+
+/** Linhas abertas da tabela (várias ao mesmo tempo; clicar de novo recolhe). */
+const abertasConta = atom<string[]>([])
+
+/** Conta ativa que precisa de ação: o valor da cota (se houver) é velho e não aparece. */
+const comProblema = (c: Conta) => c.ativo && (c.cota?.estado === 'sem_login' || c.cota?.estado === 'erro')
+
+const naoConfigurada = (c: Conta) => c.cota?.estado === 'nao_configurada'
+const situacaoNaoConfigurada = (m: NonNullable<Conta['cota']>['motivo']) =>
+  `${t.pool.naoConfigurada}: ${m ? t.pool.motivosNaoConfigurada[m.tipo](m.valor) : '–'}`
+
+/** Célula de cota da tabela: aviso sem leitura, traço se a conta não está configurada, senão o percentual. */
+const celulaCota = (c: Conta, valor: number | null | undefined, alerta: boolean | undefined) =>
+  comProblema(c) ? `⚠ ${t.pool.semLeitura}` : naoConfigurada(c) ? '–' : t.pool.percentual(valor ?? null, alerta ?? false)
+
+export function SecaoPool({ e }: { e: Estado }) {
+  const { pool } = e
+  const linhas: Linha[] = pool.contas.map(c => {
+    const medida = c.cota && (c.cota.estado === 'ok' || c.cota.estado === 'antiga') ? c.cota : null
+    return {
+      key: c.nome,
+      cells: {
+        conta: c.ativo ? c.nome : `${c.nome} (${t.pool.naoUtilizada})`,
+        vagas: t.pool.vagasDaConta(c.usadas, c.vagas),
+        sessoes: c.sessoes === null ? '–' : c.sessoes.length,
+        h5: celulaCota(c, c.cota?.curta, c.cota?.alerta_curta),
+        semanal: celulaCota(c, c.cota?.longa, c.cota?.alerta_longa),
+      },
+      detalhes: [
+        ...se(t.pool.situacao, naoConfigurada(c) && situacaoNaoConfigurada(c.cota?.motivo)),
+        ...se(
+          t.pool.problema,
+          comProblema(c) && c.cota && (c.cota.estado === 'sem_login' ? t.pool.semLogin : t.pool.erroMedida(c.cota.erro)),
+        ),
+        ...se(t.pool.acao, comProblema(c) && c.cota?.acao),
+        ...se(t.pool.situacao, !c.ativo && t.pool.naoUtilizadaDetalhe),
+        ...se(t.pool.rotulo, c.rotulo),
+        [t.pool.agente, c.agente ?? '-'],
+        ...se(t.pool.modelo, c.modelo_efetivo && t.pool.modeloValor(c.modelo_efetivo, c.limite_seguido)),
+        [t.pool.peso, c.peso],
+        [t.pool.papeis, c.papeis.map(p => t.pool.nomesPapel[p] ?? p).join(', ') || '-'],
+        [t.pool.janelas, medida ? t.pool.janelasValor(medida.curta, medida.longa) : t.pool.semMedida],
+        ...(medida?.limites.map(
+          (l): Detalhe => ({
+            celulas: {
+              conta: l.nome,
+              h5: l.curta === null ? '–' : t.pool.percentual(l.curta, false),
+              semanal: l.longa === null ? '–' : t.pool.percentual(l.longa, false),
+            },
+          }),
+        ) ?? []),
+        [t.pool.medidaHa, c.cota?.medida_ha_min != null ? t.pool.minutos(c.cota.medida_ha_min) : '-'],
+        ...se(t.pool.aviso, c.cota?.estado === 'antiga' && c.cota.medida_ha_min != null && t.pool.medidaAntiga(c.cota.medida_ha_min)),
+        [t.pool.vagasEmUso, [...c.ocupantes.map(o => o.dispatch ?? '?'), ...(c.agentes ?? [])].join(', ') || t.pool.nenhuma],
+        ...se(t.pool.colSessoes, c.sessoes && (c.sessoes.join(', ') || t.pool.nenhuma)),
+      ],
+    }
+  })
+  return (
+    <Card title={t.pool.titulo} description={t.pool.resumo(pool.maquina.usadas, pool.maquina.teto, pool.sessoes, pool.escolha)}>
+      {pool.contas.length === 0 ? (
+        <Text muted>{t.pool.semContas}</Text>
+      ) : (
+        <TabelaExpansivel
+          label={t.pool.tabela}
+          colunas={[
+            { key: 'conta', label: t.pool.colConta, width: 'auto', minWidth: 'md' },
+            { key: 'vagas', label: t.pool.colVagas, width: 'auto' },
+            { key: 'sessoes', label: t.pool.colSessoes, align: 'end', width: 'auto' },
+            { key: 'h5', label: t.pool.col5h, align: 'end', width: 'auto' },
+            { key: 'semanal', label: t.pool.colSemanal, align: 'end', width: 'auto' },
+          ]}
+          linhas={linhas}
+          abertas={read(abertasConta)}
+          onAbrir={k => set(abertasConta, k)}
+        />
+      )}
+    </Card>
+  )
+}
+
+export function ConfigPool({ e }: { e: Estado }) {
+  const { pool } = e
+  const ed = read(edicoes)
+  return (
+    <Stack gap="sm">
+      <Text muted size="xs">
+        {t.configuracoes.linhas.pool}
+      </Text>
+      <ComDica texto={t.pool.dicas.teto}>
+        <Input label={t.pool.teto} value={ed['pool.teto'] ?? String(pool.teto)} onChange={x => mudar('pool.teto', x)} />
+      </ComDica>
+      <ComDica texto={t.pool.dicas.ramMin}>
+        <Input label={t.pool.ramMin} value={ed['pool.ram_min'] ?? String(pool.ram_min)} onChange={x => mudar('pool.ram_min', x)} />
+      </ComDica>
+      <ComDica texto={t.pool.dicas.escolha}>
+        <Select
+          label={t.pool.escolha}
+          value={ed['pool.escolha'] ?? pool.escolha}
+          options={[
+            { value: 'ritmo', label: t.pool.escolhaOpcoes.ritmo },
+            { value: 'ordem', label: t.pool.escolhaOpcoes.ordem },
+          ]}
+          onChange={x => mudar('pool.escolha', x)}
+        />
+      </ComDica>
+      <Mensagem secao="pool" />
+      <Salvar secao="pool" chaves={['pool.teto', 'pool.ram_min', 'pool.escolha']} />
+    </Stack>
+  )
+}

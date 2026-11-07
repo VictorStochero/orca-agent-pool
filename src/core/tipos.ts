@@ -1,5 +1,7 @@
 // Tipos compartilhados do núcleo.
-export type Papel = 'orquestra' | 'revisor' | 'verificador' | 'escritor' | 'segunda-opiniao' | 'mecanico'
+/** Na ordem em que a tela lista. */
+export const PAPEIS = ['escritor', 'revisor', 'verificador', 'mecanico', 'segunda-opiniao', 'orquestra'] as const
+export type Papel = (typeof PAPEIS)[number]
 
 export type Conta = {
   nome: string
@@ -22,11 +24,20 @@ export type ConfigFila = {
   teto: number
   processos: number
   esperaMaxS: number
+  /** Apaga os bancos `<base>_test_N` depois de `artisan test --parallel`; ausente = desligado, até o usuário ligar. */
+  limparBancos?: boolean
 }
 
 export type Config = {
   versao: 1
-  pool: { teto: number; ramMinGb: number; escolha: 'ritmo' | 'ordem'; contas: Conta[]; /** Contas detectadas que o usuário removeu: a detecção não as readiciona. */ ignoradas?: string[] }
+  pool: {
+    teto: number
+    ramMinGb: number
+    escolha: 'ritmo' | 'ordem'
+    contas: Conta[]
+    /** Contas detectadas que o usuário removeu: a detecção não as readiciona. */
+    ignoradas?: string[]
+  }
   fila: ConfigFila
 }
 

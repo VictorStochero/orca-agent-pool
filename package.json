@@ -1,6 +1,6 @@
 {
   "name": "orca-agent-pool",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "private": true,
   "type": "module",
   "description": "Agent Pool & Test Queue for Orca: an agent pool and a test queue for any language.",
@@ -8,9 +8,13 @@
   "scripts": {
     "test": "node --experimental-strip-types --test \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
-    "check": "node scripts/check.mjs"
+    "check": "node scripts/check.mjs",
+    "lint": "biome check",
+    "format": "biome format --write",
+    "typecheck:plugin": "tsc --noEmit -p tsconfig.plugin.json"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.2",
     "@types/node": "^24.0.0",
     "typescript": "^5.9.0"
   }

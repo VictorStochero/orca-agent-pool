@@ -1,18 +1,25 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
+import { fileURLToPath } from 'node:url'
 import { executar } from '../src/cli/executar.ts'
-import { aplicar, carregar, gravar } from '../src/core/config.ts'
+import { carregar, gravar } from '../src/core/config.ts'
+import { aplicar } from '../src/core/config-chaves.ts'
+import { versao } from '../src/core/index.ts'
+import { caminhoLancador, lancadorEsperado } from '../src/core/lancador.ts'
 import { paths } from '../src/core/paths.ts'
-import { pegar } from '../src/core/pool/vagas.ts'
+import { lerVagas, pegar } from '../src/core/pool/vagas.ts'
+import { hashes } from '../src/core/skill.ts'
 import type { OrcaCli } from '../src/core/tipos.ts'
-import { cfg, conta } from './helpers/pool.ts'
 import { envCasa, guardarCasaReal } from './helpers/casa.ts'
+import { cfg, conta } from './helpers/pool.ts'
 
 guardarCasaReal()
+
+const RAIZ_PLUGIN = fileURLToPath(new URL('../', import.meta.url))
 
 const raizes: string[] = []
 const novoHome = () => {
@@ -20,28 +27,40 @@ const novoHome = () => {
   raizes.push(h)
   return h
 }
-after(() => raizes.forEach((h) => rmSync(h, { recursive: true, force: true })))
+after(() => {
+  for (const h of raizes) rmSync(h, { recursive: true, force: true })
+})
 
 // Orca falso: memória farta e nenhum worker listado.
 const orcaFalso: OrcaCli = {
   async run(args) {
-    if (args[0] === 'diagnostics') return { code: 0, stdout: JSON.stringify({ ok: true, result: { host: { availableMemory: 16 * 1073741824 } } }), stderr: '' }
+    if (args[0] === 'diagnostics')
+      return { code: 0, stdout: JSON.stringify({ ok: true, result: { host: { availableMemory: 16 * 1073741824 } } }), stderr: '' }
     if (args[1] === 'worker-list') return { code: 0, stdout: JSON.stringify({ ok: true, result: { workers: [] } }), stderr: '' }
     return { code: 1, stdout: '', stderr: 'fora' }
-  }
+  },
 }
 
 // Uso do Claude: 10% na janela curta, 20% na semanal.
 const RESET = '2023-11-20T00:00:00Z'
 const fetchFalso = (async () =>
-  new Response(JSON.stringify({ five_hour: { utilization: 10 }, seven_day: { utilization: 20, resets_at: RESET } }), { status: 200 })) as typeof fetch
+  new Response(JSON.stringify({ five_hour: { utilization: 10 }, seven_day: { utilization: 20, resets_at: RESET } }), {
+    status: 200,
+  })) as typeof fetch
 
 async function rodar(home: string, args: string[], extra: { stdin?: string; cwd?: string; orca?: OrcaCli; env?: NodeJS.ProcessEnv } = {}) {
   const out: string[] = []
   const err: string[] = []
   const code = await executar(args, {
-    home, env: envCasa(home, { ...process.env, LANG: 'pt_BR', LC_ALL: '', ...extra.env }), orca: extra.orca ?? orcaFalso, fetch: fetchFalso, cwd: extra.cwd ?? home, agora: () => 1_700_000_000_000,
-    stdin: async () => extra.stdin ?? '', out: (s) => out.push(s), err: (s) => err.push(s)
+    home,
+    env: envCasa(home, { ...process.env, LANG: 'pt_BR', LC_ALL: '', ...extra.env }),
+    orca: extra.orca ?? orcaFalso,
+    fetch: fetchFalso,
+    cwd: extra.cwd ?? home,
+    agora: () => 1_700_000_000_000,
+    stdin: async () => extra.stdin ?? '',
+    out: s => out.push(s),
+    err: s => err.push(s),
   })
   return { code, out: out.join('\n'), err: err.join('\n') }
 }
@@ -50,7 +69,10 @@ const comConfig = (contas = [conta('a', { vagas: 1 }), conta('b', { vagas: 1 })]
   const home = novoHome()
   gravar(cfg(contas), paths(home))
   mkdirSync(join(home, '.claude'), { recursive: true })
-  writeFileSync(join(home, '.claude', '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: 'tok-falso', expiresAt: 4e12 } }))
+  writeFileSync(
+    join(home, '.claude', '.credentials.json'),
+    JSON.stringify({ claudeAiOauth: { accessToken: 'tok-falso', expiresAt: 4e12 } }),
+  )
   return home
 }
 
@@ -59,7 +81,7 @@ for (const [env, ingles] of [
   [{ LANG: 'en_US', LC_ALL: '' }, true],
   [{ LANG: 'pt_BR.UTF-8', LC_ALL: '' }, false],
   [{ LANG: 'en_US', LC_ALL: 'pt_PT' }, false],
-  [{ LANG: 'pt_BR', LC_ALL: 'en_US' }, true]
+  [{ LANG: 'pt_BR', LC_ALL: 'en_US' }, true],
 ] as const) {
   it(`idioma CLI ${JSON.stringify(env)}`, async () => {
     const home = comConfig()
@@ -70,10 +92,20 @@ for (const [env, ingles] of [
     assert.match((await rodar(home, ['writer', '--reserve', 'x'], { env })).out, ingles ? /reserve res-x/ : /reserva res-x/)
     assert.match((await rodar(home, ['config', 'set', 'fila.vagas=0'], { env })).err, ingles ? /invalid value/ : /valor inválido/)
     assert.match((await rodar(home, ['doctor'], { env })).out, ingles ? /missing launcher/ : /falta lançador/)
-    assert.match((await rodar(home, ['second', '--family', 'claude'], { env })).err, ingles ? /no eligible second opinion/ : /sem segunda opinião apta/)
-    assert.match((await rodar(home, ['slot', 'swap', 'ausente', 'destino'], { env })).err, ingles ? /reservation ausente does not exist/ : /reserva ausente não existe/)
+    assert.match(
+      (await rodar(home, ['second', '--family', 'claude'], { env })).err,
+      ingles ? /no eligible second opinion/ : /sem segunda opinião apta/,
+    )
+    assert.match(
+      (await rodar(home, ['slot', 'swap', 'ausente', 'destino'], { env })).err,
+      ingles ? /reservation ausente does not exist/ : /reserva ausente não existe/,
+    )
     assert.match((await rodar(home, ['writer', '--reserve', 'a b'], { env })).err, ingles ? /invalid name/ : /nome inválido/)
-    assert.match((await rodar(home, ['hook', 'claude'], { env, stdin: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'npm test' } }) })).err, ingles ? /Run the test part through the queue/ : /Execute o trecho de teste pela fila/)
+    assert.match(
+      (await rodar(home, ['hook', 'claude'], { env, stdin: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'npm test' } }) }))
+        .err,
+      ingles ? /Run the test part through the queue/ : /Execute o trecho de teste pela fila/,
+    )
     for (const args of [['status'], ['measure'], ['doctor'], ['slot', 'free'], ['config', 'get']]) {
       assert.equal((await rodar(home, args, { env })).out.split('\n').length, 1, args.join(' '))
     }
@@ -109,13 +141,19 @@ describe('status', () => {
     assert.match((await rodar(home, ['status'], { env: { LANG: 'en', LC_ALL: '' } })).out, /queue database: 0 running.*a 0\/1 in use/)
     const j = JSON.parse((await rodar(home, ['status', '--json'])).out)
     assert.equal(j.fila.modo, 'banco')
-    assert.deepEqual(j.pool.contas.map((c: { conta: string }) => c.conta), ['a', 'b'])
+    assert.deepEqual(
+      j.pool.contas.map((c: { conta: string }) => c.conta),
+      ['a', 'b'],
+    )
   })
   it('conta com pasta própria ausente aparece como não configurada, em texto e --json', async () => {
     const home = comConfig([conta('team', { config: '~/.claude-team', vagas: 1 })])
     assert.match((await rodar(home, ['status'])).out, /team \(não configurada nesta máquina\)/)
     const j = JSON.parse((await rodar(home, ['status', '--json'])).out)
-    assert.deepEqual([j.pool.contas[0].medida.estado, j.pool.contas[0].medida.erro], ['nao_configurada', `pasta_ausente:${join(home, '.claude-team')}`])
+    assert.deepEqual(
+      [j.pool.contas[0].medida.estado, j.pool.contas[0].medida.erro],
+      ['nao_configurada', `pasta_ausente:${join(home, '.claude-team')}`],
+    )
     assert.match((await rodar(home, ['measure'])).out, /team: não configurada nesta máquina: pasta .*\.claude-team não existe/)
   })
   it('--json mostra a medida do limite seguido (agy sem modelo segue Gemini Models, não o geral do Argon)', async () => {
@@ -123,14 +161,16 @@ describe('status', () => {
     const buckets = [
       { group: 'Gemini Models', usedPercent: 0, windowMinutes: 300 },
       { group: 'Gemini Models', usedPercent: 0, windowMinutes: 10080 },
-      { group: 'Gemini 4 Argon', usedPercent: 70, windowMinutes: 10080 }
+      { group: 'Gemini 4 Argon', usedPercent: 70, windowMinutes: 10080 },
     ]
-    const limites = { antigravity: { provider: 'antigravity', status: 'ok', session: { usedPercent: 0 }, weekly: { usedPercent: 70 }, buckets } }
+    const limites = {
+      antigravity: { provider: 'antigravity', status: 'ok', session: { usedPercent: 0 }, weekly: { usedPercent: 70 }, buckets },
+    }
     const orca: OrcaCli = {
       async run(args) {
         if (args[0] === 'account') return { code: 0, stdout: JSON.stringify({ ok: true, result: { rateLimits: limites } }), stderr: '' }
         return orcaFalso.run(args)
-      }
+      },
     }
     const j = JSON.parse((await rodar(home, ['status', '--json'], { orca })).out)
     assert.equal(j.pool.contas[0].medida.longa, 0)
@@ -148,16 +188,21 @@ describe('config', () => {
     const pronto = join(home, 'pronto')
     mkdirSync(trava)
     writeFileSync(join(trava, 'info.json'), JSON.stringify({ pid: process.pid }))
-    const filho = spawn(process.execPath, ['--experimental-strip-types', join(import.meta.dirname, 'cli-config-filho.ts'), home, pronto], { stdio: 'ignore', env: envCasa(home) })
-    const terminou = new Promise((resolve) => filho.on('close', resolve))
+    const filho = spawn(process.execPath, ['--experimental-strip-types', join(import.meta.dirname, 'cli-config-filho.ts'), home, pronto], {
+      stdio: 'ignore',
+      env: envCasa(home),
+    })
+    const terminou = new Promise(resolve => filho.on('close', resolve))
     try {
       const prazo = Date.now() + 10_000
-      while (!existsSync(pronto) && Date.now() < prazo) await new Promise((r) => setTimeout(r, 20))
+      while (!existsSync(pronto) && Date.now() < prazo) await new Promise(r => setTimeout(r, 20))
       assert.ok(existsSync(pronto), 'filho iniciou o CLI')
-      await new Promise((r) => setTimeout(r, 150))
+      await new Promise(r => setTimeout(r, 150))
       assert.equal(carregar(p).fila.vagas, 2, 'CLI aguarda a trava do outro escritor')
       gravar(aplicar(carregar(p), { 'pool.teto': '9' }), p)
-    } finally { rmSync(trava, { recursive: true, force: true }) }
+    } finally {
+      rmSync(trava, { recursive: true, force: true })
+    }
     assert.equal(await terminou, 0)
     assert.equal(carregar(p).pool.teto, 9)
     assert.equal(carregar(p).fila.vagas, 7)
@@ -226,6 +271,20 @@ describe('writer e slot', () => {
     assert.equal(r3.code, 75)
     assert.match(r3.err, /sem vaga/)
   })
+  it('repetir --reserve com a mesma tag devolve a mesma conta e deixa a outra livre', async () => {
+    const home = comConfig()
+    assert.match((await rodar(home, ['writer', '--reserve', 't1'])).out, /^a .*reserva res-t1$/)
+    assert.match((await rodar(home, ['writer', '--reserve', 't1'])).out, /^a .*reserva res-t1$/)
+    assert.match((await rodar(home, ['slot', 'free'])).out, /a 0\/1 livres · b 1\/1 livres/)
+  })
+  it('repetir --reserve com a conta da reserva fora do rank solta a antiga: nunca duas vagas do mesmo dono', async () => {
+    const home = comConfig()
+    assert.match((await rodar(home, ['writer', '--reserve', 't1'])).out, /^a .*reserva res-t1$/)
+    gravar(cfg([conta('a', { vagas: 1, ativo: false }), conta('b', { vagas: 1 })]), paths(home))
+    assert.match((await rodar(home, ['writer', '--reserve', 't1'])).out, /^b .*reserva res-t1$/)
+    assert.match((await rodar(home, ['slot', 'free'])).out, /a inativa · b 0\/1 livres/)
+    assert.equal(lerVagas(paths(home)).filter(v => v.dono === 'res-t1').length, 1)
+  })
   it('--json traz conta e dono; tag inválida sai 2', async () => {
     const home = comConfig()
     const j = JSON.parse((await rodar(home, ['writer', '--reserve', 'x', '--json'])).out)
@@ -258,8 +317,10 @@ describe('writer e slot', () => {
     const orca: OrcaCli = {
       async run(args) {
         const w = [{ dispatchId: 'disp-9', dispatchStatus: 'completed' }]
-        return args[1] === 'worker-list' ? { code: 0, stdout: JSON.stringify({ ok: true, result: { workers: w } }), stderr: '' } : orcaFalso.run(args)
-      }
+        return args[1] === 'worker-list'
+          ? { code: 0, stdout: JSON.stringify({ ok: true, result: { workers: w } }), stderr: '' }
+          : orcaFalso.run(args)
+      },
     }
     assert.match((await rodar(home, ['slot', 'free'], { orca })).out, /a 1\/1 livres/)
   })
@@ -292,25 +353,70 @@ describe('second, measure e doctor', () => {
     const home = comConfig([conta('a', { vagas: 1 })])
     const lancador = join(home, '.agents', 'bin')
     mkdirSync(lancador, { recursive: true })
-    writeFileSync(join(lancador, 'agent-pool'), '#!/bin/sh\n')
+    for (const [arq, conteudo] of Object.entries(lancadorEsperado(lancador, RAIZ_PLUGIN))) writeFileSync(arq, conteudo)
     mkdirSync(join(home, '.agents', 'skills', 'agent-pool'), { recursive: true })
     writeFileSync(join(home, '.agents', 'skills', 'agent-pool', 'SKILL.md'), 'x')
-    writeFileSync(join(home, '.claude', 'settings.json'), JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Bash|PowerShell', hooks: [{ type: 'command', command: `"${join(lancador, 'agent-pool')}" hook claude` }] }] } }))
+    mkdirSync(join(home, '.claude', 'skills'), { recursive: true })
+    symlinkSync(join(home, '.agents', 'skills', 'agent-pool'), join(home, '.claude', 'skills', 'agent-pool'), 'junction')
+    writeFileSync(
+      join(home, '.claude', 'settings.json'),
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [{ matcher: 'Bash|PowerShell', hooks: [{ type: 'command', command: `"${caminhoLancador(lancador)}" hook claude` }] }],
+        },
+      }),
+    )
     const r = await rodar(home, ['doctor'])
     assert.doesNotMatch(r.out, /hook codex/)
     assert.equal(r.code, 0, r.out)
   })
-  it('doctor mostra uma linha de hook por pasta de conta e acusa a que falta', async () => {
-    const home = comConfig([conta('a', { vagas: 1 }), conta('b', { vagas: 1, config: join(tmpdir(), 'conta-inexistente-b') })])
-    const r = await rodar(home, ['doctor', '--json'])
-    const hooks = JSON.parse(r.out).filter((i: { item: string }) => i.item === 'hook claude')
+  it('doctor mostra uma linha de hook por pasta de conta que existe e ignora a que não existe', async () => {
+    const pastaB = join(novoHome(), 'conta-b')
+    mkdirSync(pastaB)
+    const home = comConfig([
+      conta('a', { vagas: 1 }),
+      conta('b', { vagas: 1, config: pastaB }),
+      conta('c', { vagas: 1, config: join(tmpdir(), 'conta-inexistente-c') }),
+    ])
+    const hooks = JSON.parse((await rodar(home, ['doctor', '--json'])).out).filter((i: { item: string }) => i.item === 'hook claude')
     assert.equal(hooks.length, 2)
-    assert.ok(hooks.some((h: { detalhe: string }) => h.detalhe.includes('conta-inexistente-b')))
+    assert.ok(hooks.some((h: { detalhe: string }) => h.detalhe.includes('conta-b')))
+    assert.ok(!hooks.some((h: { detalhe: string }) => h.detalhe.includes('conta-inexistente-c')))
+  })
+  it('doctor confere a skill pela regra do painel: versão da cópia e links que faltam', async () => {
+    const home = comConfig([conta('a', { vagas: 1 })])
+    const destino = join(home, '.agents', 'skills', 'agent-pool')
+    const origem = join(RAIZ_PLUGIN, 'skill', 'agent-pool')
+    cpSync(origem, destino, { recursive: true })
+    const skill = async () => JSON.parse((await rodar(home, ['doctor', '--json'])).out).find((i: { item: string }) => i.item === 'skill').ok
+    writeFileSync(join(destino, '.agent-pool-skill.json'), JSON.stringify({ versao: '0.0.1', hashes: hashes(origem) }))
+    assert.equal(await skill(), false) // manifesto de outra versão: o painel trava em "desatualizada"
+    writeFileSync(join(destino, '.agent-pool-skill.json'), JSON.stringify({ versao, hashes: hashes(origem) }))
+    assert.equal(await skill(), false) // cópia em dia, sem o link do agente
+    mkdirSync(join(home, '.claude', 'skills'), { recursive: true })
+    symlinkSync(destino, join(home, '.claude', 'skills', 'agent-pool'), 'junction')
+    assert.equal(await skill(), true)
+  })
+  it('doctor ignora a conta desativada', async () => {
+    const home = comConfig([conta('a', { vagas: 1 }), conta('b', { vagas: 1, agente: 'codex', ativo: false })])
+    const hooks = JSON.parse((await rodar(home, ['doctor', '--json'])).out).filter((i: { item: string }) => i.item.startsWith('hook'))
+    assert.deepEqual(
+      hooks.map((h: { item: string }) => h.item),
+      ['hook claude'],
+    )
+  })
+  it('doctor acusa o lançador com conteúdo desatualizado', async () => {
+    const home = comConfig()
+    const bin = join(home, '.agents', 'bin')
+    mkdirSync(bin, { recursive: true })
+    writeFileSync(join(bin, 'agent-pool'), '#!/bin/sh\n')
+    const lista = JSON.parse((await rodar(home, ['doctor', '--json'])).out)
+    assert.equal(lista.find((i: { item: string }) => i.item === 'launcher').ok, false)
   })
   it('doctor aponta o que falta', async () => {
     const r = await rodar(comConfig(), ['doctor'])
     assert.equal(r.code, 1)
-    assert.match(r.out, /ok    config \(2 conta\(s\)\) · ok    orca · falta lançador/)
+    assert.match(r.out, /ok {4}config \(2 conta\(s\)\) · ok {4}orca · falta lançador/)
     assert.equal(JSON.parse((await rodar(comConfig(), ['doctor', '--json'])).out).length, 5)
   })
 })
@@ -355,7 +461,26 @@ describe('hook', () => {
     }
     assert.match(await pedir('claude', { tool_name: 'PowerShell', tool_input: { command: 'npm test' } }), /`& "/)
     assert.doesNotMatch(await pedir('claude', { tool_name: 'Bash', tool_input: { command: 'npm test' } }), /`& "/)
-    assert.match(await pedir('codex', { tool_name: 'shell', tool_input: { command: ['powershell.exe', '-Command', 'npm test'] } }), /`& \\"/)
+    assert.match(
+      await pedir('codex', { tool_name: 'shell', tool_input: { command: ['powershell.exe', '-Command', 'npm test'] } }),
+      /`& \\"/,
+    )
+  })
+  it('codex no Windows: a sugestão leva & mesmo com entrada que não parece PowerShell; fora do Windows, não', async () => {
+    const original = Object.getOwnPropertyDescriptor(process, 'platform')!
+    const pedir = async (plataforma: NodeJS.Platform) => {
+      Object.defineProperty(process, 'platform', { value: plataforma })
+      try {
+        const r = await rodar(novoHome(), ['hook', 'codex'], {
+          stdin: JSON.stringify({ tool_name: 'shell', tool_input: { command: ['bash', '-lc', 'npm test'] } }),
+        })
+        return r.err + r.out
+      } finally {
+        Object.defineProperty(process, 'platform', original)
+      }
+    }
+    assert.match(await pedir('win32'), /`& \\"/)
+    assert.doesNotMatch(await pedir('linux'), /`& \\"/)
   })
   it('claude: sugere o caminho absoluto do lançador da casa e só o trecho de teste', async () => {
     const home = novoHome()
@@ -376,9 +501,9 @@ describe('hook', () => {
   describe('worker-start sem reserva', () => {
     const AGORA = 1_700_000_000_000
     const start = entrada('orca orchestration worker-start --agent claude --task t')
-    const comReserva = (desde: number) => {
+    const comReserva = async (desde: number) => {
       const home = comConfig()
-      pegar(paths(home), carregar(paths(home)), 'a', 'res-x', desde)
+      await pegar(paths(home), carregar(paths(home)), 'a', 'res-x', desde)
       return home
     }
     it('claude: nega com exit 2 e a mensagem da reserva', async () => {
@@ -396,8 +521,8 @@ describe('hook', () => {
       assert.match(r.err, /without a slot reservation/)
     })
     it('claude: libera com reserva res- pendente e nega com ela vencida', async () => {
-      assert.deepEqual((await rodar(comReserva(AGORA - 1000), ['hook', 'claude'], { stdin: start })).code, 0)
-      assert.equal((await rodar(comReserva(AGORA - 700_000), ['hook', 'claude'], { stdin: start })).code, 2)
+      assert.deepEqual((await rodar(await comReserva(AGORA - 1000), ['hook', 'claude'], { stdin: start })).code, 0)
+      assert.equal((await rodar(await comReserva(AGORA - 700_000), ['hook', 'claude'], { stdin: start })).code, 2)
     })
     it('codex: nega com JSON de deny', async () => {
       const r = await rodar(comConfig(), ['hook', 'codex'], { stdin: start })

@@ -7,7 +7,9 @@ import { medidasGravadas, medirTodas } from '../src/core/medidas/cache.ts'
 import { paths } from '../src/core/paths.ts'
 import { cfg, conta } from './helpers/pool.ts'
 
-const naoMedir = (async () => { throw new Error('não deveria medir') }) as typeof fetch
+const naoMedir = (async () => {
+  throw new Error('não deveria medir')
+}) as typeof fetch
 const orcaFora = { run: async () => ({ code: 1, stdout: '', stderr: '' }) }
 
 function casa() {
@@ -27,7 +29,16 @@ test('conta Claude com pasta própria inexistente: não configurada, sem medir, 
   try {
     const c = cfg([conta('team', { config: '~/.claude-team' })])
     let usage = 0
-    const d = { home, agora: 1_700_000_000_000, fetch: naoMedir, executarUsage: async () => { usage++; return 'Not logged in' }, executarStatus: async () => '' }
+    const d = {
+      home,
+      agora: 1_700_000_000_000,
+      fetch: naoMedir,
+      executarUsage: async () => {
+        usage++
+        return 'Not logged in'
+      },
+      executarStatus: async () => '',
+    }
     const [m] = await medirTodas(c, p, orcaFora, d)
     assert.equal(m.estado, 'nao_configurada')
     assert.equal(m.erro, `pasta_ausente:${join(home, '.claude-team')}`)
@@ -36,16 +47,26 @@ test('conta Claude com pasta própria inexistente: não configurada, sem medir, 
     const [depois] = await medirTodas(c, p, orcaFora, { ...d, agora: d.agora + 1000 })
     assert.equal(depois.estado, 'sem_login')
     assert.equal(usage, 1)
-  } finally { fim() }
+  } finally {
+    fim()
+  }
 })
 
 test('conta Claude padrão (sem config) não depende de pasta', async () => {
   const { home, p, fim } = casa()
   try {
-    const d = { home, agora: 1_700_000_000_000, fetch: naoMedir, executarUsage: async () => 'Not logged in', executarStatus: async () => '' }
+    const d = {
+      home,
+      agora: 1_700_000_000_000,
+      fetch: naoMedir,
+      executarUsage: async () => 'Not logged in',
+      executarStatus: async () => '',
+    }
     const [m] = await medirTodas(cfg([conta('padrao')]), p, orcaFora, d)
     assert.equal(m.estado, 'sem_login')
-  } finally { fim() }
+  } finally {
+    fim()
+  }
 })
 
 test('executável fora do PATH: medida que falhou vira não configurada (sem cache); com o executável, volta o sem login', async () => {
@@ -63,18 +84,31 @@ test('executável fora do PATH: medida que falhou vira não configurada (sem cac
     binario(bin, 'codex')
     const [depois] = await medirTodas(c, p, orca, { ...d, agora: d.agora + 1000 })
     assert.equal(depois.estado, 'sem_login')
-  } finally { fim() }
+  } finally {
+    fim()
+  }
 })
 
 test('executável fora do PATH não rebaixa medida que deu certo (o PATH do processo pode não ter tudo o que o terminal tem)', async () => {
   const { home, p, fim } = casa()
   try {
     const c = cfg([conta('codex', { agente: 'codex', origem: 'orca' })])
-    const orca = { run: async () => ({ code: 0, stderr: '', stdout: JSON.stringify({ ok: true, result: { rateLimits: { codex: { provider: 'codex', status: 'ok', session: { usedPercent: 30 }, weekly: { usedPercent: 40 } } } } }) }) }
+    const orca = {
+      run: async () => ({
+        code: 0,
+        stderr: '',
+        stdout: JSON.stringify({
+          ok: true,
+          result: { rateLimits: { codex: { provider: 'codex', status: 'ok', session: { usedPercent: 30 }, weekly: { usedPercent: 40 } } } },
+        }),
+      }),
+    }
     const [m] = await medirTodas(c, p, orca, { home, agora: 1_700_000_000_000, fetch: naoMedir, path: join(home, 'vazio') })
     assert.equal(m.estado, 'ok')
     assert.equal(m.curta, 30)
-  } finally { fim() }
+  } finally {
+    fim()
+  }
 })
 
 test('comando com CLAUDE_CONFIG_DIR=… claude usa claude como executável', async () => {
@@ -84,13 +118,22 @@ test('comando com CLAUDE_CONFIG_DIR=… claude usa claude como executável', asy
     mkdirSync(bin)
     mkdirSync(join(home, '.claude-x'))
     const c = cfg([conta('x', { config: '~/.claude-x', comando: 'CLAUDE_CONFIG_DIR=~/.claude-x claude' })])
-    const d = { home, agora: 1_700_000_000_000, fetch: naoMedir, path: bin, executarUsage: async () => 'Not logged in', executarStatus: async () => '' }
+    const d = {
+      home,
+      agora: 1_700_000_000_000,
+      fetch: naoMedir,
+      path: bin,
+      executarUsage: async () => 'Not logged in',
+      executarStatus: async () => '',
+    }
     const [m] = await medirTodas(c, p, orcaFora, d)
     assert.equal(m.erro, 'cli_ausente:claude')
     binario(bin, 'claude')
     const [ok] = await medirTodas(c, p, orcaFora, { ...d, agora: d.agora + 1000 })
     assert.equal(ok.estado, 'sem_login')
-  } finally { fim() }
+  } finally {
+    fim()
+  }
 })
 
 test('sem_login no cache e CLI removido depois: não configurada, e o cache não guarda esse estado', async () => {
@@ -101,15 +144,22 @@ test('sem_login no cache e CLI removido depois: não configurada, e o cache não
     const c = cfg([conta('codex', { agente: 'codex', origem: 'orca' })])
     let chamadas = 0
     const semLogin = { codex: { provider: 'codex', status: 'error', usageMetadata: { failureKind: 'missing-credentials' } } }
-    const orca = { run: async () => { chamadas++; return { code: 0, stderr: '', stdout: JSON.stringify({ ok: true, result: { rateLimits: semLogin } }) } } }
+    const orca = {
+      run: async () => {
+        chamadas++
+        return { code: 0, stderr: '', stdout: JSON.stringify({ ok: true, result: { rateLimits: semLogin } }) }
+      },
+    }
     const d = { home, agora: 1_700_000_000_000, fetch: naoMedir, path: bin }
     assert.equal((await medirTodas(c, p, orca, d))[0].estado, 'sem_login')
     rmSync(bin, { recursive: true, force: true })
     const [m] = await medirTodas(c, p, orca, { ...d, agora: d.agora + 1000 })
     assert.deepEqual([m.estado, m.erro, chamadas], ['nao_configurada', 'cli_ausente:codex', 1])
     const gravadas = medidasGravadas(p)
-    assert.ok(gravadas.every((g) => g.estado !== 'nao_configurada'))
-  } finally { fim() }
+    assert.ok(gravadas.every(g => g.estado !== 'nao_configurada'))
+  } finally {
+    fim()
+  }
 })
 
 for (const aspas of [false, true]) {
@@ -127,7 +177,9 @@ for (const aspas of [false, true]) {
       assert.deepEqual([m.estado, m.erro], ['nao_configurada', `cli_ausente:${exe}`])
       binario(dir, 'codex')
       assert.equal((await medirTodas(c, p, orca, { ...d, agora: d.agora + 1000 }))[0].estado, 'sem_login')
-    } finally { fim() }
+    } finally {
+      fim()
+    }
   })
 }
 
@@ -137,10 +189,13 @@ test('comando com ~/ confere o arquivo na casa; com $VAR ou %VAR% não confere (
     const semLogin = { codex: { provider: 'codex', status: 'error', usageMetadata: { failureKind: 'missing-credentials' } } }
     const orca = { run: async () => ({ code: 0, stderr: '', stdout: JSON.stringify({ ok: true, result: { rateLimits: semLogin } }) }) }
     const d = { home, agora: 1_700_000_000_000, fetch: naoMedir, path: join(home, 'vazio') }
-    const medir = async (comando: string, agora: number) => (await medirTodas(cfg([conta('codex', { agente: 'codex', origem: 'orca', comando })]), p, orca, { ...d, agora }))[0]
+    const medir = async (comando: string, agora: number) =>
+      (await medirTodas(cfg([conta('codex', { agente: 'codex', origem: 'orca', comando })]), p, orca, { ...d, agora }))[0]
     binario(join(home, 'bin'), 'codex')
     assert.equal((await medir('~/bin/codex --flag', d.agora)).estado, 'sem_login')
     assert.equal((await medir('$HOME/nao-existe/codex', d.agora + 1000)).estado, 'sem_login')
     assert.equal((await medir('%LOCALAPPDATA%\\nao-existe\\codex.exe', d.agora + 2000)).estado, 'sem_login')
-  } finally { fim() }
+  } finally {
+    fim()
+  }
 })

@@ -8,15 +8,17 @@ description: Use before starting worker agents or running tests on a machine wit
 This machine shares its agent accounts and its test resources between many agents and worktrees. The launcher installed by the Orca plugin keeps that fair and safe: `~/.agents/bin/agent-pool` (`~/.agents/bin/agent-pool.cmd` on Windows PowerShell). It is not on the PATH: always call it by that path. Below, `agent-pool` stands for that full path.
 
 ## Before starting a worker
-1. `~/.agents/bin/agent-pool writer --reserve <tag>` — picks the account with the most quota left (times its weight) among those with a free slot and reserves the slot. Prints the account. If the line carries `model <id>`, pass `--model <id>` to `worker-start`. Exit 75: the pool is full; wait for one of your workers to finish, then try again.
-2. Start the worker with Orca (`orca orchestration worker-start …`) on that account.
-3. `~/.agents/bin/agent-pool slot swap res-<tag> <dispatch_id>` — binds the reservation to the real dispatch.
+1. `~/.agents/bin/agent-pool writer --reserve <tag>` — picks the account with the most quota left (times its weight) among those with a free slot and reserves the slot. Prints the account. If the line carries `model <id>` (`modelo <id>` in Portuguese; `--json` has `modelo`), pass `--model <id>` to `worker-start`. Exit 75: the pool is full; wait for one of your workers to finish, then try again.
+2. Start the worker with Orca (`orca orchestration worker-start …`) on that account. Normally reserve in one command, read the account and model from its output, then run `worker-start` in a later command (a live reservation from an earlier command is accepted). Reserving in the same command as `worker-start` only works chained with `&&` and without a pipe (`;` between them is refused).
+3. `~/.agents/bin/agent-pool slot swap res-<tag> <dispatch_id>` — binds the reservation to the real dispatch. Reservations expire after 10 minutes: if swap says the reservation does not exist, run `~/.agents/bin/agent-pool slot take <account> <dispatch_id>` instead.
 4. If `worker-start` fails: `~/.agents/bin/agent-pool slot release res-<tag>`.
 5. When the worker is done and verified: `~/.agents/bin/agent-pool slot release <dispatch_id>`.
 
-A worker opened with `--agent <role>` keeps its slot taken for as long as its session stays open, even after `slot release`; close it to free the slot. The hook refuses `worker-start` without a pending reservation.
+A worker opened with `--agent <role>` keeps its slot taken for as long as its session stays open, even after `slot release`; close it to free the slot. The hook refuses `worker-start` without a pending reservation; when it refuses a test, run the command the hook prints; when it refuses `worker-start`, reserve as the hook describes and repeat.
 
-Second opinion from another model family: `~/.agents/bin/agent-pool second --family <claude|gpt|gemini>` (a family other than the writer's). If the line carries `model <id>`, pass `--model <id>` to `worker-start` (Antigravity defaults to Flash so a second opinion does not burn the Argon limit).
+Second opinion or reviewer (any worker that is not the writer):
+1. `~/.agents/bin/agent-pool second --family <claude|gpt|gemini>` — `--family` is the family of the writer you picked; it returns an account of another family. If the line carries `model <id>` (`modelo <id>` in Portuguese; `--json` has `modelo`), pass `--model <id>` to `worker-start` (Antigravity defaults to Flash so a second opinion does not burn the Argon limit).
+2. `~/.agents/bin/agent-pool slot take <account> res-<tag>` before `worker-start`, then steps 2-5 above.
 
 ## Running tests
 Run every test through the queue, never directly:

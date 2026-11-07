@@ -1,4 +1,4 @@
-// Vigília do painel: enquanto a tela está aberta, o worker coleta a cada 60 s e avisa por 'estado.mudou'.
+// Vigília do painel: enquanto a tela está aberta, o worker coleta no intervalo configurado e avisa por 'estado.mudou'.
 import { plugin } from 'orca'
 
 const RETENTA_MS = 5_000
@@ -10,7 +10,7 @@ export async function manterAtualizando(signal: AbortSignal): Promise<void> {
       await plugin.request('auto.assistir', undefined, { signal, timeoutMs: 120_000 })
     } catch {
       if (signal.aborted) return
-      await new Promise((r) => setTimeout(r, RETENTA_MS))
+      await new Promise(r => setTimeout(r, RETENTA_MS))
     }
   }
 }

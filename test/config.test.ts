@@ -3,9 +3,10 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { paths } from '../src/core/paths.ts'
-import { PADRAO, aplicar, carregar, gravar, validar, ErroConfig } from '../src/core/config.ts'
 import { deduzirAgente } from '../src/core/catalogo.ts'
+import { carregar, ErroConfig, gravar, PADRAO, validar } from '../src/core/config.ts'
+import { aplicar } from '../src/core/config-chaves.ts'
+import { paths } from '../src/core/paths.ts'
 import type { Config, Conta } from '../src/core/tipos.ts'
 
 function casa() {
@@ -14,12 +15,21 @@ function casa() {
 }
 
 const conta = (nome: string, extra: Partial<Conta> = {}): Conta => ({
-  nome, agente: 'claude', config: null, comando: null, modelo: null, vagas: 1, peso: 1,
-  papeis: ['escritor'], ativo: true, origem: 'manual', ...extra
+  nome,
+  agente: 'claude',
+  config: null,
+  comando: null,
+  modelo: null,
+  vagas: 1,
+  peso: 1,
+  papeis: ['escritor'],
+  ativo: true,
+  origem: 'manual',
+  ...extra,
 })
 const com = (...contas: Conta[]): Config => ({ ...structuredClone(PADRAO), pool: { ...PADRAO.pool, contas } })
 const recusa = (fn: () => unknown, codigo: string) =>
-  assert.throws(fn, (e: unknown) => e instanceof ErroConfig && e.erros.some((x) => x.codigo === codigo))
+  assert.throws(fn, (e: unknown) => e instanceof ErroConfig && e.erros.some(x => x.codigo === codigo))
 
 test('carregar sem arquivo devolve PADRAO', () => {
   const { p, fim } = casa()
@@ -54,7 +64,7 @@ test('carregar recusa ignoradas fora de lista de textos e config/comando que nã
     { ...PADRAO, pool: { ...PADRAO.pool, ignoradas: 'claude-padrao' } },
     { ...PADRAO, pool: { ...PADRAO.pool, ignoradas: [1] } },
     { ...PADRAO, pool: { ...PADRAO.pool, contas: [conta('a', { config: 5 as unknown as string })] } },
-    { ...PADRAO, pool: { ...PADRAO.pool, contas: [conta('a', { comando: [] as unknown as string })] } }
+    { ...PADRAO, pool: { ...PADRAO.pool, contas: [conta('a', { comando: [] as unknown as string })] } },
   ]) {
     writeFileSync(p.config, JSON.stringify(ruim))
     assert.throws(() => carregar(p), ErroConfig)
@@ -72,7 +82,10 @@ test('carregar devolve o que foi gravado', () => {
 
 test('aplicar pool.ordem reordena e recusa nome desconhecido, repetido ou lista incompleta', () => {
   const c = com(conta('a'), conta('b'), conta('c'))
-  assert.deepEqual(aplicar(c, { 'pool.ordem': 'c,a,b' }).pool.contas.map((x) => x.nome), ['c', 'a', 'b'])
+  assert.deepEqual(
+    aplicar(c, { 'pool.ordem': 'c,a,b' }).pool.contas.map(x => x.nome),
+    ['c', 'a', 'b'],
+  )
   recusa(() => aplicar(c, { 'pool.ordem': 'a,b,z' }), 'conta_inexistente')
   recusa(() => aplicar(c, { 'pool.ordem': 'a,a,b' }), 'conta_repetida')
   recusa(() => aplicar(c, { 'pool.ordem': 'a,b' }), 'ordem_incompleta')
@@ -81,7 +94,7 @@ test('aplicar pool.ordem reordena e recusa nome desconhecido, repetido ou lista 
 test("aplicar conta.x.adicionar=auto com 'CLAUDE_CONFIG_DIR=~/.claude-work claude' deduz claude e grava config ~/.claude-work", () => {
   const c = aplicar(PADRAO, {
     'conta.x.adicionar': 'auto',
-    'conta.x.comando': 'CLAUDE_CONFIG_DIR=~/.claude-work claude'
+    'conta.x.comando': 'CLAUDE_CONFIG_DIR=~/.claude-work claude',
   })
   const x = c.pool.contas[0]
   assert.equal(x.agente, 'claude')
@@ -89,6 +102,25 @@ test("aplicar conta.x.adicionar=auto com 'CLAUDE_CONFIG_DIR=~/.claude-work claud
   assert.equal(x.comando, null)
   assert.equal(x.origem, 'manual')
   assert.deepEqual([x.vagas, x.peso, x.ativo], [1, 1, true])
+})
+
+test('adicionar=auto: valor com = não é cortado no segundo = e a validação única recusa o caractere', () => {
+  recusa(() => aplicar(PADRAO, { 'conta.x.adicionar': 'auto', 'conta.x.comando': 'CLAUDE_CONFIG_DIR=C:\\a=b claude' }), 'valor_invalido')
+  recusa(() => aplicar(PADRAO, { 'conta.x.adicionar': 'auto', 'conta.x.comando': 'FOO=1 claude' }), 'variavel_sem_suporte')
+})
+
+test('fila.espera_max_s é configurável dentro da faixa', () => {
+  assert.equal(aplicar(PADRAO, { 'fila.espera_max_s': '600' }).fila.esperaMaxS, 600)
+  recusa(() => aplicar(PADRAO, { 'fila.espera_max_s': '0' }), 'valor_invalido')
+  recusa(() => aplicar(PADRAO, { 'fila.espera_max_s': '86401' }), 'valor_invalido')
+})
+
+test('validar e carregar com conta null dão ErroConfig, não TypeError', () => {
+  const { p, fim } = casa()
+  mkdirSync(join(p.config, '..'), { recursive: true })
+  writeFileSync(p.config, JSON.stringify({ versao: 1, pool: { contas: [null] }, fila: {} }))
+  recusa(() => carregar(p), 'valor_invalido')
+  fim()
 })
 
 test('aplicar adicionar=auto só com diretório de config deduz claude', () => {
@@ -105,13 +137,19 @@ test('papel de trabalho em agente com provado=false é recusado', () => {
   const c = com(conta('o', { agente: 'opencode', papeis: [] }))
   recusa(() => aplicar(c, { 'conta.o.papeis': 'escritor' }), 'agente_nao_provado')
   assert.deepEqual(validar(com(conta('o', { agente: 'opencode', papeis: ['revisor'] }))), [
-    { chave: 'conta.o.papeis', codigo: 'agente_nao_provado' }
+    { chave: 'conta.o.papeis', codigo: 'agente_nao_provado' },
   ])
   assert.deepEqual(validar(com(conta('o', { agente: 'opencode', papeis: ['segunda-opiniao'] }))), [])
 })
 
 test('aplicar edita chaves de fila e pool e recusa valores fora da faixa', () => {
-  const c = aplicar(PADRAO, { 'fila.modo': 'projeto', 'fila.processos': '4', 'pool.teto': '2', 'pool.ram_min': '3.5', 'pool.escolha': 'ordem' })
+  const c = aplicar(PADRAO, {
+    'fila.modo': 'projeto',
+    'fila.processos': '4',
+    'pool.teto': '2',
+    'pool.ram_min': '3.5',
+    'pool.escolha': 'ordem',
+  })
   assert.equal(c.fila.modo, 'projeto')
   assert.equal(c.fila.processos, 4)
   assert.equal(c.pool.teto, 2)
@@ -120,6 +158,7 @@ test('aplicar edita chaves de fila e pool e recusa valores fora da faixa', () =>
   recusa(() => aplicar(PADRAO, { 'fila.vagas': '0' }), 'valor_invalido')
   recusa(() => aplicar(PADRAO, { 'fila.modo': 'xis' }), 'valor_invalido')
   recusa(() => aplicar(PADRAO, { 'fila.nada': '1' }), 'chave_desconhecida')
+  recusa(() => aplicar(PADRAO, { toString: '1' }), 'chave_desconhecida')
   assert.equal(PADRAO.fila.vagas, 2, 'não muta a entrada')
 })
 
@@ -169,8 +208,40 @@ test('modelo: config antiga sem o campo vira null; set grava, valida e limpa', (
   const com1 = aplicar(c, { 'conta.a.modelo': 'gemini-3.8-flash-high' })
   assert.equal(com1.pool.contas[0].modelo, 'gemini-3.8-flash-high')
   assert.equal(aplicar(com1, { 'conta.a.modelo': '' }).pool.contas[0].modelo, null)
-  for (const ruim of ['a b', 'x;y', 'x'.repeat(101), '-x', '--dangerously-skip-permissions']) recusa(() => aplicar(c, { 'conta.a.modelo': ruim }), 'valor_invalido')
+  for (const ruim of ['a b', 'x;y', 'x'.repeat(101), '-x', '--dangerously-skip-permissions'])
+    recusa(() => aplicar(c, { 'conta.a.modelo': ruim }), 'valor_invalido')
   writeFileSync(p.config, JSON.stringify({ ...PADRAO, pool: { ...PADRAO.pool, contas: [conta('a', { modelo: 5 as unknown as string })] } }))
   assert.throws(() => carregar(p), ErroConfig)
+  fim()
+})
+
+test('fila.limpar_bancos: desligado por padrão e em config antiga; liga e desliga só com sim/nao', () => {
+  assert.equal(PADRAO.fila.limparBancos, false)
+  const { p, fim } = casa()
+  try {
+    mkdirSync(p.raiz, { recursive: true })
+    const { limparBancos: _, ...filaAntiga } = PADRAO.fila
+    writeFileSync(p.config, JSON.stringify({ ...PADRAO, fila: filaAntiga }))
+    assert.equal(carregar(p).fila.limparBancos, false)
+  } finally {
+    fim()
+  }
+  const ligado = aplicar(PADRAO, { 'fila.limpar_bancos': 'sim' })
+  assert.equal(ligado.fila.limparBancos, true)
+  assert.equal(aplicar(ligado, { 'fila.limpar_bancos': 'nao' }).fila.limparBancos, false)
+  recusa(() => aplicar(PADRAO, { 'fila.limpar_bancos': '1' }), 'valor_invalido')
+  assert.deepEqual(validar({ ...PADRAO, fila: { ...PADRAO.fila, limparBancos: 'sim' as never } }), [
+    { chave: 'fila.limpar_bancos', codigo: 'valor_invalido' },
+  ])
+})
+
+test('config.json já gravada com caminho acentuado carrega; a entrada nova com esse caminho é recusada', () => {
+  const { p, fim } = casa()
+  const gravada = com(conta('w', { config: 'C:/Users/João/.claude-w', comando: 'claude --x ã' }))
+  mkdirSync(join(p.config, '..'), { recursive: true })
+  writeFileSync(p.config, JSON.stringify(gravada))
+  assert.equal(carregar(p).pool.contas[0].config, 'C:/Users/João/.claude-w')
+  recusa(() => aplicar(PADRAO, { 'conta.n.adicionar': 'auto', 'conta.n.config': 'C:/Users/João/.claude-n' }), 'valor_invalido')
+  recusa(() => aplicar(gravada, { 'conta.w.config': 'C:/Users/João/outro' }), 'valor_invalido')
   fim()
 })

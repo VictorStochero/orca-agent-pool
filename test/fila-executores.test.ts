@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { detectarExecutor } from '../src/core/fila/executores.ts'
 import { arquivos, tmp } from './fila-util.ts'
 
-const exec = (mapa: Record<string, string>, env: NodeJS.ProcessEnv = {}) => detectarExecutor(arquivos(tmp(), mapa), env)
+const exec = (mapa: Record<string, string>) => detectarExecutor(arquivos(tmp(), mapa))
 
 test('laravel: php artisan test com --parallel --processes=N', () => {
   const e = exec({ artisan: '' })!
@@ -65,9 +65,6 @@ test('Gemfile sem spec/ e diretório vazio não têm executor', () => {
   assert.equal(exec({}), null)
 })
 
-test('laravel vence package.json; AGENT_POOL_RUNNER vence tudo', () => {
+test('laravel vence package.json', () => {
   assert.deepEqual(exec({ artisan: '', 'package.json': '{}' })!.comando.slice(0, 2), ['php', 'artisan'])
-  const e = exec({ artisan: '' }, { AGENT_POOL_RUNNER: 'docker compose exec -T web pytest' })!
-  assert.deepEqual(e.comando, ['docker', 'compose', 'exec', '-T', 'web', 'pytest'])
-  assert.deepEqual(e.paralelo(8), [])
 })

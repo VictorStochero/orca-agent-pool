@@ -4,7 +4,15 @@ import { limiteDoModelo, medidaEfetiva, modeloEfetivo } from '../src/core/pool/m
 import type { Medida } from '../src/core/tipos.ts'
 import { conta } from './helpers/pool.ts'
 
-const m = (extra: Partial<Medida> = {}): Medida => ({ conta: 'a', curta: 10, longa: 55, resetLongaTs: null, estado: 'ok', medidaTs: 1, ...extra })
+const m = (extra: Partial<Medida> = {}): Medida => ({
+  conta: 'a',
+  curta: 10,
+  longa: 55,
+  resetLongaTs: null,
+  estado: 'ok',
+  medidaTs: 1,
+  ...extra,
+})
 
 describe('limiteDoModelo', () => {
   it('nomes por agente e modelo', () => {
@@ -24,7 +32,10 @@ describe('limiteDoModelo', () => {
 })
 
 describe('modeloEfetivo e medidaEfetiva', () => {
-  const limites = [{ nome: 'Gemini Models', curta: 0, longa: 0 }, { nome: 'Gemini 4 Argon', curta: null, longa: 55 }]
+  const limites = [
+    { nome: 'Gemini Models', curta: 0, longa: 0 },
+    { nome: 'Gemini 4 Argon', curta: null, longa: 55 },
+  ]
   it('antigravity sem modelo usa o padrão Flash', () => {
     const agy = conta('agy', { agente: 'antigravity' })
     assert.equal(modeloEfetivo(agy), 'gemini-3.8-flash-high')
@@ -44,7 +55,10 @@ describe('modeloEfetivo e medidaEfetiva', () => {
     assert.equal(medidaEfetiva(conta('c'), m({ limites: fable })).longa, 55)
   })
   it('janela que o limite separado não tem fica a geral (a sessão de 5h vale para todos os modelos)', () => {
-    const r = medidaEfetiva(conta('c', { modelo: 'claude-fable-5-1' }), m({ curta: 85, limites: [{ nome: 'Fable', curta: null, longa: 29 }] }))
+    const r = medidaEfetiva(
+      conta('c', { modelo: 'claude-fable-5-1' }),
+      m({ curta: 85, limites: [{ nome: 'Fable', curta: null, longa: 29 }] }),
+    )
     assert.deepEqual([r.curta, r.longa], [85, 29])
   })
 })

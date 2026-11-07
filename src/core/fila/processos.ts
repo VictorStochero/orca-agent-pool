@@ -1,4 +1,5 @@
 import { availableParallelism } from 'node:os'
+import { nomeDoExecutavel } from '../executavel.ts'
 
 /** Mudança feita numa flag de paralelismo; `de` null = flag acrescentada. */
 export type Ajuste = { de: string | null; para: string }
@@ -25,7 +26,7 @@ function limitarFlag(argv: string[], teto: number, longas: string[], curta: bool
   const nomes = curta ? [...longas, '-n'] : longas
   for (let i = 0; i < comando.length; i++) {
     const a = comando[i]
-    const nome = nomes.find((n) => a === n || a.startsWith(`${n}=`))
+    const nome = nomes.find(n => a === n || a.startsWith(`${n}=`))
     if (nome && a === nome && comando[i + 1] !== undefined) {
       achou = true
       const v = comando[i + 1]
@@ -55,13 +56,12 @@ function limitarFlag(argv: string[], teto: number, longas: string[], curta: bool
   return { comando, ajustes, achou }
 }
 
-const base = (t: string) => (t.replace(/\\/g, '/').split('/').pop() ?? '').toLowerCase().replace(/\.(exe|cmd|bat)$/, '')
-
 /**
  * Comando explícito: `fila.processos` é teto nas flags de paralelismo que o agente passou. Pedido menor fica.
- * Laravel/Pest/ParaTest (`--parallel`, ganha `--processes=<teto>` se faltar), pytest-xdist e vitest/jest.
+ * `artisan test` e Pest (`--parallel` ou `-p`, ganha `--processes=<teto>` se faltar; o ParaTest fica como veio), pytest-xdist e vitest/jest.
  */
-// shortcut: `go test -p`, `cargo test -- --test-threads` e `dotnet test -m:` não são limitados; acrescentar a forma de cada um se o agente passar a usá-las.
+// shortcut: `go test -p`, `cargo test -- --test-threads` e `dotnet test -m:` não são limitados;
+// upgrade: acrescentar a forma de cada um se o agente passar a usá-las.
 export function limitarProcessos(argv: string[], teto: number, nucleos = availableParallelism()): { comando: string[]; ajustes: Ajuste[] } {
   if (!Number.isInteger(teto) || teto < 1) return { comando: argv, ajustes: [] }
   let comando = argv
@@ -71,27 +71,43 @@ export function limitarProcessos(argv: string[], teto: number, nucleos = availab
     ajustes.push(...r.ajustes)
     return r
   }
-  const automatico: Resolver = (v) => (/^(auto|logical)$/.test(v) ? nucleos : null)
-  const paralelo = comando.some((a) => LARAVEL.test(base(a))) ? comando.indexOf('--parallel') : -1
+  const automatico: Resolver = v => (/^(auto|logical)$/.test(v) ? nucleos : null)
+  const paralelo = indiceParalelo(comando)
   if (paralelo >= 0) {
     if (!passo(limitarFlag(comando, teto, ['--processes'], false, automatico)).achou) {
       comando = [...comando.slice(0, paralelo + 1), `--processes=${teto}`, ...comando.slice(paralelo + 1)]
       ajustes.push({ de: null, para: `--processes=${teto}` })
     }
   }
-  if (comando.some((a) => PYTEST.test(base(a)))) passo(limitarFlag(comando, teto, ['--numprocesses'], true, automatico))
-  passo(limitarFlag(comando, teto, ['--maxWorkers'], false, (v) => {
-    const pct = /^(\d+)%$/.exec(v)
-    return pct ? Math.max(1, Math.floor((nucleos * Number(pct[1])) / 100)) : null
-  }))
+  if (comando.some(a => PYTEST.test(nomeDoExecutavel(a)))) passo(limitarFlag(comando, teto, ['--numprocesses'], true, automatico))
+  passo(
+    limitarFlag(comando, teto, ['--maxWorkers'], false, v => {
+      const pct = /^(\d+)%$/.exec(v)
+      return pct ? Math.max(1, Math.floor((nucleos * Number(pct[1])) / 100)) : null
+    }),
+  )
   return { comando, ajustes }
 }
 
-/** `--processes=N` ou `--processes N` do comando, ou null. */
-export function processosDoComando(comando: string[]): number | null {
-  for (let i = 0; i < comando.length; i++) {
-    const v = comando[i].startsWith('--processes=') ? comando[i].slice(12) : comando[i] === '--processes' ? comando[i + 1] : undefined
-    if (v !== undefined && NUM.test(v)) return Number(v)
-  }
-  return null
+/** `artisan test` (php, sail ou ddev): só ele tem `--drop-databases`. */
+const ehArtisanTest = (comando: string[]): boolean => comando.some((a, i) => nomeDoExecutavel(a) === 'artisan' && comando[i + 1] === 'test')
+
+/**
+ * Posição de `--parallel` num comando Laravel/Pest/ParaTest, ou do atalho `-p` (vale no `artisan test` e no Pest; no ParaTest é `--processes`); -1 se não é paralelo.
+ * Só conta depois do programa: o `-p` de um invólucro (`docker compose -p x`, `docker run -p 80:80`) não é do teste.
+ */
+function indiceParalelo(comando: string[]): number {
+  const programa = comando.findIndex(a => LARAVEL.test(nomeDoExecutavel(a)))
+  if (programa < 0) return -1
+  const atalho = ehArtisanTest(comando) || comando.some(a => nomeDoExecutavel(a) === 'pest')
+  const i = comando.slice(programa).findIndex(a => a === '--parallel' || (atalho && a === '-p'))
+  return i < 0 ? -1 : programa + i
+}
+
+/** `artisan test` paralelo apaga os bancos `<base>_test_N` ao fim com `--drop-databases` (exige Laravel 9+). */
+export function comLimpezaDeBancos(comando: string[]): string[] {
+  if (!ehArtisanTest(comando)) return comando
+  const paralelo = indiceParalelo(comando)
+  if (paralelo < 0 || comando.includes('--drop-databases')) return comando
+  return [...comando.slice(0, paralelo + 1), '--drop-databases', ...comando.slice(paralelo + 1)]
 }

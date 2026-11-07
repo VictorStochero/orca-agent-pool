@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync } from 'node:fs'
+import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, relative } from 'node:path'
 import { after } from 'node:test'
@@ -27,7 +27,8 @@ export function retratoCasa(home: string): Record<string, string> {
       for (const f of readdirSync(arquivo).sort()) visitar(join(arquivo, f))
     } else arquivos[k] = createHash('sha256').update(readFileSync(arquivo)).digest('hex')
   }
-  for (const p of ['.agents', '.claude/skills', '.codex/skills', '.claude/settings.json', '.codex/hooks.json', '.codex/config.toml']) visitar(join(home, p))
+  for (const p of ['.agents', '.claude/skills', '.codex/skills', '.claude/settings.json', '.codex/hooks.json', '.codex/config.toml'])
+    visitar(join(home, p))
   return arquivos
 }
 

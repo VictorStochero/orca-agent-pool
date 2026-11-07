@@ -1,16 +1,17 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { PAPEIS_TRABALHO, acharAgente, deduzirAgente, executavelDe } from './catalogo.ts'
-import { adquirir } from './fila/travas.ts'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { dirname } from 'node:path'
+import { gravarAtomico } from './atomico.ts'
+import { acharAgente, PAPEIS_TRABALHO } from './catalogo.ts'
 import type { Paths } from './paths.ts'
-import type { Config, Conta, Papel } from './tipos.ts'
+import { type Config, PAPEIS } from './tipos.ts'
+import { comTrava, TravaOcupada } from './trava.ts'
 
 export type ErroValidacao = { chave: string; codigo: string }
 
 export class ErroConfig extends Error {
   erros: ErroValidacao[]
   constructor(erros: ErroValidacao[], mensagem?: string) {
-    super(mensagem ?? erros.map((e) => `${e.chave}: ${e.codigo}`).join('; '))
+    super(mensagem ?? erros.map(e => `${e.chave}: ${e.codigo}`).join('; '))
     this.name = 'ErroConfig'
     this.erros = erros
   }
@@ -19,21 +20,31 @@ export class ErroConfig extends Error {
 export const PADRAO: Config = {
   versao: 1,
   pool: { teto: 0, ramMinGb: 0, escolha: 'ritmo', contas: [] },
-  fila: { modo: 'banco', vagas: 2, vagasPorProjeto: 1, teto: 3, processos: 8, esperaMaxS: 300 }
+  fila: { modo: 'banco', vagas: 2, vagasPorProjeto: 1, teto: 3, processos: 8, esperaMaxS: 300, limparBancos: false },
 }
 
-const PAPEIS: readonly Papel[] = ['orquestra', 'revisor', 'verificador', 'escritor', 'segunda-opiniao', 'mecanico']
-const NOME = /^[a-z0-9_-]{1,32}$/
+export const NOME = /^[a-z0-9_-]{1,32}$/
 // Começa com letra ou número: o valor vai como `--model <id>` e não pode virar outra opção (ex.: `--help`).
 const MODELO = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$/
-const FILA_INT: Record<string, [keyof Config['fila'], number, number]> = {
+export const FILA_INT: Record<string, [keyof Config['fila'], number, number]> = {
   'fila.vagas': ['vagas', 1, 99],
   'fila.vagas_projeto': ['vagasPorProjeto', 1, 99],
   'fila.teto': ['teto', 1, 99],
-  'fila.processos': ['processos', 1, 64]
+  'fila.processos': ['processos', 1, 64],
+  'fila.espera_max_s': ['esperaMaxS', 1, 86400],
+}
+const CARACTERES_CONTA = {
+  config: /^[~A-Za-z0-9_./:\\@+-]+$/,
+  comando: /^[~A-Za-z0-9_./:\\@+= -]+$/,
 }
 
-const recusa = (chave: string, codigo: string): never => {
+/**
+ * O valor de config/comando que entra numa conta (CLI, painel, legado) só tem caracteres de caminho/comando simples.
+ * Fica fora de `validar`: dado já gravado (ex.: caminho com acento) nunca é recusado ao carregar.
+ */
+export const caracteresValidos = (campo: 'config' | 'comando', v: string): boolean => v === '' || CARACTERES_CONTA[campo].test(v)
+
+export const recusa = (chave: string, codigo: string): never => {
   throw new ErroConfig([{ chave, codigo }])
 }
 
@@ -41,34 +52,41 @@ const naFaixa = (v: unknown, min: number, max: number, inteiro = true): boolean 
   typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max && (!inteiro || Number.isInteger(v))
 
 export function validar(c: Config): ErroValidacao[] {
-  const e: ErroValidacao[] = []
-  const ruim = (chave: string, codigo = 'valor_invalido') => e.push({ chave, codigo })
+  const erros: ErroValidacao[] = []
+  const ruim = (chave: string, codigo = 'valor_invalido') => erros.push({ chave, codigo })
   if (c.versao !== 1) ruim('versao', 'versao_nao_suportada')
   if (!naFaixa(c.pool.teto, 0, 99)) ruim('pool.teto')
   if (!naFaixa(c.pool.ramMinGb, 0, 1024, false)) ruim('pool.ram_min')
   if (c.pool.escolha !== 'ritmo' && c.pool.escolha !== 'ordem') ruim('pool.escolha')
   if (!['global', 'banco', 'projeto'].includes(c.fila.modo)) ruim('fila.modo')
   for (const [chave, [campo, min, max]] of Object.entries(FILA_INT)) if (!naFaixa(c.fila[campo], min, max)) ruim(chave)
-  if (!naFaixa(c.fila.esperaMaxS, 1, 86400)) ruim('fila.espera_max_s')
-  if (c.pool.ignoradas !== undefined && (!Array.isArray(c.pool.ignoradas) || c.pool.ignoradas.some((n) => typeof n !== 'string'))) ruim('pool.ignoradas')
+  if (c.fila.limparBancos !== undefined && typeof c.fila.limparBancos !== 'boolean') ruim('fila.limpar_bancos')
+  if (c.pool.ignoradas !== undefined && (!Array.isArray(c.pool.ignoradas) || c.pool.ignoradas.some(n => typeof n !== 'string')))
+    ruim('pool.ignoradas')
   const vistos = new Set<string>()
-  for (const x of c.pool.contas) {
-    const k = `conta.${x.nome}`
-    if (!NOME.test(x.nome)) ruim(`${k}.nome`)
-    if (vistos.has(x.nome)) ruim(k, 'conta_repetida')
-    vistos.add(x.nome)
-    const agente = acharAgente(x.agente)
-    if (!agente) ruim(`${k}.agente`, 'agente_desconhecido')
-    if (!naFaixa(x.vagas, 0, 99)) ruim(`${k}.vagas`)
-    if (!naFaixa(x.peso, 1, 100)) ruim(`${k}.peso`)
-    if (!Array.isArray(x.papeis) || x.papeis.some((p) => !PAPEIS.includes(p))) ruim(`${k}.papeis`)
-    else if (agente && !agente.provado && x.papeis.some((p) => PAPEIS_TRABALHO.includes(p))) ruim(`${k}.papeis`, 'agente_nao_provado')
-    if (typeof x.ativo !== 'boolean') ruim(`${k}.ativo`)
-    for (const campo of ['config', 'comando'] as const) if (x[campo] != null && typeof x[campo] !== 'string') ruim(`${k}.${campo}`)
-    if (x.modelo !== null && !(typeof x.modelo === 'string' && MODELO.test(x.modelo))) ruim(`${k}.modelo`)
-    if (x.origem !== 'orca' && x.origem !== 'manual') ruim(`${k}.origem`)
+  for (const conta of c.pool.contas) {
+    if (conta === null || typeof conta !== 'object') {
+      ruim('pool.contas')
+      continue
+    }
+    const prefixo = `conta.${conta.nome}`
+    if (!NOME.test(conta.nome)) ruim(`${prefixo}.nome`)
+    if (vistos.has(conta.nome)) ruim(prefixo, 'conta_repetida')
+    vistos.add(conta.nome)
+    const agente = acharAgente(conta.agente)
+    if (!agente) ruim(`${prefixo}.agente`, 'agente_desconhecido')
+    if (!naFaixa(conta.vagas, 0, 99)) ruim(`${prefixo}.vagas`)
+    if (!naFaixa(conta.peso, 1, 100)) ruim(`${prefixo}.peso`)
+    if (!Array.isArray(conta.papeis) || conta.papeis.some(p => !PAPEIS.includes(p))) ruim(`${prefixo}.papeis`)
+    else if (agente && !agente.provado && conta.papeis.some(p => PAPEIS_TRABALHO.includes(p)))
+      ruim(`${prefixo}.papeis`, 'agente_nao_provado')
+    if (typeof conta.ativo !== 'boolean') ruim(`${prefixo}.ativo`)
+    for (const campo of ['config', 'comando'] as const)
+      if (conta[campo] != null && typeof conta[campo] !== 'string') ruim(`${prefixo}.${campo}`)
+    if (conta.modelo !== null && !(typeof conta.modelo === 'string' && MODELO.test(conta.modelo))) ruim(`${prefixo}.modelo`)
+    if (conta.origem !== 'orca' && conta.origem !== 'manual') ruim(`${prefixo}.origem`)
   }
-  return e
+  return erros
 }
 
 export function carregar(p: Paths): Config {
@@ -79,7 +97,8 @@ export function carregar(p: Paths): Config {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return structuredClone(PADRAO)
     throw new ErroConfig([{ chave: 'config', codigo: 'ilegivel' }], `não consegui ler ${p.config}: ${(err as Error).message}`)
   }
-  let cru: any // fronteira: `validar` confere os tipos antes de qualquer uso
+  // biome-ignore lint/suspicious/noExplicitAny: fronteira, `validar` confere os tipos antes de qualquer uso
+  let cru: any
   try {
     cru = JSON.parse(texto)
   } catch {
@@ -87,174 +106,56 @@ export function carregar(p: Paths): Config {
   }
   if (cru === null || typeof cru !== 'object' || Array.isArray(cru)) recusa('config', 'config_invalida')
   if (cru.versao !== 1) recusa('versao', typeof cru.versao === 'number' ? 'versao_nao_suportada' : 'config_invalida')
-  if (!cru.pool || typeof cru.pool !== 'object' || !Array.isArray(cru.pool.contas) || !cru.fila || typeof cru.fila !== 'object') recusa('config', 'config_invalida')
+  if (!cru.pool || typeof cru.pool !== 'object' || !Array.isArray(cru.pool.contas) || !cru.fila || typeof cru.fila !== 'object')
+    recusa('config', 'config_invalida')
   // Config anterior ao campo `modelo`: ausente vira null.
-  const contas = cru.pool.contas.map((x: any) => (x && typeof x === 'object' && !('modelo' in x) ? { ...x, modelo: null } : x))
+  const contas = cru.pool.contas.map((x: unknown) => (x && typeof x === 'object' && !('modelo' in x) ? { ...x, modelo: null } : x))
   const c: Config = {
     versao: 1,
     pool: { ...PADRAO.pool, ...cru.pool, contas },
-    fila: { ...PADRAO.fila, ...cru.fila }
+    fila: { ...PADRAO.fila, ...cru.fila },
   }
   const erros = validar(c)
   if (erros.length) throw new ErroConfig(erros)
   return c
 }
 
-const lista = (v: string): string[] => (v === '' ? [] : v.split(','))
-
-function aplicarContaNova(n: Config, nome: string, valor: string, m: Record<string, string>): void {
-  const chave = `conta.${nome}.adicionar`
-  if (!NOME.test(nome)) recusa(chave, 'valor_invalido')
-  if (n.pool.contas.some((x) => x.nome === nome)) recusa(chave, 'conta_existente')
-  let comando = m[`conta.${nome}.comando`] || null
-  let config = m[`conta.${nome}.config`] || null
-  let agente = valor === 'auto' ? null : acharAgente(valor)
-  if (valor === 'auto') {
-    const toks = comando?.split(/\s+/) ?? []
-    while (toks.length && /^[A-Za-z_][A-Za-z0-9_]*=\S*$/.test(toks[0])) {
-      const [k, v] = toks.shift()!.split('=', 2)
-      if (k !== 'CLAUDE_CONFIG_DIR') recusa(`conta.${nome}.comando`, 'variavel_sem_suporte')
-      config ??= v
-    }
-    comando = toks.join(' ') || null
-    agente = deduzirAgente(comando, config)
-    // O comando do próprio catálogo não precisa ser gravado.
-    if (agente && comando && toks.length === 1 && executavelDe(comando) === agente.comandos[0]) comando = null
-    if (config) m[`conta.${nome}.config`] = config
-    if (comando) m[`conta.${nome}.comando`] = comando
-    else delete m[`conta.${nome}.comando`]
-  }
-  if (!agente) recusa(chave, 'agente_desconhecido')
-  n.pool.contas.push({
-    nome, agente: agente!.id, config, comando, modelo: null, vagas: 1, peso: 1,
-    papeis: [...agente!.papeisPadrao], ativo: true, origem: 'manual'
-  })
-}
-
-function aplicarCampo(x: Conta, campo: string, v: string, chave: string): void {
-  const inteiro = (min: number, max: number) => {
-    if (!/^[0-9]+$/.test(v) || +v < min || +v > max) recusa(chave, 'valor_invalido')
-    return +v
-  }
-  if (campo === 'vagas') x.vagas = inteiro(0, 99)
-  else if (campo === 'peso') x.peso = inteiro(1, 100)
-  else if (campo === 'papeis') {
-    if (!lista(v).every((p) => PAPEIS.includes(p as Papel))) recusa(chave, 'valor_invalido')
-    x.papeis = lista(v) as Papel[]
-  } else if (campo === 'ativo') {
-    if (v !== 'sim' && v !== 'nao') recusa(chave, 'valor_invalido')
-    x.ativo = v === 'sim'
-  } else if (campo === 'config') {
-    if (v !== '' && !/^[~A-Za-z0-9_./:\\@+-]+$/.test(v)) recusa(chave, 'valor_invalido')
-    x.config = v || null
-  } else if (campo === 'comando') {
-    if (v !== '' && !/^[~A-Za-z0-9_./:\\@+= -]+$/.test(v)) recusa(chave, 'valor_invalido')
-    x.comando = v || null
-  } else if (campo === 'modelo') {
-    if (v !== '' && !MODELO.test(v)) recusa(chave, 'valor_invalido')
-    x.modelo = v || null
-  }
-}
-
-/** Aplica mudanças `chave=valor` sem alterar `c`; tudo ou nada. */
-export function aplicar(c: Config, mudancas: Record<string, string>): Config {
-  const n = structuredClone(c)
-  const m: Record<string, string> = Object.fromEntries(Object.entries(mudancas).map(([k, v]) => [k, v.trim()]))
-  const contaDe = (nome: string, chave: string) => n.pool.contas.find((x) => x.nome === nome) ?? recusa(chave, 'conta_inexistente')
-  let ordem: string[] | null = null
-  const porConta: [string, string, string, string][] = []
-  const adicionar: [string, string][] = []
-  const remover: [string, string][] = []
-
-  for (const [chave, v] of Object.entries(m)) {
-    if (chave in FILA_INT) {
-      const [campo, min, max] = FILA_INT[chave]
-      if (!/^[0-9]+$/.test(v) || +v < min || +v > max) recusa(chave, 'valor_invalido')
-      n.fila[campo] = +v as never
-    } else if (chave === 'fila.modo') {
-      const modo = v === 'recurso' ? 'banco' : v
-      if (modo !== 'global' && modo !== 'banco' && modo !== 'projeto') recusa(chave, 'valor_invalido')
-      n.fila.modo = modo as Config['fila']['modo']
-    } else if (chave === 'pool.teto') {
-      if (!/^[0-9]+$/.test(v) || +v > 99) recusa(chave, 'valor_invalido')
-      n.pool.teto = +v
-    } else if (chave === 'pool.ram_min') {
-      if (!/^[0-9]+(\.[0-9]+)?$/.test(v) || +v > 1024) recusa(chave, 'valor_invalido')
-      n.pool.ramMinGb = +v
-    } else if (chave === 'pool.escolha') {
-      if (v !== 'ritmo' && v !== 'ordem') recusa(chave, 'valor_invalido')
-      n.pool.escolha = v as 'ritmo' | 'ordem'
-    } else if (chave === 'pool.ordem') {
-      ordem = lista(v)
-    } else {
-      const k = /^conta\.([a-z0-9_-]{1,32})\.(vagas|peso|papeis|config|comando|modelo|ativo|adicionar|remover)$/.exec(chave)
-      if (!k) recusa(chave, 'chave_desconhecida')
-      const [, nome, campo] = k!
-      if (campo === 'adicionar') adicionar.push([nome, v])
-      else if (campo === 'remover') {
-        if (v !== '1') recusa(chave, 'valor_invalido')
-        remover.push([nome, chave])
-      } else porConta.push([nome, campo, v, chave])
-    }
-  }
-
-  for (const [nome, v] of adicionar) {
-    aplicarContaNova(n, nome, v, m)
-    if (n.pool.ignoradas) n.pool.ignoradas = n.pool.ignoradas.filter((x) => x !== nome)
-  }
-  const removidas = new Set(remover.map(([nome]) => nome))
-  for (const [nome, campo, , chave] of porConta) {
-    if (removidas.has(nome)) continue
-    // comando/config da conta nova podem ter sido normalizados em aplicarContaNova.
-    aplicarCampo(contaDe(nome, chave), campo, m[chave] ?? '', chave)
-  }
-  for (const [nome, chave] of remover) {
-    contaDe(nome, chave)
-    if (contaDe(nome, chave).origem === 'orca') n.pool.ignoradas = [...new Set([...(n.pool.ignoradas ?? []), nome])]
-    n.pool.contas = n.pool.contas.filter((x) => x.nome !== nome)
-  }
-  if (ordem) {
-    if (new Set(ordem).size !== ordem.length) recusa('pool.ordem', 'conta_repetida')
-    if (ordem.some((o) => !n.pool.contas.some((x) => x.nome === o))) recusa('pool.ordem', 'conta_inexistente')
-    if (ordem.length !== n.pool.contas.length) recusa('pool.ordem', 'ordem_incompleta')
-    n.pool.contas = ordem.map((o) => n.pool.contas.find((x) => x.nome === o)!)
-  }
-  const erros = validar(n)
-  if (erros.length) throw new ErroConfig(erros)
-  return n
-}
-
 /**
  * Lê, transforma e grava a config sob uma trava entre processos (worker, CLI): nenhuma gravação concorrente se perde.
  * `inicial` vale só quando o config.json ainda não existe (ex.: importar o legado em vez de partir do padrão vazio).
  */
-export function atualizarConfig(p: Paths, fn: (c: Config) => Config, inicial?: () => Config | null): Config {
-  mkdirSync(dirname(p.config), { recursive: true })
-  const trava = `${p.config}.lock`
-  if (!adquirir(trava, 15_000)) throw new ErroConfig([{ chave: 'config', codigo: 'config_ocupada' }], 'outra gravação da config em andamento')
+export async function atualizarConfig(p: Paths, fn: (c: Config) => Config, inicial?: () => Config | null): Promise<Config> {
   try {
-    const base = existsSync(p.config) ? carregar(p) : (inicial?.() ?? carregar(p))
-    const novo = fn(base)
-    gravar(novo, p)
-    return novo
-  } finally {
-    rmSync(trava, { recursive: true, force: true })
+    return await comTrava(travaDaConfig(p), LIMITE_TRAVA_MS, () => transformar(p, fn, inicial))
+  } catch (erro) {
+    return trocarTravaOcupada(erro)
   }
 }
 
-/** Gravação atômica (temporário + rename); recusa config inválida antes de tocar no disco. */
+const trocarTravaOcupada = (erro: unknown): never => {
+  throw erro instanceof TravaOcupada ? configOcupada() : erro
+}
+
+const LIMITE_TRAVA_MS = 15_000
+
+function travaDaConfig(p: Paths): string {
+  mkdirSync(dirname(p.config), { recursive: true })
+  return `${p.config}.lock`
+}
+
+const configOcupada = () => new ErroConfig([{ chave: 'config', codigo: 'config_ocupada' }], 'outra gravação da config em andamento')
+
+function transformar(p: Paths, fn: (c: Config) => Config, inicial?: () => Config | null): Config {
+  const base = existsSync(p.config) ? carregar(p) : (inicial?.() ?? carregar(p))
+  const novo = fn(base)
+  gravar(novo, p)
+  return novo
+}
+
+/** Gravação atômica; recusa config inválida antes de tocar no disco. */
 export function gravar(c: Config, p: Paths): void {
   const erros = validar(c)
   if (erros.length) throw new ErroConfig(erros)
   mkdirSync(dirname(p.config), { recursive: true })
-  const tmp = `${p.config}.${process.pid}.tmp`
-  try {
-    writeFileSync(tmp, JSON.stringify(c, null, 2) + '\n')
-    renameSync(tmp, p.config)
-  } catch (err) {
-    try {
-      unlinkSync(tmp)
-    } catch {}
-    throw err
-  }
+  gravarAtomico(p.config, `${JSON.stringify(c, null, 2)}\n`)
 }

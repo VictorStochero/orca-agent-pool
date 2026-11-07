@@ -8,61 +8,108 @@ import { paths } from '../core/paths.ts'
 import type { Medida } from '../core/tipos.ts'
 import { AMBIENTE_VAZIO, montarEstado } from './estado.ts'
 
-test('Orca ainda não verificado não gera alerta; fora do ar gera', () => {
+test('Orca ainda não verificado não gera alerta; fora do ar gera', async () => {
   const home = mkdtempSync(join(tmpdir(), 'estado-'))
   try {
     const c = structuredClone(PADRAO)
-    const inicial = montarEstado(paths(home), c, null, AMBIENTE_VAZIO)
+    const inicial = await montarEstado(paths(home), c, null, AMBIENTE_VAZIO)
     assert.equal(inicial.saude.orca.rodando, null)
-    assert.equal(inicial.alertas.some((a) => a.codigo === 'orca_indisponivel'), false)
-    const fora = montarEstado(paths(home), c, null, { ...AMBIENTE_VAZIO, orca: { rodando: false, versao: null } })
-    assert.equal(fora.alertas.some((a) => a.codigo === 'orca_indisponivel'), true)
+    assert.equal(
+      inicial.alertas.some(a => a.codigo === 'orca_indisponivel'),
+      false,
+    )
+    const fora = await montarEstado(paths(home), c, null, { ...AMBIENTE_VAZIO, orca: { rodando: false, versao: null } })
+    assert.equal(
+      fora.alertas.some(a => a.codigo === 'orca_indisponivel'),
+      true,
+    )
   } finally {
     rmSync(home, { recursive: true, force: true })
   }
 })
 
-test('cota: medidaTs em ms (unidade do pool) dá "há N min" e marca medida antiga', () => {
+test('cota: medidaTs em ms (unidade do pool) dá "há N min" e marca medida antiga', async () => {
   const home = mkdtempSync(join(tmpdir(), 'estado-'))
   try {
     const c = structuredClone(PADRAO)
-    c.pool.contas.push({ nome: 'a', agente: 'claude', config: null, comando: null, modelo: null, vagas: 1, peso: 1, papeis: [], ativo: true, origem: 'manual' })
+    c.pool.contas.push({
+      nome: 'a',
+      agente: 'claude',
+      config: null,
+      comando: null,
+      modelo: null,
+      vagas: 1,
+      peso: 1,
+      papeis: [],
+      ativo: true,
+      origem: 'manual',
+    })
     const agora = 1_800_000_000_000
-    const m = (min: number): Medida => ({ conta: 'a', curta: 90, longa: 10, resetLongaTs: null, estado: 'ok', medidaTs: agora - min * 60_000 })
-    const nova = montarEstado(paths(home), c, null, { ...AMBIENTE_VAZIO, medidas: [m(2)] }, agora).pool.contas[0].cota
+    const m = (min: number): Medida => ({
+      conta: 'a',
+      curta: 90,
+      longa: 10,
+      resetLongaTs: null,
+      estado: 'ok',
+      medidaTs: agora - min * 60_000,
+    })
+    const nova = (await montarEstado(paths(home), c, null, { ...AMBIENTE_VAZIO, medidas: [m(2)] }, agora)).pool.contas[0].cota
     assert.equal(nova?.medida_ha_min, 2)
     assert.equal(nova?.estado, 'ok')
     assert.equal(nova?.alerta_curta, true)
     assert.equal(nova?.alerta_longa, false)
-    const velha = montarEstado(paths(home), c, null, { ...AMBIENTE_VAZIO, medidas: [m(40)] }, agora).pool.contas[0].cota
+    const noTeto = (await montarEstado(paths(home), c, null, { ...AMBIENTE_VAZIO, medidas: [{ ...m(2), curta: 80 }] }, agora)).pool
+      .contas[0].cota
+    assert.equal(noTeto?.alerta_curta, false)
+    const velha = (await montarEstado(paths(home), c, null, { ...AMBIENTE_VAZIO, medidas: [m(40)] }, agora)).pool.contas[0].cota
     assert.equal(velha?.estado, 'antiga')
   } finally {
     rmSync(home, { recursive: true, force: true })
   }
 })
 
-test('cota: limites separados passam para a cota; ausentes viram lista vazia', () => {
+test('cota: limites separados passam para a cota; ausentes viram lista vazia', async () => {
   const home = mkdtempSync(join(tmpdir(), 'estado-'))
   try {
     const c = structuredClone(PADRAO)
-    c.pool.contas.push({ nome: 'a', agente: 'antigravity', config: null, comando: null, modelo: null, vagas: 1, peso: 1, papeis: [], ativo: true, origem: 'orca' })
-    const limites = [{ nome: 'Gemini', curta: 80, longa: 10 }, { nome: 'Argon', curta: null, longa: 79 }]
+    c.pool.contas.push({
+      nome: 'a',
+      agente: 'antigravity',
+      config: null,
+      comando: null,
+      modelo: null,
+      vagas: 1,
+      peso: 1,
+      papeis: [],
+      ativo: true,
+      origem: 'orca',
+    })
+    const limites = [
+      { nome: 'Gemini', curta: 80, longa: 10 },
+      { nome: 'Argon', curta: null, longa: 79 },
+    ]
     const m: Medida = { conta: 'a', curta: 0, longa: 0, resetLongaTs: null, estado: 'ok', medidaTs: 1, limites }
-    const cota = montarEstado(paths(home), c, null, { ...AMBIENTE_VAZIO, medidas: [m] }, 1).pool.contas[0].cota
+    const cota = (await montarEstado(paths(home), c, null, { ...AMBIENTE_VAZIO, medidas: [m] }, 1)).pool.contas[0].cota
     assert.deepEqual(cota?.limites, limites)
     delete m.limites
-    assert.deepEqual(montarEstado(paths(home), c, null, { ...AMBIENTE_VAZIO, medidas: [m] }, 1).pool.contas[0].cota?.limites, [])
+    assert.deepEqual((await montarEstado(paths(home), c, null, { ...AMBIENTE_VAZIO, medidas: [m] }, 1)).pool.contas[0].cota?.limites, [])
   } finally {
     rmSync(home, { recursive: true, force: true })
   }
 })
 
-test('sessões: conta Claude manual lista as abertas; as demais ficam null; o total não repete a mesma pasta', () => {
+test('sessões: conta Claude manual lista as abertas; as demais ficam null; o total não repete a mesma pasta', async () => {
   const home = mkdtempSync(join(tmpdir(), 'estado-'))
   try {
-    for (const [pasta, nome] of [['.claude', 'um'], ['.claude-b', 'dois']]) {
+    for (const [pasta, nome] of [
+      ['.claude', 'um'],
+      ['.claude-b', 'dois'],
+    ]) {
       mkdirSync(join(home, pasta, 'sessions'), { recursive: true })
-      writeFileSync(join(home, pasta, 'sessions', '1.json'), JSON.stringify({ pid: process.pid, kind: 'interactive', name: nome, cwd: 'C:\\x', status: 'idle' }))
+      writeFileSync(
+        join(home, pasta, 'sessions', '1.json'),
+        JSON.stringify({ pid: process.pid, kind: 'interactive', name: nome, cwd: 'C:\\x', status: 'idle' }),
+      )
     }
     const c = structuredClone(PADRAO)
     const base = { comando: null, modelo: null, vagas: 1, peso: 1, papeis: [], ativo: true }
@@ -72,10 +119,10 @@ test('sessões: conta Claude manual lista as abertas; as demais ficam null; o to
       { ...base, nome: 'a3', agente: 'claude', config: join(home, '.claude').replaceAll('\\', '/'), origem: 'manual' },
       { ...base, nome: 'b', agente: 'claude', config: '~/.claude-b', origem: 'manual' },
       { ...base, nome: 'o', agente: 'claude', config: null, origem: 'orca' },
-      { ...base, nome: 'x', agente: 'codex', config: null, origem: 'manual' }
+      { ...base, nome: 'x', agente: 'codex', config: null, origem: 'manual' },
     )
-    const e = montarEstado(paths(home), c, null, AMBIENTE_VAZIO, 1)
-    const por = Object.fromEntries(e.pool.contas.map((ct) => [ct.nome, ct.sessoes]))
+    const e = await montarEstado(paths(home), c, null, AMBIENTE_VAZIO, 1)
+    const por = Object.fromEntries(e.pool.contas.map(ct => [ct.nome, ct.sessoes]))
     assert.deepEqual(por.a, ['um'])
     assert.deepEqual(por.a2, por.a)
     assert.deepEqual(por.a3, por.a)
@@ -88,20 +135,27 @@ test('sessões: conta Claude manual lista as abertas; as demais ficam null; o to
   }
 })
 
-test('agente vivo: usadas é a ocupação do pool e a conta lista os agentes; sem sessões fica null', () => {
+test('agente vivo: usadas é a ocupação do pool e a conta lista os agentes; sem sessões fica null', async () => {
   const home = mkdtempSync(join(tmpdir(), 'estado-'))
   try {
     mkdirSync(join(home, '.claude', 'sessions'), { recursive: true })
-    for (const [i, agent] of [[1, 'fluxo-orca:escritor'], [2, 'fluxo-orca:revisor'], [3, undefined]] as const) {
-      writeFileSync(join(home, '.claude', 'sessions', `${i}.json`), JSON.stringify({ pid: process.pid, kind: 'interactive', name: `s${i}`, agent }))
+    for (const [i, agent] of [
+      [1, 'fluxo-orca:escritor'],
+      [2, 'fluxo-orca:revisor'],
+      [3, undefined],
+    ] as const) {
+      writeFileSync(
+        join(home, '.claude', 'sessions', `${i}.json`),
+        JSON.stringify({ pid: process.pid, kind: 'interactive', name: `s${i}`, agent }),
+      )
     }
     const c = structuredClone(PADRAO)
     const base = { comando: null, modelo: null, vagas: 3, peso: 1, papeis: [], ativo: true }
     c.pool.contas.push(
       { ...base, nome: 'a', agente: 'claude', config: null, origem: 'manual' },
-      { ...base, nome: 'x', agente: 'codex', config: null, origem: 'manual' }
+      { ...base, nome: 'x', agente: 'codex', config: null, origem: 'manual' },
     )
-    const e = montarEstado(paths(home), c, null, AMBIENTE_VAZIO, 1)
+    const e = await montarEstado(paths(home), c, null, AMBIENTE_VAZIO, 1)
     const [a, x] = e.pool.contas
     assert.equal(a.usadas, 2)
     assert.deepEqual(a.agentes, ['s1', 's2'])
@@ -114,20 +168,48 @@ test('agente vivo: usadas é a ocupação do pool e a conta lista os agentes; se
   }
 })
 
-test('cota e alertas seguem o limite do modelo da conta; modelo e limite seguido vão na conta', () => {
+test('cota e alertas seguem o limite do modelo da conta; modelo e limite seguido vão na conta', async () => {
   const home = mkdtempSync(join(tmpdir(), 'estado-'))
   try {
     const c = structuredClone(PADRAO)
-    c.pool.contas.push({ nome: 'agy', agente: 'antigravity', config: null, comando: null, modelo: null, vagas: 1, peso: 1, papeis: [], ativo: true, origem: 'orca' })
-    c.pool.contas.push({ nome: 'cl', agente: 'claude', config: null, comando: null, modelo: null, vagas: 1, peso: 1, papeis: [], ativo: true, origem: 'manual' })
-    const limites = [{ nome: 'Gemini Models', curta: 0, longa: 0 }, { nome: 'Gemini 4 Argon', curta: null, longa: 90 }]
+    c.pool.contas.push({
+      nome: 'agy',
+      agente: 'antigravity',
+      config: null,
+      comando: null,
+      modelo: null,
+      vagas: 1,
+      peso: 1,
+      papeis: [],
+      ativo: true,
+      origem: 'orca',
+    })
+    c.pool.contas.push({
+      nome: 'cl',
+      agente: 'claude',
+      config: null,
+      comando: null,
+      modelo: null,
+      vagas: 1,
+      peso: 1,
+      papeis: [],
+      ativo: true,
+      origem: 'manual',
+    })
+    const limites = [
+      { nome: 'Gemini Models', curta: 0, longa: 0 },
+      { nome: 'Gemini 4 Argon', curta: null, longa: 90 },
+    ]
     const agy: Medida = { conta: 'agy', curta: 0, longa: 90, resetLongaTs: null, estado: 'ok', medidaTs: 1, limites }
     const cl: Medida = { conta: 'cl', curta: 1, longa: 2, resetLongaTs: null, estado: 'ok', medidaTs: 1 }
-    const [a, b] = montarEstado(paths(home), c, null, { ...AMBIENTE_VAZIO, medidas: [agy, cl] }, 1).pool.contas
-    assert.deepEqual([a.cota?.longa, a.cota?.alerta_longa, a.modelo_efetivo, a.limite_seguido], [0, false, 'gemini-3.8-flash-high', 'Gemini Models'])
+    const [a, b] = (await montarEstado(paths(home), c, null, { ...AMBIENTE_VAZIO, medidas: [agy, cl] }, 1)).pool.contas
+    assert.deepEqual(
+      [a.cota?.longa, a.cota?.alerta_longa, a.modelo_efetivo, a.limite_seguido],
+      [0, false, 'gemini-3.8-flash-high', 'Gemini Models'],
+    )
     assert.deepEqual([b.cota?.longa, b.modelo_efetivo, b.limite_seguido], [2, null, null])
     c.pool.contas[0].modelo = 'gemini-4-argon-high'
-    const [argon] = montarEstado(paths(home), c, null, { ...AMBIENTE_VAZIO, medidas: [agy] }, 1).pool.contas
+    const [argon] = (await montarEstado(paths(home), c, null, { ...AMBIENTE_VAZIO, medidas: [agy] }, 1)).pool.contas
     assert.deepEqual([argon.cota?.longa, argon.cota?.alerta_longa, argon.limite_seguido], [90, true, 'Gemini 4 Argon'])
   } finally {
     rmSync(home, { recursive: true, force: true })

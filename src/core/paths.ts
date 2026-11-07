@@ -29,11 +29,16 @@ export function paths(home: string = homedir()): Paths {
     vagas: join(state, 'vagas'),
     medidas: join(state, 'medidas'),
     backup: join(state, 'backup'),
-    bin: join(home, '.agents', 'bin')
+    bin: join(home, '.agents', 'bin'),
   }
 }
 
 /** Cópia da skill lida pelos agentes: ~/.agents/skills/agent-pool. */
 export function destinoSkill(home: string = homedir()): string {
   return join(home, '.agents', 'skills', 'agent-pool')
+}
+
+/** `~` sozinho ou no início de `~/` e `~\` vale a casa; `~nome` fica como veio. */
+export function expandirHome(caminho: string, home: string): string {
+  return caminho === '~' ? home : /^~[/\\]/.test(caminho) ? join(home, caminho.slice(2)) : caminho
 }

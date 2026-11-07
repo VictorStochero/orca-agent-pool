@@ -1,7 +1,7 @@
+import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { spawnSync } from 'node:child_process'
 
 export function tmp(prefixo = 'ap-fila-'): string {
   return mkdtempSync(join(tmpdir(), prefixo))

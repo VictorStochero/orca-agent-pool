@@ -1,4 +1,5 @@
-import { paths, type Paths } from '../core/paths.ts'
+import { type Paths, paths } from '../core/paths.ts'
+import { DONO } from '../core/pool/vagas.ts'
 import type { OrcaCli } from '../core/tipos.ts'
 import { textosPara } from './textos.ts'
 
@@ -23,13 +24,12 @@ export function emitir(ctx: Ctx, json: boolean, objeto: unknown, linha: string):
 
 /** Separa `--json` do resto. */
 export function comJson(args: string[]): { json: boolean; resto: string[] } {
-  return { json: args.includes('--json'), resto: args.filter((a) => a !== '--json') }
+  return { json: args.includes('--json'), resto: args.filter(a => a !== '--json') }
 }
 
 export class Uso extends Error {}
 export class SemVaga extends Error {}
 
-export const DONO = /^[a-zA-Z0-9_-]+$/
 export const donoValido = (ctx: Ctx, s: string | undefined): string => {
   const t = textosPara(ctx.env)
   if (!s || !DONO.test(s)) throw new Uso(t.nomeInvalido(s ?? t.vazio))

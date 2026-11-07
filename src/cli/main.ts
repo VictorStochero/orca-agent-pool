@@ -18,6 +18,6 @@ process.exitCode = await executar(process.argv.slice(2), {
     for await (const l of createInterface({ input: process.stdin })) linhas.push(l)
     return linhas.join('\n')
   },
-  out: (s) => process.stdout.write(s + '\n'),
-  err: (s) => process.stderr.write(s + '\n')
+  out: s => process.stdout.write(`${s}\n`),
+  err: s => process.stderr.write(`${s}\n`),
 })

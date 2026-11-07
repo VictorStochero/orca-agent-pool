@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { validar } from '../src/core/config.ts'
+import { PADRAO, validar } from '../src/core/config.ts'
 import { importarLegado } from '../src/core/legado.ts'
 
 const fixture = join(import.meta.dirname, 'fixtures', 'agentes.conf')
@@ -28,24 +28,33 @@ test('importarLegado do agentes.conf (fixture) reproduz contas, ordem, comando, 
   const originais = [readFileSync(join(home, '.claude', 'agentes.conf'), 'utf8'), readFileSync(join(home, '.claude', 'fila.conf'), 'utf8')]
   const c = importarLegado(home)!
   assert.equal(c.versao, 1)
-  assert.deepEqual(c.pool.contas.map((x) => x.nome), ['main', 'work', 'extra', 'codex', 'review', 'custom', 'opencode'])
+  assert.deepEqual(
+    c.pool.contas.map(x => x.nome),
+    ['main', 'work', 'extra', 'codex', 'review', 'custom', 'opencode'],
+  )
   assert.deepEqual([c.pool.escolha, c.pool.teto, c.pool.ramMinGb], ['ritmo', 0, 3])
-  const por = Object.fromEntries(c.pool.contas.map((x) => [x.nome, x]))
+  const por = Object.fromEntries(c.pool.contas.map(x => [x.nome, x]))
   assert.deepEqual([por.main.vagas, por.main.peso, por.main.papeis], [0, 10, ['orquestra']])
   assert.deepEqual([por.extra.config, por.extra.vagas, por.extra.peso], ['~/.claude-extra', 3, 5])
   assert.deepEqual(por.extra.papeis, ['escritor', 'revisor', 'verificador', 'mecanico'])
   assert.equal(por.custom.comando, 'claude-custom')
   assert.deepEqual([por.review.agente, por.review.papeis, por.review.ativo], ['antigravity', ['segunda-opiniao'], true])
   assert.deepEqual([por.opencode.ativo, por.opencode.vagas], [false, 2])
-  assert.ok(c.pool.contas.every((x) => x.origem === 'manual'))
-  assert.deepEqual(c.fila, { modo: 'banco', vagas: 3, vagasPorProjeto: 2, teto: 4, processos: 6, esperaMaxS: 300 })
+  assert.ok(c.pool.contas.every(x => x.origem === 'manual'))
+  assert.deepEqual(c.fila, { modo: 'banco', vagas: 3, vagasPorProjeto: 2, teto: 4, processos: 6, esperaMaxS: 300, limparBancos: false })
   assert.deepEqual(validar(c), [])
-  assert.deepEqual([readFileSync(join(home, '.claude', 'agentes.conf'), 'utf8'), readFileSync(join(home, '.claude', 'fila.conf'), 'utf8')], originais)
+  assert.deepEqual(
+    [readFileSync(join(home, '.claude', 'agentes.conf'), 'utf8'), readFileSync(join(home, '.claude', 'fila.conf'), 'utf8')],
+    originais,
+  )
   fim()
 })
 
 test('legado: conta=N antiga, comando entre aspas e linha inválida do fila.conf', () => {
-  const { home, fim } = casa('escolha=ordem\nteto=2\nx agente=claude comando="meu claude" vagas=1\nx=5\n', 'FILA_TESTE_VAGAS=abc\nFILA_TESTE_FILA=global\n')
+  const { home, fim } = casa(
+    'escolha=ordem\nteto=2\nx agente=claude comando="meu claude" vagas=1\nx=5\n',
+    'FILA_TESTE_VAGAS=abc\nFILA_TESTE_FILA=global\n',
+  )
   const c = importarLegado(home)!
   assert.deepEqual([c.pool.escolha, c.pool.teto], ['ordem', 2])
   assert.deepEqual([c.pool.contas[0].comando, c.pool.contas[0].vagas], ['meu claude', 5])
@@ -54,9 +63,33 @@ test('legado: conta=N antiga, comando entre aspas e linha inválida do fila.conf
 })
 
 test('legado: conta com agente desconhecido, peso inválido ou papel não permitido é descartada e a config segue válida', () => {
-  const { home, fim } = casa('boa agente=claude vagas=2\nx agente=copilot\ny agente=claude peso=0\nz agente=claude vagas=abc\nk agente=kimi papeis=escritor\nboa agente=claude\n')
+  const { home, fim } = casa(
+    'boa agente=claude vagas=2\nx agente=copilot\ny agente=claude peso=0\nz agente=claude vagas=abc\nk agente=kimi papeis=escritor\nboa agente=claude\n',
+  )
   const c = importarLegado(home)!
-  assert.deepEqual(c.pool.contas.map((x) => x.nome), ['boa'])
+  assert.deepEqual(
+    c.pool.contas.map(x => x.nome),
+    ['boa'],
+  )
   assert.deepEqual(validar(c), [])
+  fim()
+})
+
+test('legado: teto e FILA_TESTE_PROCESSOS fora da faixa ficam no padrão e a config segue válida', () => {
+  const { home, fim } = casa('teto=150\n', 'FILA_TESTE_PROCESSOS=128\nFILA_TESTE_VAGAS=3\n')
+  const c = importarLegado(home)!
+  assert.deepEqual(validar(c), [])
+  assert.equal(c.pool.teto, PADRAO.pool.teto)
+  assert.equal(c.fila.processos, PADRAO.fila.processos)
+  assert.equal(c.fila.vagas, 3)
+  fim()
+})
+
+test('legado: conta com caminho fora dos caracteres permitidos é descartada', () => {
+  const { home, fim } = casa('ok agente=claude config=~/.claude-ok\nacento agente=claude config="C:/Users/João/.claude"\n')
+  assert.deepEqual(
+    importarLegado(home)!.pool.contas.map(x => x.nome),
+    ['ok'],
+  )
   fim()
 })

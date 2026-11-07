@@ -1,2 +1,3 @@
-Validate the plugin with `npm run check`; never run `orca plugin check` bare: it starts the worker against your real home (it writes hooks, the launcher and the skill).
-Run `npm run typecheck`, `npm test` (core and CLI) and `orca plugin test .` (worker and panel); the tests isolate HOME and USERPROFILE. To wait for a test slot, use `agent-pool test -- <command>`.
+Validate the plugin with `npm run check`; never run `orca plugin check` bare: it starts the worker against your real home (it writes the configuration and measures quotas).
+Nothing outside `~/.agents/agent-pool` is written without the user's click on the Requirements screen or in Settings → Hooks: activation and account changes never install the launcher, the skill or the hooks, and `~/.codex/config.toml` is never touched.
+Run `npm run lint`, `npm run typecheck`, `npm run typecheck:plugin`, `npm test` (core and CLI) and `orca plugin test .` (worker and panel); the tests isolate HOME and USERPROFILE. To wait for a test slot, use `~/.agents/bin/agent-pool test -- <command>`.

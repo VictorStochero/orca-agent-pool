@@ -6,6 +6,6 @@ export const claude = {
   arquivo: (dir: string) => join(dir, 'settings.json'),
   grupo: (lancador: string) => ({
     matcher: 'Bash|PowerShell',
-    hooks: [{ type: 'command', command: `"${lancador}" hook claude` }]
-  })
+    hooks: [{ type: 'command', command: `"${lancador}" hook claude` }],
+  }),
 }

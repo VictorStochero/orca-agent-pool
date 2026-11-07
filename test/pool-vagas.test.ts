@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
 import { paths } from '../src/core/paths.ts'
 import { encerradoNoOrca, livres, ocupadasMaquina, pegar, recuperar, soltar, trocar } from '../src/core/pool/vagas.ts'
 import type { OrcaCli } from '../src/core/tipos.ts'
-import { cfg, conta } from './helpers/pool.ts'
 import { envCasa } from './helpers/casa.ts'
+import { cfg, conta } from './helpers/pool.ts'
 
 const homes: string[] = []
 function novoHome() {
@@ -16,88 +16,100 @@ function novoHome() {
   homes.push(h)
   return { h, p: paths(h) }
 }
-after(() => homes.forEach((h) => rmSync(h, { recursive: true, force: true })))
+after(() => {
+  for (const h of homes) rmSync(h, { recursive: true, force: true })
+})
 
 describe('vagas', () => {
-  it('pega até o total e depois diz cheio; mesmo dono é idempotente', () => {
-    const { p } = novoHome(), c = cfg([conta('a', { vagas: 2 })])
-    assert.equal(pegar(p, c, 'a', 'ctx_1'), 'ok')
-    assert.equal(pegar(p, c, 'a', 'ctx_1'), 'ok')
-    assert.equal(pegar(p, c, 'a', 'ctx_2'), 'ok')
-    assert.equal(pegar(p, c, 'a', 'ctx_3'), 'cheio')
-    assert.deepEqual(livres(p, c), [{ conta: 'a', livres: 0, ocupadas: 2, total: 2, inativa: false }])
+  it('pega até o total e depois diz cheio; mesmo dono é idempotente', async () => {
+    const { p } = novoHome(),
+      c = cfg([conta('a', { vagas: 2 })])
+    assert.equal(await pegar(p, c, 'a', 'ctx_1'), 'ok')
+    assert.equal(await pegar(p, c, 'a', 'ctx_1'), 'ok')
+    assert.equal(await pegar(p, c, 'a', 'ctx_2'), 'ok')
+    assert.equal(await pegar(p, c, 'a', 'ctx_3'), 'cheio')
+    assert.deepEqual(await livres(p, c), [{ conta: 'a', livres: 0, ocupadas: 2, total: 2, inativa: false }])
   })
 
-  it('inativa devolve inativa; conta desconhecida e dono inválido lançam', () => {
-    const { p } = novoHome(), c = cfg([conta('a', { ativo: false })])
-    assert.equal(pegar(p, c, 'a', 'ctx_1'), 'inativa')
-    assert.deepEqual(livres(p, c), [{ conta: 'a', livres: 0, ocupadas: 0, total: 2, inativa: true }])
-    assert.throws(() => pegar(p, c, 'x', 'ctx_1'), /desconhecida/)
-    assert.throws(() => pegar(p, c, 'a', '../ruim'), /dono/)
+  it('inativa devolve inativa; conta desconhecida e dono inválido lançam', async () => {
+    const { p } = novoHome(),
+      c = cfg([conta('a', { ativo: false })])
+    assert.equal(await pegar(p, c, 'a', 'ctx_1'), 'inativa')
+    assert.deepEqual(await livres(p, c), [{ conta: 'a', livres: 0, ocupadas: 0, total: 2, inativa: true }])
+    await assert.rejects(pegar(p, c, 'x', 'ctx_1'), /desconhecida/)
+    await assert.rejects(pegar(p, c, 'a', '../ruim'), /dono/)
   })
 
-  it('teto da máquina vale entre contas; conta sem limite usa o teto', () => {
-    const { p } = novoHome(), c = cfg([conta('a', { vagas: 5 }), conta('b', { vagas: 0 })], { teto: 2 })
-    assert.equal(pegar(p, c, 'a', 'ctx_1'), 'ok')
-    assert.equal(pegar(p, c, 'b', 'ctx_2'), 'ok')
-    assert.equal(pegar(p, c, 'a', 'ctx_3'), 'cheio')
+  it('teto da máquina vale entre contas; conta sem limite usa o teto', async () => {
+    const { p } = novoHome(),
+      c = cfg([conta('a', { vagas: 5 }), conta('b', { vagas: 0 })], { teto: 2 })
+    assert.equal(await pegar(p, c, 'a', 'ctx_1'), 'ok')
+    assert.equal(await pegar(p, c, 'b', 'ctx_2'), 'ok')
+    assert.equal(await pegar(p, c, 'a', 'ctx_3'), 'cheio')
   })
 
-  it('vagas 0 sem teto nem RAM é ilimitado, grava a ocupação e a troca e a soltura funcionam', () => {
-    const { p } = novoHome(), c = cfg([conta('a', { vagas: 0 })])
-    assert.equal(pegar(p, c, 'a', 'res-a'), 'ok')
-    assert.equal(pegar(p, c, 'a', 'res-b'), 'ok')
-    assert.equal(readdirSync(p.vagas).filter((n) => n.includes('.lock')).length, 2)
-    assert.equal(ocupadasMaquina(p, c), 2)
-    assert.deepEqual(livres(p, c), [{ conta: 'a', livres: 0, ocupadas: 2, total: 0, inativa: false }])
-    assert.equal(trocar(p, 'res-a', 'ctx_1'), true)
-    soltar(p, 'ctx_1')
-    assert.equal(livres(p, c)[0].ocupadas, 1)
+  it('vagas 0 sem teto nem RAM é ilimitado, grava a ocupação e a troca e a soltura funcionam', async () => {
+    const { p } = novoHome(),
+      c = cfg([conta('a', { vagas: 0 })])
+    assert.equal(await pegar(p, c, 'a', 'res-a'), 'ok')
+    assert.equal(await pegar(p, c, 'a', 'res-b'), 'ok')
+    assert.equal(readdirSync(p.vagas).filter(n => n.includes('.lock')).length, 2)
+    assert.equal(await ocupadasMaquina(p, c), 2)
+    assert.deepEqual(await livres(p, c), [{ conta: 'a', livres: 0, ocupadas: 2, total: 0, inativa: false }])
+    assert.equal(await trocar(p, 'res-a', 'ctx_1'), true)
+    await soltar(p, 'ctx_1')
+    assert.equal((await livres(p, c))[0].ocupadas, 1)
   })
 
-  it('RAM abaixo do mínimo recusa com memoria; sem leitura não bloqueia', () => {
-    const { p } = novoHome(), c = cfg([conta('a')], { ramMinGb: 3 })
-    assert.equal(pegar(p, c, 'a', 'ctx_1', Date.now(), 2.5), 'memoria')
-    assert.equal(pegar(p, c, 'a', 'ctx_1', Date.now(), 3), 'ok')
-    assert.equal(pegar(p, c, 'a', 'ctx_2', Date.now(), null), 'ok')
+  it('RAM abaixo do mínimo recusa com memoria; sem leitura não bloqueia', async () => {
+    const { p } = novoHome(),
+      c = cfg([conta('a')], { ramMinGb: 3 })
+    assert.equal(await pegar(p, c, 'a', 'ctx_1', Date.now(), 2.5), 'memoria')
+    assert.equal(await pegar(p, c, 'a', 'ctx_1', Date.now(), 3), 'ok')
+    assert.equal(await pegar(p, c, 'a', 'ctx_2', Date.now(), null), 'ok')
   })
 
-  it('troca o dono provisório e solta pelo dispatch', () => {
-    const { p } = novoHome(), c = cfg([conta('a', { vagas: 1 })])
-    pegar(p, c, 'a', 'res-tag')
-    assert.equal(trocar(p, 'res-tag', 'ctx_9'), true)
-    assert.equal(trocar(p, 'res-tag', 'ctx_9'), true)
-    assert.equal(trocar(p, 'res-outro', 'ctx_8'), false)
-    assert.equal(pegar(p, c, 'a', 'ctx_1'), 'cheio')
-    soltar(p, 'ctx_9')
-    assert.equal(pegar(p, c, 'a', 'ctx_1'), 'ok')
+  it('troca o dono provisório e solta pelo dispatch', async () => {
+    const { p } = novoHome(),
+      c = cfg([conta('a', { vagas: 1 })])
+    await pegar(p, c, 'a', 'res-tag')
+    assert.equal(await trocar(p, 'res-tag', 'ctx_9'), true)
+    assert.equal(await trocar(p, 'res-tag', 'ctx_9'), true)
+    assert.equal(await trocar(p, 'res-outro', 'ctx_8'), false)
+    assert.equal(await pegar(p, c, 'a', 'ctx_1'), 'cheio')
+    await soltar(p, 'ctx_9')
+    assert.equal(await pegar(p, c, 'a', 'ctx_1'), 'ok')
   })
 
-  it('reserva res- expira em 600 s', () => {
-    const { p } = novoHome(), c = cfg([conta('a', { vagas: 1 })]), t0 = 1_000_000
-    pegar(p, c, 'a', 'res-x', t0)
-    assert.equal(pegar(p, c, 'a', 'ctx_1', t0 + 599_000), 'cheio')
-    assert.equal(livres(p, c, t0 + 601_000)[0].livres, 1)
-    assert.equal(pegar(p, c, 'a', 'ctx_1', t0 + 601_000), 'ok')
+  it('reserva res- expira em 600 s', async () => {
+    const { p } = novoHome(),
+      c = cfg([conta('a', { vagas: 1 })]),
+      t0 = 1_000_000
+    await pegar(p, c, 'a', 'res-x', t0)
+    assert.equal(await pegar(p, c, 'a', 'ctx_1', t0 + 599_000), 'cheio')
+    assert.equal((await livres(p, c, t0 + 601_000))[0].livres, 1)
+    assert.equal(await pegar(p, c, 'a', 'ctx_1', t0 + 601_000), 'ok')
   })
 
   it('recuperar libera só com evidência explícita e não consulta reserva res-', async () => {
-    const { p } = novoHome(), c = cfg([conta('a', { vagas: 4 })])
-    for (const d of ['ctx_morto', 'ctx_vivo', 'ctx_incerto', 'res-t']) pegar(p, c, 'a', d)
+    const { p } = novoHome(),
+      c = cfg([conta('a', { vagas: 4 })])
+    for (const d of ['ctx_morto', 'ctx_vivo', 'ctx_incerto', 'res-t']) await pegar(p, c, 'a', d)
     const consultados: string[] = []
-    const n = await recuperar(p, c, async (d) => {
+    const n = await recuperar(p, async d => {
       consultados.push(d)
       return d === 'ctx_morto' ? true : d === 'ctx_vivo' ? false : undefined
     })
     assert.equal(n, 1)
     assert.deepEqual(consultados.sort(), ['ctx_incerto', 'ctx_morto', 'ctx_vivo'])
-    assert.equal(livres(p, c)[0].livres, 1)
+    assert.equal((await livres(p, c))[0].livres, 1)
   })
 
   it('recuperar expira reserva res- velha', async () => {
-    const { p } = novoHome(), c = cfg([conta('a', { vagas: 1 })])
-    pegar(p, c, 'a', 'res-x', 1000)
-    assert.equal(await recuperar(p, c, async () => undefined, 1000 + 601_000), 1)
+    const { p } = novoHome(),
+      c = cfg([conta('a', { vagas: 1 })])
+    await pegar(p, c, 'a', 'res-x', 1000)
+    assert.equal(await recuperar(p, async () => undefined, 1000 + 601_000), 1)
   })
 
   it('duas reservas concorrentes da última vaga: uma ok, outra cheio', async () => {
@@ -111,8 +123,8 @@ describe('vagas', () => {
             process.execPath,
             ['--experimental-strip-types', 'test/helpers/pegar-filho.ts', h, JSON.stringify(config), dono, inicio],
             { env: envCasa(h) },
-            (e, out, err) => (e ? reject(new Error(err)) : resolve(out))
-          )
+            (e, out, err) => (e ? reject(new Error(err)) : resolve(out)),
+          ),
         )
       const r = (await Promise.all([rodar('ctx_1'), rodar('ctx_2')])).sort()
       assert.deepEqual(r, ['cheio', 'ok'])
@@ -125,9 +137,17 @@ describe('encerradoNoOrca', () => {
     async run(args) {
       if (args[1] === 'worker-list') return { code: 0, stdout: JSON.stringify(lista), stderr: '' }
       return show === undefined ? { code: 1, stdout: '', stderr: '' } : { code: 0, stdout: JSON.stringify(show), stderr: '' }
-    }
+    },
   })
-  const lista = { ok: true, result: { workers: [{ dispatchId: 'a', dispatchStatus: 'completed' }, { dispatchId: 'b', dispatchStatus: 'running' }] } }
+  const lista = {
+    ok: true,
+    result: {
+      workers: [
+        { dispatchId: 'a', dispatchStatus: 'completed' },
+        { dispatchId: 'b', dispatchStatus: 'running' },
+      ],
+    },
+  }
 
   it('usa a lista; ausente cai no worker-show; falha de transporte é incerta', async () => {
     const f = encerradoNoOrca(orca(lista, { ok: false, error: { code: 'dispatch_not_found' } }))
@@ -145,79 +165,93 @@ describe('agente vivo ocupa vaga', () => {
   function agentes(h: string, pasta: string, n: number) {
     mkdirSync(join(h, pasta, 'sessions'), { recursive: true })
     for (let i = 1; i <= n; i++) {
-      writeFileSync(join(h, pasta, 'sessions', `${i}.json`), JSON.stringify({ pid: process.pid, kind: 'interactive', name: `ag${i}`, agent: 'fluxo-orca:escritor' }))
+      writeFileSync(
+        join(h, pasta, 'sessions', `${i}.json`),
+        JSON.stringify({ pid: process.pid, kind: 'interactive', name: `ag${i}`, agent: 'fluxo-orca:escritor' }),
+      )
     }
   }
 
-  it('ocupação é o maior entre reservas e agentes; pegar devolve cheio', () => {
-    const { h, p } = novoHome(), c = cfg([conta('a', { vagas: 2, config: '~/.claude-a' })])
+  it('ocupação é o maior entre reservas e agentes; pegar devolve cheio', async () => {
+    const { h, p } = novoHome(),
+      c = cfg([conta('a', { vagas: 2, config: '~/.claude-a' })])
     agentes(h, '.claude-a', 2)
-    assert.equal(pegar(p, c, 'a', 'ctx_1'), 'cheio')
-    assert.deepEqual(livres(p, c), [{ conta: 'a', livres: 0, ocupadas: 2, total: 2, inativa: false }])
+    assert.equal(await pegar(p, c, 'a', 'ctx_1'), 'cheio')
+    assert.deepEqual(await livres(p, c), [{ conta: 'a', livres: 0, ocupadas: 2, total: 2, inativa: false }])
   })
 
-  it('reserva 1 e 2 agentes: ocupadas 2; reservas acima dos agentes valem', () => {
-    const { h, p } = novoHome(), c = cfg([conta('a', { vagas: 3, config: '~/.claude-a' })])
+  it('reserva 1 e 2 agentes: ocupadas 2; reservas acima dos agentes valem', async () => {
+    const { h, p } = novoHome(),
+      c = cfg([conta('a', { vagas: 3, config: '~/.claude-a' })])
     agentes(h, '.claude-a', 2)
-    pegar(p, c, 'a', 'ctx_1')
-    assert.equal(livres(p, c)[0].ocupadas, 2)
-    assert.equal(pegar(p, c, 'a', 'ctx_2'), 'ok')
-    assert.equal(pegar(p, c, 'a', 'ctx_3'), 'ok')
-    assert.equal(livres(p, c)[0].ocupadas, 3)
+    await pegar(p, c, 'a', 'ctx_1')
+    assert.equal((await livres(p, c))[0].ocupadas, 2)
+    assert.equal(await pegar(p, c, 'a', 'ctx_2'), 'ok')
+    assert.equal(await pegar(p, c, 'a', 'ctx_3'), 'ok')
+    assert.equal((await livres(p, c))[0].ocupadas, 3)
   })
 
-  it('reserva res- soma aos agentes vivos; trocada para dispatch, não conta duas vezes', () => {
-    const { h, p } = novoHome(), c = cfg([conta('a', { vagas: 3, config: '~/.claude-a' })])
+  it('reserva res- soma aos agentes vivos; trocada para dispatch, não conta duas vezes', async () => {
+    const { h, p } = novoHome(),
+      c = cfg([conta('a', { vagas: 3, config: '~/.claude-a' })])
     agentes(h, '.claude-a', 2)
-    assert.equal(pegar(p, c, 'a', 'res-a'), 'ok')
-    assert.equal(livres(p, c)[0].ocupadas, 3)
-    assert.equal(pegar(p, c, 'a', 'res-b'), 'cheio')
-    assert.equal(trocar(p, 'res-a', 'ctx_1'), true)
-    assert.equal(livres(p, c)[0].ocupadas, 2)
-    assert.equal(ocupadasMaquina(p, c), 2)
-    assert.equal(pegar(p, c, 'a', 'res-b'), 'ok')
+    assert.equal(await pegar(p, c, 'a', 'res-a'), 'ok')
+    assert.equal((await livres(p, c))[0].ocupadas, 3)
+    assert.equal(await pegar(p, c, 'a', 'res-b'), 'cheio')
+    assert.equal(await trocar(p, 'res-a', 'ctx_1'), true)
+    assert.equal((await livres(p, c))[0].ocupadas, 2)
+    assert.equal(await ocupadasMaquina(p, c), 2)
+    assert.equal(await pegar(p, c, 'a', 'res-b'), 'ok')
   })
 
-  it('o teto da máquina também soma a reserva aos agentes', () => {
-    const { h, p } = novoHome(), c = cfg([conta('a', { vagas: 0, config: '~/.claude-a' })], { teto: 3 })
+  it('o teto da máquina também soma a reserva aos agentes', async () => {
+    const { h, p } = novoHome(),
+      c = cfg([conta('a', { vagas: 0, config: '~/.claude-a' })], { teto: 3 })
     agentes(h, '.claude-a', 2)
-    assert.equal(pegar(p, c, 'a', 'res-a'), 'ok')
-    assert.equal(pegar(p, c, 'a', 'res-b'), 'cheio')
+    assert.equal(await pegar(p, c, 'a', 'res-a'), 'ok')
+    assert.equal(await pegar(p, c, 'a', 'res-b'), 'cheio')
   })
 
-  it('o teto da máquina conta os agentes', () => {
-    const { h, p } = novoHome(), c = cfg([conta('a', { vagas: 5, config: '~/.claude-a' }), conta('b', { vagas: 5, agente: 'codex' })], { teto: 2 })
+  it('o teto da máquina conta os agentes', async () => {
+    const { h, p } = novoHome(),
+      c = cfg([conta('a', { vagas: 5, config: '~/.claude-a' }), conta('b', { vagas: 5, agente: 'codex' })], { teto: 2 })
     agentes(h, '.claude-a', 2)
-    assert.equal(ocupadasMaquina(p, c), 2)
-    assert.equal(pegar(p, c, 'b', 'ctx_1'), 'cheio')
+    assert.equal(await ocupadasMaquina(p, c), 2)
+    assert.equal(await pegar(p, c, 'b', 'ctx_1'), 'cheio')
   })
 
-  it('duas contas na mesma pasta contam uma vez', () => {
+  it('duas contas na mesma pasta contam uma vez', async () => {
     const { h, p } = novoHome()
     const c = cfg([conta('a', { vagas: 5, config: '~/.claude-a' }), conta('a2', { vagas: 5, config: '~/.claude-a/' })])
     agentes(h, '.claude-a', 2)
-    assert.equal(ocupadasMaquina(p, c), 2)
-    assert.deepEqual(livres(p, c).map((l) => l.ocupadas), [2, 0])
+    assert.equal(await ocupadasMaquina(p, c), 2)
+    assert.deepEqual(
+      (await livres(p, c)).map(l => l.ocupadas),
+      [2, 0],
+    )
   })
 
-  it('conta não Claude ou gerenciada pelo Orca ignora a pasta; reserva de conta removida segue contando', () => {
+  it('conta não Claude ou gerenciada pelo Orca ignora a pasta; reserva de conta removida segue contando', async () => {
     const { h, p } = novoHome()
     agentes(h, '.claude', 2)
     const c = cfg([conta('x', { agente: 'codex' }), conta('o', { origem: 'orca' })])
-    assert.equal(ocupadasMaquina(p, c), 0)
-    assert.deepEqual(livres(p, c).map((l) => l.ocupadas), [0, 0])
-    pegar(p, cfg([conta('velha', { agente: 'codex' })]), 'velha', 'ctx_9')
-    assert.equal(ocupadasMaquina(p, c), 1)
+    assert.equal(await ocupadasMaquina(p, c), 0)
+    assert.deepEqual(
+      (await livres(p, c)).map(l => l.ocupadas),
+      [0, 0],
+    )
+    await pegar(p, cfg([conta('velha', { agente: 'codex' })]), 'velha', 'ctx_9')
+    assert.equal(await ocupadasMaquina(p, c), 1)
   })
 })
 
 describe('teto com conta inativa', () => {
-  it('worker vivo em conta marcada inativa continua contando no teto', () => {
+  it('worker vivo em conta marcada inativa continua contando no teto', async () => {
     const { p } = novoHome()
     const ativa = cfg([conta('a', { vagas: 5 }), conta('b', { vagas: 5 })], { teto: 1 })
-    assert.equal(pegar(p, ativa, 'b', 'ctx_1'), 'ok')
+    assert.equal(await pegar(p, ativa, 'b', 'ctx_1'), 'ok')
     const inativa = cfg([conta('a', { vagas: 5 }), conta('b', { vagas: 5, ativo: false })], { teto: 1 })
-    assert.equal(pegar(p, inativa, 'a', 'ctx_2'), 'cheio')
-    assert.equal(ocupadasMaquina(p, inativa), 1)
+    assert.equal(await pegar(p, inativa, 'a', 'ctx_2'), 'cheio')
+    assert.equal(await ocupadasMaquina(p, inativa), 1)
   })
 })

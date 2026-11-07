@@ -1,5 +1,7 @@
 name: ci
 
+# Fora do CI: `orca plugin test .` (testes de worker e painel) e `orca plugin check`, que exigem o CLI do app Orca,
+# não instalável aqui. O typecheck de worker e painel roda contra os tipos versionados em types/orca-plugin.
 on:
   push:
     branches: [main]
@@ -19,5 +21,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: npm run lint
       - run: npm run typecheck
+      - run: npm run typecheck:plugin
       - run: npm test

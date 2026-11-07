@@ -1,14 +1,14 @@
 import { acharAgente, CATALOGO } from '../../core/catalogo.ts'
 import { carregar } from '../../core/config.ts'
-import { escolherSegunda, rankearEscritores } from '../../core/pool/escolha.ts'
-import { ramLivreGb } from '../../core/pool/memoria.ts'
-import { pegar } from '../../core/pool/vagas.ts'
 import { medirTodas } from '../../core/medidas/cache.ts'
 import { caminhoDeBusca } from '../../core/orca.ts'
-import { caminhos, comJson, donoValido, emitir, SemVaga, Uso, type Ctx } from '../ctx.ts'
+import { escolherSegunda, rankearEscritores } from '../../core/pool/escolha.ts'
+import { ramLivreGb } from '../../core/pool/memoria.ts'
+import { ocupacaoViva, pegar, soltar } from '../../core/pool/vagas.ts'
+import { type Ctx, caminhos, comJson, donoValido, emitir, SemVaga, Uso } from '../ctx.ts'
 import { textoEscolha, textosPara } from '../textos.ts'
 
-const FAMILIAS = [...new Set(CATALOGO.map((a) => a.familia))].filter((f) => f !== 'outro') as string[]
+const FAMILIAS = [...new Set(CATALOGO.map(a => a.familia))].filter(f => f !== 'outro') as string[]
 
 const medidas = async (ctx: Ctx, c: ReturnType<typeof carregar>) =>
   medirTodas(c, caminhos(ctx), ctx.orca, { home: ctx.home, fetch: ctx.fetch, agora: ctx.agora(), path: await caminhoDeBusca(ctx.env) })
@@ -26,15 +26,21 @@ export async function writer(ctx: Ctx, args: string[]): Promise<number> {
   const p = caminhos(ctx)
   const c = carregar(p)
   const agora = ctx.agora()
-  const rank = rankearEscritores(c, await medidas(ctx, c), p, agora)
+  // Pedido repetido com a mesma tag: o agente que refaz a cadeia recebe a conta já reservada, sem segunda vaga.
+  const reservada = tag ? (await ocupacaoViva(p, c, agora)).vivas.find(v => v.dono === `res-${tag}`)?.conta : undefined
+  const rank = await rankearEscritores(c, await medidas(ctx, c), p, agora, reservada)
+  const mantida = rank.some(r => r.conta === reservada)
+  // A conta da reserva saiu do rank (cota, erro, desativada): solta a antiga para a nova escolha não deixar duas vagas do mesmo dono.
+  if (tag && reservada && !mantida) await soltar(p, `res-${tag}`)
+  const candidatas = mantida ? rank.filter(r => r.conta === reservada) : rank
   let motivo = t.nenhumaApta
-  for (const r of rank) {
+  for (const r of candidatas) {
     if (!tag) {
       emitir(ctx, json, r, textoEscolha(ctx.env, r))
       return 0
     }
     const ram = c.pool.ramMinGb > 0 ? await ramLivreGb(ctx.orca) : null
-    const res = pegar(p, c, r.conta, `res-${tag}`, agora, ram)
+    const res = await pegar(p, c, r.conta, `res-${tag}`, agora, ram)
     if (res === 'ok') {
       emitir(ctx, json, { ...r, dono: `res-${tag}` }, `${textoEscolha(ctx.env, r)} · ${t.reserva} res-${tag}`)
       return 0
@@ -57,7 +63,7 @@ export async function second(ctx: Ctx, args: string[]): Promise<number> {
   if (!familia || !FAMILIAS.includes(familia)) throw new Uso(`${t.uso}: agent-pool second --family <claude|gpt|gemini>`)
   const p = caminhos(ctx)
   const c = carregar(p)
-  const r = escolherSegunda(c, await medidas(ctx, c), familia, ctx.agora(), 60, p)
+  const r = await escolherSegunda(c, await medidas(ctx, c), familia, p, ctx.agora())
   if (!r) throw new SemVaga(t.semSegunda)
   emitir(ctx, json, r, textoEscolha(ctx.env, r))
   return 0

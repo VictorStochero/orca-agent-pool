@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": { "includes": ["src/**", "test/**", "scripts/**", "biome.jsonc", "package.json", "tsconfig*.json"] },
+  "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 140 },
+  "javascript": {
+    "formatter": { "quoteStyle": "single", "semicolons": "asNeeded", "arrowParentheses": "asNeeded", "trailingCommas": "all" }
+  },
+  // `!` é deliberado em grupos de regex e índices (o tsconfig não usa noUncheckedIndexedAccess), sobretudo nos testes.
+  "linter": { "rules": { "style": { "noNonNullAssertion": "off" } } },
+  "assist": { "actions": { "source": { "organizeImports": "on" } } }
+}

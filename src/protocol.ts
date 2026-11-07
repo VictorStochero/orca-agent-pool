@@ -1,11 +1,10 @@
-// Contrato painel <-> worker, declarado uma vez: src/panel/* e src/worker/* leem este arquivo.
-export {}
+import type { SituacaoHook } from './hooks/comum.ts'
 
 /** Um teste na fila; a trava do teto não entra. Ordem do backend: execução, aguardando, parado (do mais antigo ao mais novo). */
 export type TesteFila = {
   pid: number | null
   estado: 'execucao' | 'aguardando' | 'parado'
-  /** `mysql 127.0.0.1:3307`, `container <executor>`, `geral`, `global` ou `projeto <nome>`. */
+  /** `<motor> <host>:<porta>[/<banco>]` (ex.: `mysql 127.0.0.1:3307/app`), `container <executor>`, `geral` ou o valor de `.orca/agent-pool.json`. */
   recurso: string | null
   worktree: string | null
   /** Último segmento do worktree. */
@@ -69,7 +68,7 @@ export type Conta = {
   ativo: boolean
 }
 
-export type ItemFila = 'modo' | 'vagas' | 'vagas_projeto' | 'teto' | 'processos'
+export type ItemFila = 'modo' | 'vagas' | 'vagas_projeto' | 'teto' | 'processos' | 'limpar_bancos'
 
 /** Problema que o usuário precisa resolver: o worker manda código e dados, o painel monta a frase no idioma; `acao` é o comando para copiar. */
 export type Alerta = {
@@ -85,7 +84,13 @@ export type Estado = {
   gerado_em: string
   alertas: Alerta[]
   saude: { plugin_versao: string | null; orca: { rodando: boolean | null; versao: string | null } }
-  fila: { modo: 'global' | 'banco' | 'projeto'; vagas: number; teto: number; testes: TesteFila[]; config: Record<ItemFila, string | number> }
+  fila: {
+    modo: 'global' | 'banco' | 'projeto'
+    vagas: number
+    teto: number
+    testes: TesteFila[]
+    config: Record<ItemFila, string | number>
+  }
   pool: {
     teto: number
     ram_min: number
@@ -98,36 +103,63 @@ export type Estado = {
   }
 }
 
-/** Erros do worker trazem `code` estável (`config_recusada`, `config_vazia`, `agente_invalido`, `hooks_falhou`, `instalacao_recusada`, `instalacao_falhou`) e o painel os traduz; `message` é só o dado (agente, id, detalhe técnico). */
+/** Código estável dos erros do worker; o painel o traduz e `message` é só o dado (agente, id, detalhe técnico). */
+export type CodigoErro =
+  | 'config_recusada'
+  | 'config_vazia'
+  | 'agente_invalido'
+  | 'hooks_falhou'
+  | 'instalacao_recusada'
+  | 'instalacao_falhou'
+
 export type IdRequisito = 'orca' | 'orchestration' | 'skill' | 'lancador' | 'hooks'
+
+/** Requisitos que o plugin instala; `orca` só se verifica. */
+export type IdInstalavel = Exclude<IdRequisito, 'orca'>
+
+/** Chave do storage com o intervalo da atualização automática: o painel grava, o worker lê e reprograma. */
+export const CHAVE_INTERVALO = 'atualizacao.intervalo_s'
+/** Faixa do intervalo, em segundos. */
+export const INTERVALO_S = { padrao: 60, min: 15, max: 3600 }
 
 /** Situação de um requisito, em código e dados; o painel monta a frase no idioma. */
 export type DetalheRequisito =
   | { codigo: 'nao_verificado' | 'versao' | 'versao_antiga'; valor: string }
-  | { codigo: 'instalada' | 'instalada_editada' | 'nao_instalada' | 'desatualizada' | 'sem_origem' | 'nao_instalado' | 'hooks_nenhum' }
+  | {
+      codigo:
+        | 'instalada'
+        | 'instalada_editada'
+        | 'nao_instalada'
+        | 'desatualizada'
+        | 'sem_origem'
+        | 'nao_instalado'
+        | 'desatualizado'
+        | 'hooks_nenhum'
+    }
   /** `valor`: caminho do lançador instalado. */
   | { codigo: 'instalado'; valor?: string }
-  | { codigo: 'hooks'; agentes: { agente: string; situacao: 'instalado' | 'ausente' | 'erro' | 'removido'; erro?: string }[] }
+  | { codigo: 'hooks'; agentes: { agente: string; situacao: SituacaoHook; erro?: string }[] }
 
-/** `instalar`: o painel mostra o botão e executa por `requisitos.instalar`. */
+/** `instalar`: o painel mostra o botão e executa por `requisitos.instalar`; `arquivos`: o que esse clique vai gravar (com `~`). */
 export type RequisitoItem = {
   id: IdRequisito
   ok: boolean
   detalhe: DetalheRequisito
   instalar?: true
+  arquivos?: string[]
 }
 
 export type Requisitos = { ok: boolean; itens: RequisitoItem[] }
 
-/** Estado dos hooks por agente; `detalhe` traz o erro quando `estado` é `erro`. */
-export type EstadoHookAgente = { agente: string; estado: 'instalado' | 'ausente' | 'erro'; detalhe?: string }
+/** Estado dos hooks por agente; `detalhe` traz o erro quando `estado` é `erro`; `arquivos`: os que ainda não têm o hook (com `~`). */
+export type EstadoHookAgente = { agente: string; estado: SituacaoHook; detalhe?: string; arquivos?: string[] }
 
 declare module 'orca' {
   interface PluginRequests {
-    /** Orca ≥ 1.4.246, skill orchestration, skill agent-pool, lançador e hooks; guardado por 60 s, a menos que `forcar`. */
+    /** Orca ≥ 1.4.247, skill orchestration, skill agent-pool, lançador e hooks; guardado por 60 s, a menos que `forcar`. */
     'requisitos.ler': { input: { forcar?: boolean } | undefined; output: Requisitos }
     /** `orchestration`, `skill`, `lancador` ou `hooks`; devolve `requisitos.ler` novo. Outro id: erro `instalacao_recusada`. */
-    'requisitos.instalar': { input: { id: 'orchestration' | 'skill' | 'lancador' | 'hooks' }; output: Requisitos }
+    'requisitos.instalar': { input: { id: IdInstalavel }; output: Requisitos }
     /** Estado da máquina lido do núcleo (a cota vem da última medição do ciclo; ler nunca mede). */
     'estado.ler': { output: Estado }
     /**
@@ -139,10 +171,12 @@ declare module 'orca' {
     'auto.assistir': { output: true }
     /** Hooks: um item por agente com hook (claude, codex). */
     'hooks.estado': { output: EstadoHookAgente[] }
-    /** Remove só o nosso hook do agente; devolve a lista atualizada. Agente desconhecido: erro `agente_invalido`. */
+    /** Remove só o nosso hook do agente (o painel volta a travar em Requisitos); devolve a lista atualizada. Agente desconhecido: erro `agente_invalido`. */
     'hooks.remover': { input: { agente: string }; output: EstadoHookAgente[] }
     /** Reinstala o hook do agente (com backup); devolve a lista atualizada. */
     'hooks.reinstalar': { input: { agente: string }; output: EstadoHookAgente[] }
+    /** Tira hooks, skill, lançador e ~/.agents/agent-pool. Com erro em algum arquivo de agente, skill, lançador e ~/.agents/agent-pool ficam; os hooks já tirados de outros arquivos não voltam. Erro `hooks_falhou` ou `config_recusada`. */
+    desinstalar: { output: { ok: true } }
   }
   interface PluginPanelEvents {
     /** Fila, pool ou config mudaram em disco; o painel pede o estado de novo. */

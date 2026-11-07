@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { detectarRecurso, chaveFila } from '../src/core/fila/recurso.ts'
 import type { Executor } from '../src/core/fila/executores.ts'
+import { chaveFila, detectarRecurso } from '../src/core/fila/recurso.ts'
 import { arquivos, tmp } from './fila-util.ts'
 
 const php: Executor = { nome: 'laravel', comando: ['php', 'artisan', 'test'], paralelo: () => [] }
@@ -59,4 +59,12 @@ DB_DATABASE=${db}`
   assert.equal(chave({ '.env': env('app_testing') }), chave({ '.env.testing': env('app_testing') }))
   assert.notEqual(chave({ '.env': env('app_testing') }), chave({ '.env': env('outro') }))
   assert.equal(rec({ '.env': 'DATABASE_URL=postgres://u@h/app_testing' }), 'postgres h:5432/app_testing')
+})
+
+test('phpunit.xml vence o .env; comentário e phpunit.xml.dist', () => {
+  const xml =
+    '<phpunit><php>\n<!-- <env name="DB_DATABASE" value="comentado"/> -->\n<env value="app_testing" name="DB_DATABASE"/>\n</php></phpunit>'
+  assert.equal(rec({ 'phpunit.xml': xml, '.env': 'DB_HOST=db\nDB_DATABASE=app_wt1' }), 'mysql db:3306/app_testing')
+  assert.equal(rec({ 'phpunit.xml.dist': xml, '.env': 'DB_HOST=db\nDB_DATABASE=app_wt2' }), 'mysql db:3306/app_testing')
+  assert.equal(rec({ 'phpunit.xml': xml }, { DB_HOST: 'db', DB_DATABASE: 'amb' }), 'mysql db:3306/amb')
 })
