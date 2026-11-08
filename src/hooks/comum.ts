@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { acharAgente } from '../core/catalogo.ts'
+import { CARACTERE_PROIBIDO } from '../core/lancador.ts'
 import { expandirHome, paths } from '../core/paths.ts'
 import type { Config } from '../core/tipos.ts'
 import { claude } from './claude.ts'
@@ -151,6 +152,8 @@ export function instalarHooks(home: string, agentes: AgenteHook[], lancador: str
     alvosDe(home, a, pastas).map((alvo): ResultadoInstalar => {
       const spec = SPECS[a]
       const { arquivo, dir } = alvo
+      // O comando do hook põe o caminho do lançador entre aspas duplas, como o próprio lançador faz com os dele.
+      if (CARACTERE_PROIBIDO.test(lancador)) return { agente: a, pasta: dir, estado: 'erro', erro: 'caminho_invalido' }
       try {
         const l = ler(arquivo)
         if ('erro' in l) return { agente: a, pasta: dir, estado: 'erro', erro: l.erro }

@@ -5,14 +5,16 @@ import { gravarAtomico } from './atomico.ts'
 const SEM_PLUGIN =
   'agent-pool: plugin files not found. Open the Agent Pool panel in Orca and install the launcher again; if you removed the plugin, see Uninstall in its README.'
 
+/** Aspas e quebra de linha fecham a string; `$` e crase (sh, PowerShell) e `%` (cmd, que roda o `.cmd`) expandem dentro das aspas duplas. */
+export const CARACTERE_PROIBIDO = /["\r\n$`%]/
+
 /**
  * Arquivos do lançador e o conteúdo de cada um: lança o CLI com o runtime do Orca (`ELECTRON_RUN_AS_NODE=1`); sem Orca, com o `node` do PATH.
  * `agent-pool` (sh) sempre; `agent-pool.cmd` no Windows. Sem o CLI (plugin removido ou versão antiga apagada) avisa e sai 1:
  * o Claude e o Codex mostram a falha do hook e deixam o comando seguir, sem travar o agente.
  */
 export function arquivosLancador(bin: string, orcaExe: string | null, cli: string, plataforma: NodeJS.Platform): Record<string, string> {
-  // Aspas e quebra de linha fecham a string; `$`, crase (sh) e `%` (cmd) expandem dentro das aspas duplas.
-  if ([orcaExe ?? '', cli].some(c => /["\r\n$`%]/.test(c))) throw new Error('caminho inválido para o lançador')
+  if ([orcaExe ?? '', cli].some(c => CARACTERE_PROIBIDO.test(c))) throw new Error('caminho inválido para o lançador')
   const barras = (c: string) => c.replace(/\\/g, '/')
   const sh = orcaExe ? `ELECTRON_RUN_AS_NODE=1 exec "${barras(orcaExe)}" "${barras(cli)}" "$@"` : `exec node "${barras(cli)}" "$@"`
   const r = {

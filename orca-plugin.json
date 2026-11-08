@@ -2,8 +2,37 @@
   "manifestVersion": 2,
   "id": "agent-pool",
   "name": "Agent Pool & Test Queue",
-  "version": "1.0.11",
-  "description": "An agent pool and a test queue for any language: reserve agent slots by quota, run tests one at a time per resource, and configure everything from a panel.",
+  "version": "1.0.12",
+  "description": "Spread agent work across your Claude, Codex and other accounts by the quota each one has left, and run every test through one machine-wide queue so parallel worktrees don't overload the machine or share a test database.",
+  "author": { "name": "Victor Stochero", "url": "https://github.com/VictorStochero" },
+  "repository": "https://github.com/VictorStochero/orca-agent-pool",
+  "icon": "assets/icon.png",
+  "cover": {
+    "path": "assets/catalog-cover.png",
+    "alt": "Agent Pool & Test Queue: the panel with two tests running and two waiting, the pool accounts with their quota, and a test waiting its turn."
+  },
+  "screenshots": [
+    {
+      "path": "assets/catalog-queue.png",
+      "alt": "Orca with queued test runs in a terminal; the Agent Pool panel shows two tests running, two waiting, and each account's slots and quota.",
+      "caption": "Every test waits its turn in one queue, and the pool shows each account's slots and quota."
+    },
+    {
+      "path": "assets/catalog-accounts.png",
+      "alt": "Accounts tab with an account's slots, weight, model and roles; in the terminal, agent-pool writer picks the account with the most quota left × its weight.",
+      "caption": "Slots, weight and roles per account; the writer is the account with the most quota left × its weight."
+    },
+    {
+      "path": "assets/catalog-hooks.png",
+      "alt": "Hooks tab with the Claude and Codex hooks installed, beside a terminal where the Claude hook turns away a bare npm test and prints the queued command.",
+      "caption": "The hooks turn away a bare test command and tell the agent the queued form."
+    },
+    {
+      "path": "assets/catalog-installation.png",
+      "alt": "Installation tab with Orca, both skills, the launcher and the agent hooks installed, above the Uninstall everything button.",
+      "caption": "Nothing is installed until you click, and Uninstall everything removes it all."
+    }
+  ],
   "license": "MIT",
   "engines": {
     "orca": ">=1.4.247"

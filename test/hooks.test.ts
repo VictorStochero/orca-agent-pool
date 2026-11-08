@@ -147,6 +147,17 @@ for (const ag of ['claude', 'codex'] as const) {
     assert.equal(readFileSync(arq, 'utf8'), lixo)
     assert.equal(existsSync(join(home, '.agents')), false)
   })
+
+  test(`${ag}: lançador com aspas, $, crase, % ou quebra de linha no caminho não vira hook`, () => {
+    for (const lan of ['/h/a$b/agent-pool', '/h/a`b/agent-pool', '/h/a"b/agent-pool', '/h/a%OS%b/agent-pool', '/h/a\nb/agent-pool']) {
+      const { home, arq } = setup(ag, '{}')
+      const [r] = instalarHooks(home, [ag], lan)
+      assert.equal(r.estado, 'erro', lan)
+      assert.equal(r.erro, 'caminho_invalido')
+      assert.equal(readFileSync(arq, 'utf8'), '{}')
+      assert.equal(existsSync(join(home, '.agents')), false)
+    }
+  })
 }
 
 test('o modo do arquivo do agente é preservado ao instalar e remover', t => {
