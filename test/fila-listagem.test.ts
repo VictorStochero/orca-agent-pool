@@ -26,10 +26,8 @@ test('--processes separado e flags de execução com valor', () => {
   )
 })
 
-test('vitest run vira vitest list com os mesmos filtros', () => {
-  assert.equal(cmd('vitest run src/a.test.ts'), 'vitest list src/a.test.ts')
-  assert.equal(cmd('npx vitest run -t nome --maxWorkers=2'), 'npx vitest list -t nome')
-  assert.equal(cmd('pnpm vitest run'), 'pnpm vitest list')
+test('vitest não tem listagem (vitest list não existe antes do 2.0 e o reporter por arquivo não casa com a contagem)', () => {
+  for (const c of ['vitest run src/a.test.ts', 'npx vitest run -t nome --maxWorkers=2', 'pnpm vitest run']) assert.equal(cmd(c), null, c)
 })
 
 test('pytest, jest, go, cargo, dotnet e desconhecido não têm listagem', () => {
@@ -48,10 +46,4 @@ test('contagem do PHPUnit/Pest com ANSI e cabeçalho', () => {
   assert.equal(contarListagem('phpunit', saida), 2)
   assert.equal(contarListagem('phpunit', ''), null)
   assert.equal(contarListagem('phpunit', 'Available tests:\n'), null)
-})
-
-test('contagem do vitest list ignora avisos e cabeçalho', () => {
-  const saida = 'aviso qualquer\ntests/a.test.ts > soma > soma 1+1\ntests/a.test.ts > soma > soma 2+2\ntests/b.test.ts > roda\n\n'
-  assert.equal(contarListagem('vitest', saida), 3)
-  assert.equal(contarListagem('vitest', 'nada\n'), null)
 })
