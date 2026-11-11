@@ -210,6 +210,9 @@ orca plugin dev load . # load this folder into Orca (the real install)
 - **1.0.1**: Enforcement moved into Settings; Settings drawn as a card like the other sections.
 - **1.0.0**: first release.
 
+## Feedback
+Found a problem or have an idea? [Open an issue](https://github.com/VictorStochero/orca-agent-pool/issues/new).
+
 ## License
 [MIT](LICENSE)
 
