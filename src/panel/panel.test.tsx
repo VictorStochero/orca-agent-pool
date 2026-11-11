@@ -642,7 +642,7 @@ test('tabelas próprias: Testes na fila (Projeto · Fila · Estado · Há) e Con
   assert.deepEqual(view.refusals, [])
 })
 
-test('tabela com contorno, divisória entre todas as linhas, linhas mais altas e a rolagem dentro do contorno', async () => {
+test('tabela com contorno, divisória entre todas as linhas, linhas sem folga extra e a rolagem dentro do contorno', async () => {
   view = await mount(panel, { host: hostCom() })
   const todos = nos(view)
   assert.equal(todos.filter(n => n.props.border === true && n.props.radius === 'md').length, 2) // Fila e Pool
@@ -651,15 +651,17 @@ test('tabela com contorno, divisória entre todas as linhas, linhas mais altas e
   assert.ok(rolagens.every(n => n.ancestrais.some(a => a.props.border === true && a.props.radius === 'md')))
   // uma divisória antes de cada linha: 3 na Fila e 3 no Pool (a primeira fecha o cabeçalho)
   assert.equal(todos.filter(n => n.type === 'Separator' && n.key?.endsWith('#divisoria')).length, 6)
-  // cabeçalho e linhas com o mesmo respiro vertical: 2 cabeçalhos + 6 linhas
-  assert.equal(todos.filter(n => n.type === 'Box' && n.props.paddingY === 'sm' && n.props.align === 'center').length, 8)
+  // a folga fica no cartão da seção, não nas linhas: cabeçalho e linhas sem paddingY próprio (2 cabeçalhos + 6 linhas)
+  const linhas = todos.filter(n => n.type === 'Box' && n.props.direction === 'row' && n.props.align === 'center' && n.props.gap === 'sm')
+  assert.equal(linhas.length, 8)
+  assert.ok(linhas.every(n => n.props.paddingY === undefined))
 })
 
-test('cartão da seção: padding e espaço entre título e conteúdo médios', async () => {
+test('cartão da seção: padding grande e espaço médio entre título e conteúdo', async () => {
   view = await mount(panel, { host: hostCom() })
   const cartoes = view.findAll({ type: 'Box' }).filter(b => b.props.border === true && b.props.radius === 'lg')
   assert.ok(cartoes.length > 0)
-  assert.ok(cartoes.every(c => c.props.padding === 'md' && c.props.gap === 'md'))
+  assert.ok(cartoes.every(c => c.props.padding === 'lg' && c.props.gap === 'md'))
 })
 
 test('sem os componentes de layout que quebraram o desenho: Grid, Callout, Skeleton e Toolbar', async () => {
