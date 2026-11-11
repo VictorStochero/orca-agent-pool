@@ -6,7 +6,7 @@ import type { Paths } from '../paths.ts'
 import type { ConfigFila } from '../tipos.ts'
 import { anotar, esperar, type InfoTrava, publicar, removerMelhorEsforco, vivoPadrao } from '../trava.ts'
 import { detectarExecutor, type Executor } from './executores.ts'
-import { contarListagem, type PlanoListagem, planoDeListagem, planoDoExecutor } from './listagem.ts'
+import { contarListagem, type PlanoListagem, planoDeListagem } from './listagem.ts'
 import { aquecerOrfaos } from './orfao.ts'
 import { comLimpezaDeBancos, limitarProcessos } from './processos.ts'
 import { chaveFila, detectarRecurso, nomeProjeto } from './recurso.ts'
@@ -41,7 +41,7 @@ export type OpcoesRodar = {
   aquecer?: () => Promise<void>
   /** Relê vagas e teto a cada volta da espera (a chave e o modo do início ficam); padrão: `config`, sem reler. */
   lerConfig?: () => ConfigFila
-  /** Comando que lista os testes (total da barra de progresso); padrão: `planoDeListagem`. Os testes trocam para não chamar php/vitest. */
+  /** Comando que lista os testes (total da barra de progresso); padrão: `planoDeListagem`. Os testes trocam para não chamar php de verdade. */
   listagem?: (comando: string[]) => PlanoListagem | null
 }
 
@@ -234,9 +234,7 @@ export async function rodarNaFila(o: OpcoesRodar): Promise<number> {
       }
 
       // Em paralelo, sem atrasar o teste: lista os testes só para saber o total (a % da barra); qualquer falha é ignorada.
-      const plano = (o.listagem ?? ((c: string[]) => planoDeListagem(c) ?? (argv.length ? null : planoDoExecutor(executor.nome, o.dir))))(
-        lancado,
-      )
+      const plano = (o.listagem ?? planoDeListagem)(lancado)
       if (plano) {
         const partes: Buffer[] = []
         let bytes = 0

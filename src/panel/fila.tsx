@@ -63,9 +63,9 @@ export function SecaoFila({ e }: { e: Estado }) {
       ...se(t.fila.situacao, x.estado === 'parado' && t.fila.dicaParado),
       ...detalhesSaida(x),
       [t.fila.ondeRoda, x.recurso ?? '-'],
-      [t.fila.comando, x.comando ?? '-'],
+      [t.fila.comando, x.comando ?? '-', true],
       [t.fila.pid, x.pid ?? '-'],
-      [t.fila.worktree, x.worktree ?? '-'],
+      [t.fila.worktree, x.worktree ?? '-', true],
     ],
   }))
   return (

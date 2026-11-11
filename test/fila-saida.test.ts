@@ -36,7 +36,7 @@ test('pytest: só o pct', () => {
   assert.equal(s?.total, null)
 })
 
-test('Pest/Collision e vitest: cada marca no começo da linha soma 1 em feitos', () => {
+test('Pest/Collision e jest: cada marca por teste no começo da linha soma 1 em feitos', () => {
   const s = alimentar('  ✓ it works\n  ⨯ it fails\n  × outro\n  ✔ ok\n  ✗ ruim\n  ✕ ruim2\n  texto ✓ no meio\n')
   assert.equal(s?.feitos, 6)
   assert.equal(s?.total, null)
