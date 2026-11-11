@@ -1,6 +1,6 @@
 // Entry do painel. O painel só acessa a máquina pelo contrato do worker em src/protocol.ts.
 // Só leitura nas tabelas (Fila e Pool, próprias: List + Box); toda a edição fica em Configurações, no fim.
-import { Button, EmptyState, Heading, type PanelContext, plugin, RelativeTime, Row, read, Spinner, Stack, Text } from 'orca'
+import { Button, EmptyState, Heading, Link, type PanelContext, plugin, RelativeTime, Row, read, Spinner, Stack, Text } from 'orca'
 import { Atencao } from './alertas'
 import { manterAtualizando } from './atualizacao'
 import { Secao } from './comum'
@@ -10,6 +10,8 @@ import { SecaoFila } from './fila'
 import { SecaoPool } from './pool'
 import { CorpoDesinstalar, SecaoRequisitos } from './requisitos'
 import { t } from './textos'
+
+const REPO = 'https://github.com/VictorStochero/orca-agent-pool'
 
 export function setup(ctx: PanelContext): void {
   ctx.subscriptions.push(plugin.on('estado.mudou', () => void atualizar()))
@@ -72,6 +74,18 @@ export default function Painel() {
           <SecaoConfiguracoes e={e} />
         </Stack>
       )}
+      <Stack gap="xs">
+        <Text size="xs" muted>
+          {t.rodape.estrela.antes}
+          <Link href={REPO}>{t.rodape.estrela.link}</Link>
+          {t.rodape.estrela.depois}
+        </Text>
+        <Text size="xs" muted>
+          {t.rodape.issue.antes}
+          <Link href={`${REPO}/issues/new`}>{t.rodape.issue.link}</Link>
+          {t.rodape.issue.depois}
+        </Text>
+      </Stack>
     </Stack>
   )
 }

@@ -31,7 +31,7 @@ const codexManual: Estado = {
 
 const ABAS = ['fila', 'pool', 'contas', 'imposicao', 'instalacao', 'painel']
 /**
- * Configurações começa recolhida e é dividida em abas: abre e escolhe o assunto.
+ * Configurações começa recolhida e tem um seletor de assunto: abre e escolhe o assunto.
  * Com a chave de uma linha das tabelas (não é nome de aba), clica a linha.
  */
 async function abrir(v: TestPanel, alvo?: string) {
@@ -787,12 +787,14 @@ test('medida antiga: a conta manual com medida de mais de 30 min ganha aviso no 
   assert.equal(tem(view, POOL, /Medida antiga/), null)
 })
 
-test('Configurações: seção recolhida no fim, com abas Fila · Pool · Contas · Hooks · Instalação · Painel e a linha do que cada uma muda', async () => {
+test('Configurações: seção recolhida no fim, com o seletor Fila · Pool · Contas · Hooks · Instalação · Painel e a linha do que cada uma muda', async () => {
   view = await mount(panel, { host: hostCom() })
   assert.ok(view.find({ type: 'Collapsible', label: 'Configurações', text: /Fila, pool, contas, hooks, instalação e painel/ }))
   assert.equal(view.find({ label: 'Modo da fila: Global' }), null) // recolhida: nada de formulário à mostra
   await abrir(view)
-  assert.ok(view.find({ type: 'Tabs', label: 'Assuntos das configurações' }))
+  assert.ok(view.find({ type: 'Select', label: 'Assuntos das configurações' }))
+  assert.equal(view.find({ type: 'Tabs', label: 'Assuntos das configurações' }), null)
+  assert.equal(view.valueOf({ label: 'Assuntos das configurações' }), 'fila')
   assert.ok(view.find({ text: /^Como os testes esperam a vez — ~\/\.agents\/agent-pool\/config\.json/ }))
   await view.select({ label: 'Assuntos das configurações' }, 'pool')
   assert.ok(view.find({ text: /^Limites da máquina e como o escritor é escolhido — ~\/\.agents\/agent-pool\/config\.json/ }))
@@ -811,6 +813,50 @@ test('Configurações: seção recolhida no fim, com abas Fila · Pool · Contas
   await view.select({ label: 'Assuntos das configurações' }, 'painel')
   assert.ok(view.find({ text: /^Este painel — guardado no Orca/ }))
 })
+
+for (const locale of ['pt-BR', 'en']) {
+  test(`${locale}: seletor de assuntos tem as 6 opções, Fila ao abrir, e mostra só o corpo do assunto escolhido`, async () => {
+    const t = textosPara(locale)
+    view = await mount(panel, { locale, host: hostCom() })
+    await view.toggle({ label: t.configuracoes.titulo })
+    const seletor = view.find({ type: 'Select', label: t.configuracoes.assuntos })
+    assert.deepEqual(
+      ((seletor?.props.options ?? []) as { value: string; label: string }[]).map(o => [o.value, o.label]),
+      Object.entries(t.configuracoes.abas),
+    )
+    assert.equal(view.valueOf({ label: t.configuracoes.assuntos }), 'fila')
+    assert.ok(view.find({ label: t.fila.campos.vagas }))
+    assert.equal(view.find({ label: t.painel.intervalo }), null)
+    await view.select({ label: t.configuracoes.assuntos }, 'painel')
+    assert.ok(view.find({ label: t.painel.intervalo }))
+    assert.equal(view.find({ label: t.fila.campos.vagas }), null)
+    await view.select({ label: t.configuracoes.assuntos }, 'imposicao')
+    assert.equal(view.find({ label: t.painel.intervalo }), null)
+    assert.equal(view.valueOf({ label: t.configuracoes.assuntos }), 'imposicao')
+  })
+
+  test(`${locale}: rodapé do painel com os links da estrela e das issues, também com requisitos pendentes`, async () => {
+    const t = textosPara(locale)
+    const REPO = 'https://github.com/VictorStochero/orca-agent-pool'
+    const confere = (v: TestPanel) => {
+      const links = v.findAll({ type: 'Link' }).map(l => [String(l.props.href), l.text])
+      assert.deepEqual(links, [
+        [REPO, t.rodape.estrela.link],
+        [`${REPO}/issues/new`, t.rodape.issue.link],
+      ])
+      assert.ok(v.find({ text: new RegExp(t.rodape.estrela.antes.trim()) }))
+      assert.ok(v.find({ text: new RegExp(t.rodape.issue.antes.trim()) }))
+    }
+    view = await mount(panel, { locale, host: hostCom() })
+    confere(view)
+    view.unmount()
+    view = await mount(panel, {
+      locale,
+      host: mockHost({ requests: { 'requisitos.ler': () => faltando, 'estado.ler': () => estadoExemplo } }),
+    })
+    confere(view)
+  })
+}
 
 for (const [locale, configurar, cadastrar] of [
   ['en', 'Configure', 'Add'],
@@ -1175,7 +1221,7 @@ for (const [locale, versao, instalada, lancador] of [
     })
     await view.toggle({ label: t.configuracoes.titulo })
     await view.select({ label: t.configuracoes.assuntos }, 'instalacao')
-    assert.ok(view.find({ type: 'Tab', label: locale === 'en' ? 'Installation' : 'Instalação' }))
+    assert.equal(view.valueOf({ label: t.configuracoes.assuntos }), 'instalacao')
     const ids = idsReq(view, locale)
     assert.deepEqual(ids, ['orca', 'orchestration', 'skill', 'lancador', 'hooks'])
     for (const id of ['orca', 'orchestration', 'skill', 'lancador', 'hooks'] as const) await abrirReq(view, id, true, locale)

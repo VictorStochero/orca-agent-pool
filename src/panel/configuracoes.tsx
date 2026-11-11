@@ -1,5 +1,5 @@
-// Seção Configurações: abas por assunto; a edição das contas, da fila, do pool etc. fica no módulo de cada uma.
-import { atom, Button, Collapsible, Input, read, Stack, set, storage, Tab, Tabs, Text, update } from 'orca'
+// Seção Configurações: um seletor de assunto (cabe em painel estreito); a edição das contas, da fila, do pool etc. fica no módulo de cada uma.
+import { atom, Button, Collapsible, Input, read, Select, Stack, set, storage, Text, update } from 'orca'
 import { CHAVE_INTERVALO, type Estado, INTERVALO_S } from '../protocol'
 import { ComDica, Mensagem, Secao } from './comum'
 import { ConfigContas } from './contas'
@@ -54,7 +54,10 @@ function ConfigPainel() {
   )
 }
 
+const assuntoAtual = atom('fila')
+
 export function SecaoConfiguracoes({ e }: { e: Estado }) {
+  const assunto = read(assuntoAtual)
   const abas = [
     { id: 'fila', corpo: <ConfigFila e={e} /> },
     { id: 'pool', corpo: <ConfigPool e={e} /> },
@@ -66,13 +69,15 @@ export function SecaoConfiguracoes({ e }: { e: Estado }) {
   return (
     <Secao>
       <Collapsible title={t.configuracoes.titulo} description={t.configuracoes.descricao}>
-        <Tabs label={t.configuracoes.assuntos} defaultValue="fila">
-          {abas.map(a => (
-            <Tab key={a.id} value={a.id} label={t.configuracoes.abas[a.id]}>
-              {a.corpo}
-            </Tab>
-          ))}
-        </Tabs>
+        <Stack gap="sm">
+          <Select
+            label={t.configuracoes.assuntos}
+            value={assunto}
+            options={abas.map(a => ({ value: a.id, label: t.configuracoes.abas[a.id] }))}
+            onChange={v => set(assuntoAtual, v)}
+          />
+          {abas.find(a => a.id === assunto)?.corpo}
+        </Stack>
       </Collapsible>
     </Secao>
   )

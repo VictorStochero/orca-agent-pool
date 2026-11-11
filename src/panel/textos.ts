@@ -115,6 +115,10 @@ const pt = {
     feito: 'Tudo removido. Agora remova o plugin em Configurações → Plugins do Orca.',
   },
   dicaLinha: 'Clique numa linha para ver os detalhes.',
+  rodape: {
+    estrela: { antes: 'Gostou do Agent Pool? ', link: 'Deixe uma ⭐ no GitHub', depois: '.' },
+    issue: { antes: 'Encontrou um problema ou tem uma sugestão? ', link: 'Abra uma issue', depois: '.' },
+  },
   configuracoes: {
     titulo: 'Configurações',
     descricao: 'Fila, pool, contas, hooks, instalação e painel',
@@ -415,6 +419,10 @@ const en: typeof pt = {
     feito: "Everything removed. Now remove the plugin in Orca's Settings → Plugins.",
   },
   dicaLinha: 'Click a row to see details.',
+  rodape: {
+    estrela: { antes: 'Like Agent Pool? ', link: 'Leave a ⭐ on GitHub', depois: '.' },
+    issue: { antes: 'Found a problem or have an idea? ', link: 'Open an issue', depois: '.' },
+  },
   configuracoes: {
     titulo: 'Settings',
     descricao: 'Queue, pool, accounts, hooks, installation and panel',
