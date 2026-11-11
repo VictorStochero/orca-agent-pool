@@ -261,6 +261,12 @@ test('teste_sem_saida: sem saida conta do início do processo, não da espera pe
   assert.equal((await estadoComTeste(5, agora - 60_000, null, agora, agora - 6 * 60_000)).length, 1)
 })
 
+test('teste_sem_saida: saida só com o total da listagem (ts 0) conta como sem saída, do início do processo', async () => {
+  const agora = 1_800_000_000_000
+  assert.deepEqual(await estadoComTeste(5, agora - 60_000, 0, agora, agora - 60_000), [])
+  assert.equal((await estadoComTeste(5, agora - 6 * 60_000, 0, agora, agora - 6 * 60_000))[0]?.params?.min, 6)
+})
+
 test('teste_sem_saida: sem saida e sem filho usa o início da trava', async () => {
   const agora = 1_800_000_000_000
   assert.equal((await estadoComTeste(5, agora - 6 * 60_000, null, agora)).length, 1)

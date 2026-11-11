@@ -106,7 +106,8 @@ export async function montarEstado(p: Paths, c: Config, erroConfig: string | nul
   const semSaidaMin = f.semSaidaMin ?? PADRAO.fila.semSaidaMin
   const limiteMs = (semSaidaMin ?? 0) * 60_000
   for (const t of testes) {
-    const sem = agoraMs - (t.saida?.ts ?? t.filho_ts ?? t.desde_ts ?? agoraMs)
+    // ts 0: a saida só traz o total da listagem, o teste ainda não imprimiu nada.
+    const sem = agoraMs - (t.saida?.ts || (t.filho_ts ?? t.desde_ts ?? agoraMs))
     if (t.estado === 'execucao' && limiteMs > 0 && sem > limiteMs)
       alertas.push({
         codigo: 'teste_sem_saida',
