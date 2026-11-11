@@ -1,8 +1,5 @@
 // Tradução do comando de teste no comando que só lista os testes (para o total da barra de progresso) e contagem da listagem.
 
-export type TipoListagem = 'phpunit'
-export type PlanoListagem = { comando: string[]; tipo: TipoListagem }
-
 // biome-ignore lint/suspicious/noControlCharactersInRegex: o ESC é o que se quer remover
 const ANSI = /\u001b\[[0-9;?]*[ -/]*[@-~]/g
 
@@ -32,22 +29,22 @@ function filtrar(args: string[], d: Descarte): string[] {
 const barras = (s: string) => s.replace(/\\/g, '/')
 
 /** Comando que lista os testes do comando de teste dado (já sem `VAR=x`); null se a ferramenta não tem listagem conhecida (só artisan/Pest/PHPUnit). */
-export function planoDeListagem(comando: string[]): PlanoListagem | null {
+export function planoDeListagem(comando: string[]): string[] | null {
   const n = comando.map(barras)
   const php = n.findIndex(p => /(^|\/)(vendor\/bin\/)?(pest|phpunit)(\.bat|\.exe)?$/.test(p))
   if (php >= 0) {
     const [prefixo, args] = [comando.slice(0, php + 1), comando.slice(php + 1)]
-    return { tipo: 'phpunit', comando: [...prefixo, '--list-tests', ...filtrar(args, PHP)] }
+    return [...prefixo, '--list-tests', ...filtrar(args, PHP)]
   }
   const artisan = n.findIndex((p, i) => p === 'artisan' && n[i + 1] === 'test')
   if (artisan >= 0) {
-    return { tipo: 'phpunit', comando: [...comando.slice(0, artisan + 2), '--list-tests', ...filtrar(comando.slice(artisan + 2), PHP)] }
+    return [...comando.slice(0, artisan + 2), '--list-tests', ...filtrar(comando.slice(artisan + 2), PHP)]
   }
   return null
 }
 
 /** Quantos testes a listagem trouxe; null se nenhum (listagem sem teste não vira total). */
-export function contarListagem(_tipo: TipoListagem, saida: string): number | null {
+export function contarListagem(saida: string): number | null {
   const linhas = saida
     .replace(ANSI, '')
     .split(/\r\n|\n|\r/)

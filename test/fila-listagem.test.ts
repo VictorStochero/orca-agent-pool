@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { contarListagem, planoDeListagem } from '../src/core/fila/listagem.ts'
 
-const cmd = (s: string) => planoDeListagem(s.split(' '))?.comando.join(' ') ?? null
+const cmd = (s: string) => planoDeListagem(s.split(' '))?.join(' ') ?? null
 
 test('artisan: tira paralelismo, compact e banco; mantém os caminhos', () => {
   assert.equal(
@@ -43,7 +43,7 @@ test('contagem do PHPUnit/Pest com ANSI e cabeçalho', () => {
     ' - Tests\\Unit\\RutaPaletteTest::test_usa_a_cor_da_paleta_que_casa_com_o_track',
     '',
   ].join('\r\n')
-  assert.equal(contarListagem('phpunit', saida), 2)
-  assert.equal(contarListagem('phpunit', ''), null)
-  assert.equal(contarListagem('phpunit', 'Available tests:\n'), null)
+  assert.equal(contarListagem(saida), 2)
+  assert.equal(contarListagem(''), null)
+  assert.equal(contarListagem('Available tests:\n'), null)
 })
