@@ -574,7 +574,7 @@ test('requisitos.ler com forcar relê na hora; sem forcar usa o guardado; lança
 // --- requisitos (lógica pura) ---
 const depsOk = {
   orca: async (args: string[]) =>
-    args[0] === '--version' ? '1.4.247' : JSON.stringify({ result: { skills: [{ name: 'orchestration' }] } }),
+    args[0] === '--version' ? '1.4.248' : JSON.stringify({ result: { skills: [{ name: 'orchestration' }] } }),
   skill: () => ({ estado: 'ok' as const }),
   lancador: () => 'ok' as const,
   hooks: () => [{ agente: 'claude', estado: 'instalado' as const }],
@@ -583,8 +583,8 @@ const depsOk = {
 
 test('requisitos: tudo certo, versão antiga, hook ausente e lançador desatualizado travam com os arquivos do clique', async () => {
   assert.equal((await criarRequisitos(depsOk).ler()).ok, true)
-  assert.equal(versaoAtende('1.4.246'), false)
-  assert.equal(versaoAtende('1.4.247'), true)
+  assert.equal(versaoAtende('1.4.247'), false)
+  assert.equal(versaoAtende('1.4.248'), true)
   assert.equal(versaoAtende('v1.5.0'), true)
   assert.equal(versaoAtende('sem versão'), null)
   const velha = await criarRequisitos({ ...depsOk, orca: async a => (a[0] === '--version' ? '1.4.100' : depsOk.orca(a)) }).ler()

@@ -160,7 +160,7 @@ export type EstadoHookAgente = { agente: string; estado: SituacaoHook; detalhe?:
 
 declare module 'orca' {
   interface PluginRequests {
-    /** Orca ≥ 1.4.247, skill orchestration, skill agent-pool, lançador e hooks; guardado por 60 s, a menos que `forcar`. */
+    /** Orca ≥ 1.4.248, skill orchestration, skill agent-pool, lançador e hooks; guardado por 60 s, a menos que `forcar`. */
     'requisitos.ler': { input: { forcar?: boolean } | undefined; output: Requisitos }
     /** `orchestration`, `skill`, `lancador` ou `hooks`; devolve `requisitos.ler` novo. Outro id: erro `instalacao_recusada`. */
     'requisitos.instalar': { input: { id: IdInstalavel }; output: Requisitos }

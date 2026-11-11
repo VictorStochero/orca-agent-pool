@@ -2,6 +2,7 @@ import { afterEach, assert, mockHost as criarHost, hostError, mount as montar, t
 import type { Estado, EstadoHookAgente, Requisitos } from '../protocol'
 import { estadoComAlertas, estadoExemplo } from './fixtures'
 import * as panel from './panel'
+import { abrir as abrirLinha, cabecalho, celula, chaves, lista } from './tabela-teste'
 import { textosPara } from './textos'
 
 const mockHost = (opcoes: Parameters<typeof criarHost>[0] = {}) =>
@@ -18,7 +19,7 @@ const mount = (modulo: Parameters<typeof montar>[0], opcoes: Parameters<typeof m
 let view: TestPanel | undefined
 afterEach(() => view?.unmount())
 
-const POOL = { label: 'Contas do pool' }
+const POOL = lista('Contas do pool')
 /** `codex` cadastrada à mão: só conta manual tem "Remover do pool". */
 const codexManual: Estado = {
   ...estadoExemplo,
@@ -28,12 +29,18 @@ const codexManual: Estado = {
   },
 }
 
-/** Configurações começa recolhida e é dividida em abas: abre e escolhe o assunto. */
-async function abrir(v: TestPanel, aba?: string) {
+const ABAS = ['fila', 'pool', 'contas', 'imposicao', 'instalacao', 'painel']
+/**
+ * Configurações começa recolhida e é dividida em abas: abre e escolhe o assunto.
+ * Com a chave de uma linha das tabelas (não é nome de aba), clica a linha.
+ */
+async function abrir(v: TestPanel, alvo?: string) {
+  if (alvo && !ABAS.includes(alvo)) return abrirLinha(v, alvo)
   await v.toggle({ label: 'Configurações' })
-  if (aba) await v.select({ label: 'Assuntos das configurações' }, aba)
+  if (alvo) await v.select({ label: 'Assuntos das configurações' }, alvo)
 }
-const FILA = { label: 'Testes na fila' }
+const FILA = lista('Testes na fila')
+const linhasDe = (l: { label: string }) => chaves(view!, l.label)
 
 /** Requisitos na tela, pelo título de cada linha recolhível (✓/✗ + nome), devolvidos como ids. */
 function idsReq(v: TestPanel, locale = 'pt-BR'): string[] {
@@ -108,32 +115,36 @@ for (const [locale, fila, pool, config, imposicao, remover, reinstalar, ausencia
     assert.ok(view.find({ text: t.requisitos.oQueFaz.orchestration }))
     assert.ok(view.find({ text: t.requisitos.porque.orchestration }))
     assert.ok(view.find({ type: 'Button', text: t.requisitos.instalar }))
-    assert.equal(view.find({ type: 'Table', label: fila }), null)
-    assert.equal(view.find({ type: 'Table', label: pool }), null)
+    assert.equal(view.find(lista(fila)), null)
+    assert.equal(view.find(lista(pool)), null)
   })
 
   test(`${locale}: atenção mantém ação de login e esconde cota velha`, async () => {
     view = await mount(panel, { locale, host: hostCom([], estadoComAlertas) })
     assert.ok(view.find({ type: 'Callout', text: new RegExp(t.atencao) }))
     assert.ok(view.find({ type: 'Code', text: /claude auth login/ }))
-    assert.equal(view.find({ type: 'Table', label: pool, text: /84%/ }), null)
+    assert.equal(view.find({ ...lista(pool), text: /84%/ }), null)
   })
 
   test(`${locale}: fila expande o comando do teste`, async () => {
     view = await mount(panel, { locale, host: hostCom() })
-    await view.selectRows({ label: fila }, ['p4242'])
-    assert.ok(view.find({ type: 'Table', label: fila, text: new RegExp(t.fila.comando) }))
-    assert.ok(view.find({ type: 'Table', label: fila, text: /runner tests\/X.php/ }))
+    await abrir(view, 'p4242')
+    assert.ok(view.find({ ...lista(fila), text: new RegExp(t.fila.comando) }))
+    assert.ok(view.find({ ...lista(fila), text: /runner tests\/X.php/ }))
   })
 
-  test(`${locale}: fila expandida mostra progresso, última saída, última linha e linhas de saída`, async () => {
+  test(`${locale}: fila expandida mostra progresso, última saída, última linha e linhas de saída em duas colunas`, async () => {
     view = await mount(panel, { locale, host: hostCom() })
-    await view.selectRows({ label: fila }, ['p4242'])
-    const tabela = { type: 'Table', label: fila }
-    assert.ok(view.find({ ...tabela, text: new RegExp(`${t.fila.progresso}.*▓▓▓▓▓░░░░░ 52% \\(63/120\\)`) }))
-    assert.ok(view.find({ ...tabela, text: new RegExp(t.fila.ultimaSaida) }))
-    assert.ok(view.find({ ...tabela, text: new RegExp(`${t.fila.ultimaLinha}.*63 / 120 \\( 52%\\)`) }))
-    assert.ok(view.find({ ...tabela, text: new RegExp(`${t.fila.linhasSaida}.*\\b12\\b`) }))
+    await abrir(view, 'p4242')
+    const rotulo = (i: number) => view!.find({ testId: `p4242#${i}:rotulo` })?.text
+    const valor = (i: number) => view!.find({ testId: `p4242#${i}:valor` })?.text
+    assert.deepEqual([rotulo(0), valor(0)], [t.fila.progresso, '▓▓▓▓▓░░░░░ 52% (63/120)']) // a barra inteira, sem corte
+    assert.equal(rotulo(1), t.fila.ultimaSaida)
+    assert.ok(view.find({ testId: 'p4242#1:valor' }) && view.find({ type: 'RelativeTime' }))
+    assert.deepEqual([rotulo(2), valor(2)], [t.fila.ultimaLinha, '... 63 / 120 ( 52%)'])
+    assert.deepEqual([rotulo(3), valor(3)], [t.fila.linhasSaida, '12'])
+    for (let i = 0; i < 8; i++) assert.notEqual(valor(i), '–', `detalhe ${i} sem célula vazia`)
+    assert.equal(view.find({ testId: 'p4242#8:rotulo' }), null)
   })
 
   test(`${locale}: sem pct, o progresso diz quantos testes já passaram`, async () => {
@@ -147,9 +158,9 @@ for (const [locale, fila, pool, config, imposicao, remover, reinstalar, ausencia
       },
     }
     view = await mount(panel, { locale, host: hostCom([], e) })
-    await view.selectRows({ label: fila }, ['p4242'])
-    assert.ok(view.find({ type: 'Table', label: fila, text: new RegExp(`${t.fila.progresso}.*${t.fila.feitosAteAgora(63)}`) }))
-    assert.equal(view.find({ type: 'Table', label: fila, text: new RegExp(t.fila.ultimaLinha) }), null)
+    await abrir(view, 'p4242')
+    assert.ok(view.find({ ...lista(fila), text: new RegExp(`${t.fila.progresso}.*${t.fila.feitosAteAgora(63)}`) }))
+    assert.equal(view.find({ ...lista(fila), text: new RegExp(t.fila.ultimaLinha) }), null)
   })
 
   test(`${locale}: configurações da fila têm o campo sem_saida_min e o texto do alerta teste_sem_saida`, async () => {
@@ -168,11 +179,11 @@ for (const [locale, fila, pool, config, imposicao, remover, reinstalar, ausencia
 
   test(`${locale}: pool identifica conta desativada`, async () => {
     view = await mount(panel, { locale, host: hostCom() })
-    assert.ok(view.find({ type: 'Table', label: pool, text: new RegExp(t.pool.naoUtilizada) }))
-    await view.selectRows({ label: pool }, ['claude-abcdef12'])
-    assert.ok(view.find({ type: 'Table', label: pool, text: new RegExp(t.pool.naoUtilizadaDetalhe) }))
-    await view.selectRows({ label: pool }, ['main'])
-    assert.ok(view.find({ type: 'Table', label: pool, text: locale === 'en' ? /Writer, Reviewer/ : /Escritor, Revisor/ }))
+    assert.ok(view.find({ ...lista(pool), text: new RegExp(t.pool.naoUtilizada) }))
+    await abrir(view, 'claude-abcdef12')
+    assert.ok(view.find({ ...lista(pool), text: new RegExp(t.pool.naoUtilizadaDetalhe) }))
+    await abrir(view, 'main')
+    assert.ok(view.find({ ...lista(pool), text: locale === 'en' ? /Writer, Reviewer/ : /Escritor, Revisor/ }))
   })
 
   for (const aba of ['fila', 'pool', 'contas', 'painel'] as const) {
@@ -212,8 +223,8 @@ for (const [locale, fila, pool, config, imposicao, remover, reinstalar, ausencia
 
   test(`${locale}: fila, pool e configurações traduzidos`, async () => {
     view = await mount(panel, { host: hostCom(), locale })
-    assert.equal(view.rowsOf({ label: fila }).length, 3)
-    assert.equal(view.rowsOf({ label: pool }).length, 3)
+    assert.equal(chaves(view, fila).length, 3)
+    assert.equal(chaves(view, pool).length, 3)
     assert.ok(view.find({ type: 'Collapsible', label: config }))
     assert.equal(view.find({ type: 'Card', label: imposicao }), null) // o bloco solto saiu do corpo
     assert.ok(view.find({ type: 'Card', text: new RegExp(config) })) // Configurações ganha o cartão das outras seções
@@ -330,7 +341,7 @@ test('remover hook na aba Hooks volta a travar o painel em Requisitos, com a lin
   })
   await abrir(view, 'imposicao')
   await view.press({ type: 'Button', text: 'Remover hook' })
-  assert.equal(view.find({ type: 'Table', label: 'Contas do pool' }), null)
+  assert.equal(view.find(POOL), null)
   assert.deepEqual(idsReq(view), ['hooks'])
   await abrirReq(view, 'hooks')
   assert.ok(view.find({ text: /claude: ausente/ }))
@@ -457,7 +468,7 @@ test('instalar durante uma coleta em curso relê os requisitos ao fim dela e mos
   await new Promise(r => setTimeout(r, 0))
   liberarVelha(pendencia) // a coleta antiga termina com a leitura de antes da instalação
   await Promise.all([atualizando, instalando])
-  assert.ok(view.find({ type: 'Table', label: 'Contas do pool' }))
+  assert.ok(view.find(POOL))
   assert.equal(forcadas.at(-1), true)
 })
 
@@ -485,22 +496,19 @@ test('editar comando da conta manual preserva o campo da nova conta', async () =
   assert.deepEqual(gravados, [{ 'conta.main.comando': 'claude -p' }])
 })
 
-// O Table nativo não rola o cabeçalho com as linhas: largura fixa somada passa dos ~240 px e vira rolagem horizontal.
-test('colunas das tabelas são flexíveis (sem largura fixa) para caber em painel estreito', async () => {
+// Painel estreito: a primeira coluna cresce e as demais dividem 60% em partes iguais, sem largura em pixels.
+test('colunas das tabelas: a primeira cresce, as demais têm percentual igual e alinham como o chamador pediu', async () => {
   view = await mount(panel, { host: hostCom() })
-  for (const label of ['Testes na fila', 'Contas do pool']) {
-    const colunas = view.find({ type: 'Table', label })!.props.columns as { width: string; minWidth?: string }[]
-    assert.ok(
-      colunas.every(c => c.width === 'auto'),
-      label,
-    )
-    assert.ok(colunas.filter(c => c.minWidth).length <= 1, label)
-    assert.equal(colunas[0].minWidth, 'md', label) // detalhes legíveis: a primeira coluna não encolhe abaixo de 9rem
-    assert.ok(
-      colunas.slice(1).every(c => !c.minWidth),
-      label,
-    )
+  for (const [chavesCol, pct] of [
+    [['projeto', 'fila', 'estado', 'ha'], '20%'],
+    [['conta', 'vagas', 'sessoes', 'h5', 'semanal'], '15%'],
+  ] as const) {
+    const [primeira, ...demais] = chavesCol.map(c => view!.find({ testId: `cabecalho.${c}` })!.props)
+    assert.equal(primeira.grow, true)
+    assert.equal(primeira.width, undefined)
+    for (const p of demais) assert.deepEqual([p.width, p.shrink], [pct, false])
   }
+  assert.equal(view.find({ testId: 'cabecalho.semanal' })!.props.justify, 'end')
 })
 
 test('erro de leitura dos hooks aparece sem ocultar fila e pool e recupera no refresh', async () => {
@@ -518,7 +526,7 @@ test('erro de leitura dos hooks aparece sem ocultar fila e pool e recupera no re
   })
   await abrir(view, 'imposicao')
   assert.ok(view.find({ text: 'Não foi possível ler os hooks.' }))
-  assert.equal(view.rowsOf(POOL).length, 3)
+  assert.equal(linhasDe(POOL).length, 3)
   falha = false
   await view.press({ text: 'Atualizar' })
   assert.equal(view.find({ text: 'Não foi possível ler os hooks.' }), null)
@@ -533,14 +541,14 @@ for (const locale of ['pt', 'pt-PT', 'PT-br', 'fr-FR', '']) {
   })
 }
 
-test('tabelas nativas: Testes na fila (Projeto · Fila · Estado · Há) e Contas do pool (Conta · Vagas · 5h · Semanal), sem RAM, Workers nem origem', async () => {
+test('tabelas próprias: Testes na fila (Projeto · Fila · Estado · Há) e Contas do pool (Conta · Vagas · Sessões · 5h · Semanal), sem RAM, Workers nem origem', async () => {
   view = await mount(panel, { host: hostCom() })
-  assert.deepEqual(view.columnsOf(FILA), ['projeto', 'fila', 'estado', 'ha'])
-  assert.deepEqual(view.rowsOf(FILA), ['p4242', 'p4120', 'p99']) // uma linha por teste, na ordem do backend; sem linha de teto
-  assert.deepEqual(view.columnsOf(POOL), ['conta', 'vagas', 'sessoes', 'h5', 'semanal'])
-  assert.deepEqual(view.rowsOf(POOL), ['main', 'codex', 'claude-abcdef12'])
+  assert.deepEqual(cabecalho(view, ['projeto', 'fila', 'estado', 'ha']), ['Projeto', 'Fila', 'Estado', 'Há'])
+  assert.deepEqual(cabecalho(view, ['conta', 'vagas', 'sessoes', 'h5', 'semanal']), ['Conta', 'Vagas', 'Sessões', '5h', 'Semanal'])
+  assert.deepEqual(linhasDe(FILA), ['p4242', 'p4120', 'p99']) // uma linha por teste, na ordem do backend; sem linha de teto
+  assert.deepEqual(linhasDe(POOL), ['main', 'codex', 'claude-abcdef12'])
   assert.ok(view.find({ text: /1 em execução · 1 aguardando · teto 5 · Modo Global/ }))
-  const fila = { type: 'Table', label: 'Testes na fila' }
+  const fila = FILA
   for (const trecho of [/wt-um/, /wt-tres/, /Global/, /Em execução/, /Aguardando vaga/, /⚠ Parado/])
     assert.ok(view.find({ ...fila, text: trecho }), String(trecho))
   assert.equal(view.find({ text: /Viva|\bVaga\b|Fila teto|Rodando agora/ }), null)
@@ -560,23 +568,32 @@ test('sem os componentes de layout que quebraram o desenho: Grid, Callout, Skele
 
 test('fila: clicar abre os detalhes na própria tabela (onde roda, comando, pid, worktree), várias ficam abertas e o segundo clique recolhe', async () => {
   view = await mount(panel, { host: hostCom() })
-  await view.selectRows(FILA, ['p4242'])
-  assert.deepEqual(view.rowsOf(FILA), [
-    'p4242',
-    ...[0, 1, 2, 3, 4, 5, 6, 7].map(i => `p4242#${i}`), // progresso, última saída, última linha, linhas, onde, comando, pid, worktree
-    'p4120',
-    'p99',
+  await abrir(view, 'p4242')
+  assert.deepEqual(linhasDe(FILA), ['p4242', 'p4242#detalhes', 'p4120', 'p99'])
+  // progresso, última saída, última linha, linhas, onde, comando, pid, worktree: rótulo e valor lado a lado
+  const rotulos = (k: string, n: number) => Array.from({ length: n }, (_, i) => view!.find({ testId: `${k}#${i}:rotulo` })?.text)
+  assert.deepEqual(rotulos('p4242', 8), [
+    'Progresso',
+    'Última saída',
+    'Última linha',
+    'Linhas de saída',
+    'Onde roda',
+    'Comando',
+    'PID',
+    'Worktree',
   ])
-  assert.ok(view.find({ type: 'Table', label: 'Testes na fila', text: /Onde roda.*mysql 127\.0\.0\.1:3308\/app_test/ }))
-  assert.ok(view.find({ type: 'Table', label: 'Testes na fila', text: /runner tests\/X\.php/ }))
-  // Cada selectRows é um clique numa linha: alterna aquela linha e mantém as outras.
-  await view.selectRows(FILA, ['p99'])
-  assert.equal(view.rowsOf(FILA).length, 3 + 8 + 5) // o parado traz a linha extra de Situação
-  assert.ok(view.find({ type: 'Table', text: /O processo terminou e deixou a vaga presa/ }))
-  await view.selectRows(FILA, ['p4242'])
-  assert.deepEqual(view.rowsOf(FILA), ['p4242', 'p4120', 'p99', 'p99#0', 'p99#1', 'p99#2', 'p99#3', 'p99#4'])
-  await view.selectRows(FILA, ['p99'])
-  assert.deepEqual(view.rowsOf(FILA), ['p4242', 'p4120', 'p99'])
+  assert.equal(view.find({ testId: 'p4242#8:rotulo' }), null)
+  assert.equal(view.find({ testId: 'p4242#4:valor' })?.text, 'mysql 127.0.0.1:3308/app_test')
+  assert.equal(view.find({ testId: 'p4242#5:valor' })?.text, 'runner tests/X.php') // valor inteiro, sem truncar
+  // Cada clique alterna a linha e mantém as outras abertas.
+  await abrir(view, 'p99')
+  assert.deepEqual(linhasDe(FILA), ['p4242', 'p4242#detalhes', 'p4120', 'p99', 'p99#detalhes'])
+  assert.deepEqual(rotulos('p99', 5), ['Situação', 'Onde roda', 'Comando', 'PID', 'Worktree']) // o parado traz a linha de Situação
+  assert.ok(view.find({ ...FILA, text: /O processo terminou e deixou a vaga presa/ }))
+  await abrir(view, 'p4242')
+  assert.deepEqual(linhasDe(FILA), ['p4242', 'p4120', 'p99', 'p99#detalhes'])
+  await abrir(view, 'p99')
+  assert.deepEqual(linhasDe(FILA), ['p4242', 'p4120', 'p99'])
 })
 
 test('fila: a coluna Fila segue o modo (Global · Banco · Container · Geral · Projeto <nome>) e sem testes diz "Nenhum teste na fila"', async () => {
@@ -588,7 +605,7 @@ test('fila: a coluna Fila segue o modo (Global · Banco · Container · Geral ·
       testes: recursos.map((recurso, i) => ({ ...estadoExemplo.fila.testes[0], pid: 10 + i, recurso })),
     },
   })
-  const tabela = { type: 'Table', label: 'Testes na fila' }
+  const tabela = FILA
   view = await mount(panel, { host: hostCom([], com('banco', ['mysql 127.0.0.1:3307/app_test', 'container exec-1', 'geral'])) })
   for (const trecho of [/Banco 127\.0\.0\.1:3307\/app_test/, /Container/, /Geral/])
     assert.ok(view.find({ ...tabela, text: trecho }), String(trecho))
@@ -607,10 +624,9 @@ test('pool: coluna Sessões com o número (ou –), nomes nos detalhes e total n
   view = await mount(panel, { host: hostCom() })
   assert.ok(view.find({ text: /Agentes 1\/4 · Sessões 2 · Escritor pelo ritmo da cota/ }))
   assert.equal(view.find({ text: /RAM mínima/ }), null)
-  const pool = view.find({ type: 'Table', label: 'Contas do pool' })!
-  const sessoes = (pool.props.rows as { key: string; cells: Record<string, unknown> }[]).map(r => r.cells.sessoes)
-  assert.deepEqual(sessoes, [2, '–', '–'])
-  await view.selectRows(POOL, ['main'])
+  const sessoes = linhasDe(POOL).map(k => celula(view!, k, 'sessoes'))
+  assert.deepEqual(sessoes, ['2', '–', '–'])
+  await abrir(view, 'main')
   assert.ok(view.find({ ...POOL, text: /orca-agent-pool-b6, gestaosmart/ }))
 })
 
@@ -618,27 +634,27 @@ test('pool em inglês: resumo com sessões e sem RAM', async () => {
   view = await mount(panel, { host: hostCom(), locale: 'en' })
   assert.ok(view.find({ text: /Agents 1\/4 · Sessions 2 · Writer by quota pace/ }))
   assert.equal(view.find({ text: /Minimum RAM/ }), null)
-  assert.deepEqual(view.columnsOf({ label: 'Pool accounts' }), ['conta', 'vagas', 'sessoes', 'h5', 'semanal'])
+  assert.deepEqual(cabecalho(view, ['conta', 'vagas', 'sessoes', 'h5', 'semanal']), ['Account', 'Slots', 'Sessions', '5h', 'Weekly'])
 })
 
 test('pool: detalhes dentro da tabela, várias abertas, sem botão nem campo na linha', async () => {
   view = await mount(panel, { host: hostCom() })
-  await view.selectRows(POOL, ['main'])
-  await view.selectRows(POOL, ['codex'])
-  assert.ok(view.rowsOf(POOL).includes('main#0') && view.rowsOf(POOL).includes('codex#0'))
-  await view.selectRows(POOL, ['main'])
-  assert.ok(!view.rowsOf(POOL).includes('main#0') && view.rowsOf(POOL).includes('codex#0'))
-  await view.selectRows(POOL, ['codex'])
-  assert.deepEqual(view.rowsOf(POOL), ['main', 'codex', 'claude-abcdef12'])
+  await abrir(view, 'main')
+  await abrir(view, 'codex')
+  assert.ok(linhasDe(POOL).includes('main#detalhes') && linhasDe(POOL).includes('codex#detalhes'))
+  await abrir(view, 'main')
+  assert.ok(!linhasDe(POOL).includes('main#detalhes') && linhasDe(POOL).includes('codex#detalhes'))
+  await abrir(view, 'codex')
+  assert.deepEqual(linhasDe(POOL), ['main', 'codex', 'claude-abcdef12'])
 })
 
 test('medida antiga: a conta manual com medida de mais de 30 min ganha aviso no detalhe; a cota nativa do Orca não', async () => {
   view = await mount(panel, { host: hostCom() })
-  await view.selectRows(POOL, ['main'])
-  assert.ok(view.find({ type: 'Table', text: /Medida antiga: há 45 min/ }))
-  await view.selectRows(POOL, ['main'])
-  await view.selectRows(POOL, ['codex'])
-  assert.equal(view.find({ type: 'Table', text: /Medida antiga/ }), null)
+  await abrir(view, 'main')
+  assert.ok(view.find({ ...POOL, text: /Medida antiga: há 45 min/ }))
+  await abrir(view, 'main')
+  await abrir(view, 'codex')
+  assert.equal(view.find({ ...POOL, text: /Medida antiga/ }), null)
 })
 
 test('Configurações: seção recolhida no fim, com abas Fila · Pool · Contas · Hooks · Instalação · Painel e a linha do que cada uma muda', async () => {
@@ -717,10 +733,10 @@ test('Configurações > Pool: escolher a conta na lista mostra o formulário del
 
 test('conta inativa: marcada na tabela, explicada no detalhe e com "Não utilizar" marcado; não existe mais Adicionar ao pool', async () => {
   view = await mount(panel, { host: hostCom() })
-  assert.ok(view.find({ type: 'Table', text: /claude-abcdef12 \(não utilizada\)/ }))
-  assert.equal(view.find({ type: 'Table', text: /main \(não utilizada\)/ }), null)
-  await view.selectRows(POOL, ['claude-abcdef12'])
-  assert.ok(view.find({ type: 'Table', text: /Não utilizada: continua listada e medida/ }))
+  assert.ok(view.find({ ...POOL, text: /claude-abcdef12 \(não utilizada\)/ }))
+  assert.equal(view.find({ ...POOL, text: /main \(não utilizada\)/ }), null)
+  await abrir(view, 'claude-abcdef12')
+  assert.ok(view.find({ ...POOL, text: /Não utilizada: continua listada e medida/ }))
   await abrir(view, 'contas')
   assert.equal(view.find({ type: 'Checkbox', label: 'Não utilizar' })?.props.checked, false) // a primeira (main) está ativa
   await view.select({ label: 'Conta a configurar' }, 'claude-abcdef12')
@@ -924,7 +940,7 @@ test('erro do coletor aparece com o código e some na próxima leitura boa', asy
   falha = false
   await view.press({ text: 'Atualizar' })
   assert.equal(view.find({ text: /coletor_falhou/ }), null)
-  assert.deepEqual(view.rowsOf(POOL), ['main', 'codex', 'claude-abcdef12'])
+  assert.deepEqual(linhasDe(POOL), ['main', 'codex', 'claude-abcdef12'])
 })
 
 test('o post estado.mudou lê o estado de novo', async () => {
@@ -985,8 +1001,8 @@ test('requisitos faltando: só a seção Requisitos, com ✓/✗, o detalhe no i
   view = await mount(panel, { host })
   assert.deepEqual(idsReq(view), ['orca', 'orchestration', 'lancador'])
   assert.ok(view.find({ type: 'Collapsible', label: '✓ Orca', text: /Obrigatório · instalado/ }))
-  assert.equal(view.find({ type: 'Table', label: 'Testes na fila' }), null)
-  assert.equal(view.find({ type: 'Table', label: 'Contas do pool' }), null)
+  assert.equal(view.find(FILA), null)
+  assert.equal(view.find(POOL), null)
   assert.equal(view.find({ type: 'Heading', text: 'Configurações' }), null)
   assert.equal(estadoLido, 0) // nem coleta o resto
   await abrirReq(view, 'orchestration')
@@ -1119,7 +1135,7 @@ test('Instalar chama requisitos.instalar com o id e lê os requisitos de novo; c
   await abrirReq(view, 'orchestration')
   await view.press({ type: 'Button', text: 'Instalar' })
   assert.deepEqual(instalados, ['orchestration'])
-  assert.deepEqual(view.rowsOf(POOL), ['main', 'codex', 'claude-abcdef12'])
+  assert.deepEqual(linhasDe(POOL), ['main', 'codex', 'claude-abcdef12'])
   assert.deepEqual(idsReq(view), [])
 })
 
@@ -1153,7 +1169,7 @@ for (const releitura of ['null', 'unknown_method'] as const) {
     await view.press(view.findAll({ type: 'Button', text: 'Instalar' })[0]!)
     assert.deepEqual(idsReq(view), ['orchestration', 'skill', 'hooks'])
     assert.ok(view.find({ text: /falhou aqui/ }))
-    assert.equal(view.find({ type: 'Table', label: 'Contas do pool' }), null)
+    assert.equal(view.find(POOL), null)
   })
 }
 
@@ -1184,7 +1200,7 @@ for (const resposta of [{}, null, { ok: true }, { itens: [] }]) {
     await abrirReq(view, 'orchestration')
     await view.press(view.findAll({ type: 'Button', text: 'Instalar' })[0]!)
     assert.deepEqual(idsReq(view), ['orchestration', 'skill', 'hooks'])
-    assert.equal(view.find({ type: 'Table', label: 'Contas do pool' }), null)
+    assert.equal(view.find(POOL), null)
   })
 }
 
@@ -1222,7 +1238,7 @@ test('primeira leitura unknown_method (worker antigo, sem pendência vista): vis
       },
     }),
   })
-  assert.deepEqual(view.rowsOf(POOL), ['main', 'codex', 'claude-abcdef12'])
+  assert.deepEqual(linhasDe(POOL), ['main', 'codex', 'claude-abcdef12'])
   assert.equal(view.find({ text: /Requisitos instalados/ }), null)
 })
 
@@ -1230,7 +1246,7 @@ test('requisitos ok: o painel normal; worker sem o handler (unknown_method): tam
   view = await mount(panel, {
     host: mockHost({ requests: { 'requisitos.ler': () => ({ ok: true, itens: [] }), 'estado.ler': () => estadoExemplo } }),
   })
-  assert.deepEqual(view.rowsOf(POOL), ['main', 'codex', 'claude-abcdef12'])
+  assert.deepEqual(linhasDe(POOL), ['main', 'codex', 'claude-abcdef12'])
   assert.deepEqual(idsReq(view), [])
 })
 
@@ -1247,29 +1263,24 @@ test('alertas: o bloco Atenção lista um item por problema e o comando num Code
   }
   assert.ok(view.find({ type: 'Code', text: /claude auth login/ }))
   assert.equal(view.findAll({ type: 'Code' }).length, 1)
-  assert.ok(view.find({ type: 'Table', label: 'Contas do pool', text: /⚠ —/ }))
-  assert.equal(view.find({ type: 'Table', label: 'Contas do pool', text: /84%/ }), null) // o valor velho da conta sem login não aparece
-  await view.selectRows(POOL, ['work'])
-  assert.ok(view.find({ type: 'Table', label: 'Contas do pool', text: /Problema.*sem login/ }))
-  assert.ok(view.find({ type: 'Table', label: 'Contas do pool', text: /Para resolver.*claude auth login/ }))
+  assert.ok(view.find({ ...POOL, text: /⚠ —/ }))
+  assert.equal(view.find({ ...POOL, text: /84%/ }), null) // o valor velho da conta sem login não aparece
+  await abrir(view, 'work')
+  assert.ok(view.find({ ...POOL, text: /Problema.*sem login/ }))
+  assert.ok(view.find({ ...POOL, text: /Para resolver.*claude auth login/ }))
   assert.deepEqual(view.errors, [])
 })
 
-test('fila: célula de texto longo (comando de 1500 caracteres) é cortada em 1024 com "…" para o Orca não invalidar a tabela', async () => {
+test('fila: comando longo (1500 caracteres) aparece inteiro no detalhe, sem recusa do Orca', async () => {
   const longo = 'x'.repeat(1500)
   const estado: Estado = {
     ...estadoExemplo,
     fila: { ...estadoExemplo.fila, testes: [{ ...estadoExemplo.fila.testes[0], comando: longo }] },
   }
   view = await mount(panel, { host: hostCom([], estado) })
-  await view.selectRows(FILA, ['p4242'])
-  const tabela = view.find({ type: 'Table', label: 'Testes na fila' })
-  assert.ok(tabela, 'tabela invalidada pelo Orca')
-  const rows = tabela.props.rows as { cells: Record<string, unknown> }[]
-  const textos = rows.flatMap(r => Object.values(r.cells)).filter((c): c is string => typeof c === 'string')
-  assert.ok(textos.some(s => s.startsWith('xxx')))
-  for (const s of textos) assert.ok(s.length <= 1024, `célula com ${s.length} caracteres`)
-  assert.ok(textos.some(s => s.length === 1024 && s.endsWith('…')))
+  await abrir(view, 'p4242')
+  assert.equal(view.find({ testId: 'p4242#5:valor' })?.text, longo)
+  assert.deepEqual([view.errors, view.warnings, view.refusals], [[], [], []])
 })
 
 test('modo da fila: o valor dos rádios é sempre controlado, só o do modo atual vem marcado', async () => {
@@ -1306,9 +1317,7 @@ for (const [locale, projeto, teto] of [
       },
     }
     view = await mount(panel, { locale, host: hostCom([], estado) })
-    const cel = (pid: number) =>
-      (view!.find({ type: 'Table', label: /./ })!.props.rows as { key: string; cells: { fila: string } }[]).find(r => r.key === `p${pid}`)!
-        .cells.fila
+    const cel = (pid: number) => celula(view!, `p${pid}`, 'fila')
     assert.deepEqual([1, 2, 3, 4, 5].map(cel), [
       projeto,
       locale === 'en' ? 'Database 127.0.0.1:3307/gestaosmart_wt_1_test' : 'Banco 127.0.0.1:3307/gestaosmart_wt_1_test',
@@ -1318,19 +1327,6 @@ for (const [locale, projeto, teto] of [
     ])
   })
 }
-
-test('fila: o corte da célula longa não parte um emoji (par substituto)', async () => {
-  const longo = `${'x'.repeat(1022)}😀${'y'.repeat(100)}`
-  const estado: Estado = {
-    ...estadoExemplo,
-    fila: { ...estadoExemplo.fila, testes: [{ ...estadoExemplo.fila.testes[0], comando: longo }] },
-  }
-  view = await mount(panel, { host: hostCom([], estado) })
-  await view.selectRows(FILA, ['p4242'])
-  const rows = view.find({ type: 'Table', label: 'Testes na fila' })!.props.rows as { cells: Record<string, unknown> }[]
-  const cortada = rows.flatMap(r => Object.values(r.cells)).find((c): c is string => typeof c === 'string' && c.startsWith('xxx'))!
-  assert.equal(cortada, `${'x'.repeat(1022)}…`)
-})
 
 const comModelo = (modelo: string | null, limite: string | null): Estado => ({
   ...estadoExemplo,
@@ -1346,16 +1342,16 @@ for (const [locale, rotulo, geral, pool] of [
 ]) {
   test(`${locale}: detalhe da conta mostra o modelo e o limite seguido (ou o geral); sem modelo, sem a linha`, async () => {
     view = await mount(panel, { locale, host: hostCom([], comModelo('claude-fable-5-1', 'Fable')) })
-    await view.selectRows({ label: pool }, ['main'])
-    assert.ok(view.find({ type: 'Table', text: new RegExp(`${rotulo}.*claude-fable-5-1 · Fable`) }))
+    await abrir(view, 'main')
+    assert.ok(view.find({ ...lista(pool), text: new RegExp(`${rotulo}.*claude-fable-5-1 · Fable`) }))
     view.unmount()
     view = await mount(panel, { locale, host: hostCom([], comModelo('qwen', null)) })
-    await view.selectRows({ label: pool }, ['main'])
-    assert.ok(view.find({ type: 'Table', text: new RegExp(`qwen · ${geral}`) }))
+    await abrir(view, 'main')
+    assert.ok(view.find({ ...lista(pool), text: new RegExp(`qwen · ${geral}`) }))
     view.unmount()
     view = await mount(panel, { locale, host: hostCom() })
-    await view.selectRows({ label: pool }, ['main'])
-    assert.equal(view.find({ type: 'Table', text: new RegExp(`${rotulo}.*·`) }), null)
+    await abrir(view, 'main')
+    assert.equal(view.find({ ...lista(pool), text: new RegExp(`${rotulo}.*·`) }), null)
   })
 }
 

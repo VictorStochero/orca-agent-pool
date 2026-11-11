@@ -37,7 +37,7 @@ function detalhesSaida(x: TesteFila): Detalhe[] {
   if (x.estado !== 'execucao' || !s) return []
   return [
     ...se(t.fila.progresso, textoProgresso(s)),
-    { celulas: { projeto: t.fila.ultimaSaida, fila: { type: 'relative', at: s.ts, format: 'duration' } } },
+    [t.fila.ultimaSaida, { type: 'relative', at: s.ts, format: 'duration' }],
     ...se(t.fila.ultimaLinha, s.linha),
     [t.fila.linhasSaida, s.linhas],
   ]
@@ -78,10 +78,10 @@ export function SecaoFila({ e }: { e: Estado }) {
         <TabelaExpansivel
           label={t.fila.tabela}
           colunas={[
-            { key: 'projeto', label: t.fila.colProjeto, width: 'auto', minWidth: 'md' },
-            { key: 'fila', label: t.fila.colFila, width: 'auto' },
-            { key: 'estado', label: t.fila.colEstado, width: 'auto' },
-            { key: 'ha', label: t.fila.colHa, width: 'auto' },
+            { key: 'projeto', label: t.fila.colProjeto },
+            { key: 'fila', label: t.fila.colFila },
+            { key: 'estado', label: t.fila.colEstado },
+            { key: 'ha', label: t.fila.colHa },
           ]}
           linhas={linhas}
           abertas={read(abertasTrava)}

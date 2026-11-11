@@ -1,5 +1,22 @@
 // Componentes usados por mais de uma seção.
-import { Button, Code, IconButton, type OrcaNode, Row, read, Stack, Table, type TableCell, type TableRow, Text } from 'orca'
+import {
+  Box,
+  type BoxLength,
+  Button,
+  Code,
+  IconButton,
+  List,
+  ListItem,
+  type OrcaNode,
+  RelativeTime,
+  type RelativeTimeCell,
+  Row,
+  read,
+  Stack,
+  type TableCell,
+  Text,
+  type TextProps,
+} from 'orca'
 import { avisos, gravando, releituraFalhou, salvar } from './estado'
 import { t } from './textos'
 
@@ -55,30 +72,29 @@ export function Arquivos({ titulo, lista }: { titulo: string; lista: readonly st
   )
 }
 
-/** Detalhe: [rótulo, valor] nas duas primeiras colunas, ou células por coluna (ex.: limite separado em 5h e Semanal). */
-export type Detalhe = [string, string | number] | { celulas: Record<string, TableCell> }
+/** Detalhe: [rótulo, valor]; o valor pode ser um tempo relativo, que o Orca mantém atualizado. */
+export type Detalhe = [string, string | number | RelativeTimeCell]
 /** Linha de detalhe condicional: some quando o valor é vazio ou falso. */
 export const se = (rotulo: string, valor: string | false | null | undefined): Detalhe[] => (valor ? [[rotulo, valor]] : [])
 export type Linha = { key: string; cells: Record<string, TableCell>; detalhes: Detalhe[] }
-type Coluna = {
-  key: string
-  label: string
-  align?: 'start' | 'center' | 'end'
-  width?: 'auto' | 'xs' | 'sm' | 'md' | 'lg'
-  minWidth?: 'auto' | 'xs' | 'sm' | 'md'
-}
+type Coluna = { key: string; label: string; align?: 'start' | 'center' | 'end' }
 
-/** O Orca invalida a Table inteira se uma célula de texto passar de 1024 caracteres (maxLabelLength). */
-const LIMITE_CELULA = 1024
-function caber<T>(v: T): T | string {
-  if (typeof v !== 'string' || v.length <= LIMITE_CELULA) return v
-  const alto = /[\uD800-\uDBFF]/.test(v[LIMITE_CELULA - 2]) // não deixa metade de um par substituto antes do "…"
-  return `${v.slice(0, LIMITE_CELULA - (alto ? 2 : 1))}…`
+/** Fatia da largura que as colunas depois da primeira dividem; a primeira cresce com o que sobra. */
+const LARGURA_DEMAIS_COLUNAS = 60
+/** Largura do rótulo na linha de detalhe; o valor ocupa o resto e quebra linha. */
+const LARGURA_ROTULO = '35%'
+
+function Valor({ v, truncar, ...props }: { v: TableCell | RelativeTimeCell; truncar?: boolean } & TextProps) {
+  return (
+    <Text {...props} truncate={truncar}>
+      {typeof v === 'object' && v !== null ? <RelativeTime at={v.at} format={v.format} /> : String(v ?? '')}
+    </Text>
+  )
 }
 
 /**
- * Table nativa que expande a linha: a selecionada ganha, logo abaixo, linhas de detalhe (desabilitadas) com o rótulo na
- * primeira coluna e o valor na segunda (ou, no detalhe com células, o valor de cada coluna). Cada clique alterna a linha (várias abertas; clicar de novo recolhe). Só leitura.
+ * Tabela própria (List + Box, com o tema do Orca): cabeçalho, uma linha clicável por item e, na aberta, um bloco de duas
+ * colunas (rótulo e valor inteiro) na largura toda. Cada clique alterna a linha (várias abertas; clicar de novo recolhe). Só leitura.
  */
 export function TabelaExpansivel(props: {
   label: string
@@ -87,34 +103,66 @@ export function TabelaExpansivel(props: {
   abertas: string[]
   onAbrir: (keys: string[]) => void
 }) {
-  const [c0, c1] = props.colunas
-  const rows: TableRow[] = props.linhas.flatMap(l => [
-    { key: l.key, cells: Object.fromEntries(Object.entries(l.cells).map(([k, v]) => [k, caber(v)])) } as TableRow,
-    ...(props.abertas.includes(l.key)
-      ? l.detalhes.map(
-          (d, i) =>
-            ({
-              key: `${l.key}#${i}`,
-              disabled: true,
-              cells: Array.isArray(d)
-                ? { [c0.key]: caber(d[0]), [c1.key]: caber(d[1]) }
-                : Object.fromEntries(Object.entries(d.celulas).map(([k, v]) => [k, caber(v)])),
-            }) as TableRow,
-        )
-      : []),
-  ])
+  const demais: BoxLength = `${Math.floor(LARGURA_DEMAIS_COLUNAS / Math.max(1, props.colunas.length - 1))}%`
+  const celula = (prefixo: string, c: Coluna, i: number, conteudo: OrcaNode) => (
+    <Box
+      key={`${prefixo}.${c.key}`}
+      direction="row"
+      justify={c.align === 'end' ? 'end' : 'start'}
+      grow={i === 0}
+      shrink={i === 0}
+      width={i === 0 ? undefined : demais}
+    >
+      {conteudo}
+    </Box>
+  )
+  const alternar = (k: string) => props.onAbrir(props.abertas.includes(k) ? props.abertas.filter(x => x !== k) : [...props.abertas, k])
   return (
-    <Table
-      label={props.label}
-      columns={props.colunas}
-      rows={rows}
-      // Seleção sempre vazia: todo clique chega como evento e alterna a linha (o clique comum do Orca substitui a seleção e não recolhe).
-      selectionMode="single"
-      selected={[]}
-      onSelectionChange={({ keys }) => {
-        const k = keys.find(x => !x.includes('#'))
-        if (k) props.onAbrir(props.abertas.includes(k) ? props.abertas.filter(x => x !== k) : [...props.abertas, k])
-      }}
-    />
+    <List label={props.label}>
+      <ListItem key="cabecalho">
+        <Box direction="row" gap="xs">
+          {props.colunas.map((c, i) =>
+            celula(
+              'cabecalho',
+              c,
+              i,
+              <Text size="xs" muted weight="medium" truncate>
+                {c.label}
+              </Text>,
+            ),
+          )}
+        </Box>
+      </ListItem>
+      {props.linhas.flatMap(l => {
+        const aberta = props.abertas.includes(l.key)
+        return [
+          <ListItem key={l.key} current={aberta} onPress={() => alternar(l.key)}>
+            <Box direction="row" gap="xs">
+              {props.colunas.map((c, i) => celula(l.key, c, i, <Valor v={l.cells[c.key]} truncar />))}
+            </Box>
+          </ListItem>,
+          ...(aberta
+            ? [
+                <ListItem key={`${l.key}#detalhes`}>
+                  <Box gap="xs">
+                    {l.detalhes.map(([rotulo, valor], i) => (
+                      <Box key={`${l.key}#${i}`} direction="row" gap="xs">
+                        <Box key={`${l.key}#${i}:rotulo`} width={LARGURA_ROTULO} shrink={false}>
+                          <Text size="sm" muted>
+                            {rotulo}
+                          </Text>
+                        </Box>
+                        <Box key={`${l.key}#${i}:valor`} grow>
+                          <Valor v={valor} size="sm" />
+                        </Box>
+                      </Box>
+                    ))}
+                  </Box>
+                </ListItem>,
+              ]
+            : []),
+        ]
+      })}
+    </List>
   )
 }

@@ -10,6 +10,7 @@ import type { Estado } from '../protocol'
 import { AMBIENTE_VAZIO, montarEstado } from '../worker/estado.ts'
 import { criarRequisitos } from '../worker/requisitos.ts'
 import * as panel from './panel'
+import { abrir, celula, lista } from './tabela-teste'
 import { textosPara } from './textos'
 
 let view: TestPanel | undefined
@@ -101,7 +102,7 @@ test('Orca ainda não verificado: rodapé "verificando"/"checking" e sem alerta'
 test('en: requisitos do worker real saem em inglês', async () => {
   const r = await criarRequisitos({
     orca: async a => {
-      if (a[0] === '--version') return '1.4.247'
+      if (a[0] === '--version') return '1.4.248'
       throw new Error('boom')
     },
     skill: () => ({ estado: 'ausente' }),
@@ -164,8 +165,8 @@ test('en: recusa da config e erro de medida saem traduzidos, sem o código cru',
 test('cota acima do limite (81%) mostra o alerta no painel, pela regra do worker', async () => {
   const e = await estadoReal({ medidas: [medida('alfa', { estado: 'ok', curta: 81, longa: 10 })] })
   view = await mount(panel, { locale: 'pt-BR', host: hostCom(e) })
-  assert.ok(view.find({ type: 'Table', label: 'Contas do pool', text: /⚠ 81%/ }))
-  assert.equal(view.find({ type: 'Table', label: 'Contas do pool', text: /⚠ 10%/ }), null)
+  assert.ok(view.find({ ...lista('Contas do pool'), text: /⚠ 81%/ }))
+  assert.equal(view.find({ ...lista('Contas do pool'), text: /⚠ 10%/ }), null)
 })
 
 test('fila por banco: Postgres também aparece como banco', async () => {
@@ -186,7 +187,7 @@ test('fila por banco: Postgres também aparece como banco', async () => {
     },
   ]
   view = await mount(panel, { locale: 'pt-BR', host: hostCom(e) })
-  assert.ok(view.find({ type: 'Table', label: 'Testes na fila', text: /Banco 127\.0\.0\.1:5432\/app/ }))
+  assert.ok(view.find({ ...lista('Testes na fila'), text: /Banco 127\.0\.0\.1:5432\/app/ }))
 })
 
 test('conta detectada pelo Orca só tem "Não utilizar"; a manual também pode ser removida', async () => {
@@ -218,7 +219,7 @@ test('conta ilimitada (vagas 0) com ocupação aparece como N/∞', async () => 
   const e = await estadoReal({ contas: [conta('livre', { vagas: 0 })] })
   e.pool.contas[0].usadas = 2
   view = await mount(panel, { locale: 'pt-BR', host: hostCom(e) })
-  assert.ok(view.find({ type: 'Table', label: 'Contas do pool', text: /2\/∞/ }))
+  assert.ok(view.find({ ...lista('Contas do pool'), text: /2\/∞/ }))
 })
 
 for (const [locale, tabela] of [
@@ -234,15 +235,18 @@ for (const [locale, tabela] of [
       medidas: [medida('alfa', { estado: 'ok', curta: 0, longa: 0, limites }), medida('beta', { estado: 'ok', curta: 1, longa: 1 })],
     })
     view = await mount(panel, { locale, host: hostCom(e) })
-    await view.selectRows({ label: tabela }, ['alfa'])
-    const linhas = view.find({ type: 'Table', label: tabela })!.props.rows as { key: string; cells: Record<string, unknown> }[]
-    const limite = (nome: string) => linhas.find(l => l.key.includes('#') && l.cells.conta === nome)?.cells
-    assert.deepEqual([limite('Gemini Models')?.h5, limite('Gemini Models')?.semanal], ['0%', '0%'])
-    assert.deepEqual([limite('Gemini 4 Argon')?.h5, limite('Gemini 4 Argon')?.semanal], ['–', '53%'])
-    assert.equal(view.find({ type: 'Table', label: tabela, text: /semana 53|week 53/ }), null) // sem o texto antigo '5h X · semana Y'
-    await view.selectRows({ label: tabela }, ['alfa'])
-    await view.selectRows({ label: tabela }, ['beta'])
-    assert.equal(view.find({ type: 'Table', label: tabela, text: /Gemini Models/ }), null)
+    await abrir(view, 'alfa')
+    const semanal = locale === 'en' ? 'Weekly' : 'Semanal'
+    // Um item por limite: o nome no rótulo e "5h … · Semanal …" no valor, dentro do bloco de duas colunas.
+    const valorDe = (nome: string) => {
+      for (let i = 0; i < 30; i++)
+        if (view!.find({ testId: `alfa#${i}:rotulo` })?.text === nome) return view!.find({ testId: `alfa#${i}:valor` })?.text
+    }
+    assert.equal(valorDe('Gemini Models'), `5h 0% · ${semanal} 0%`)
+    assert.equal(valorDe('Gemini 4 Argon'), `5h – · ${semanal} 53%`)
+    await abrir(view, 'alfa')
+    await abrir(view, 'beta')
+    assert.equal(view.find({ ...lista(tabela), text: /Gemini Models/ }), null)
   })
 }
 
@@ -270,20 +274,19 @@ for (const [locale, tabela, pasta, cli] of [
     })
     view = await mount(panel, { locale, host: hostCom(e) })
     assert.equal(view.find({ type: 'Callout', text: /Atenção|Attention/ }), null)
-    const linhas = view.find({ type: 'Table', label: tabela })!.props.rows as { key: string; cells: Record<string, unknown> }[]
     assert.deepEqual(
-      linhas.map(l => [l.cells.h5, l.cells.semanal]),
+      ['alfa', 'beta'].map(k => [celula(view!, k, 'h5'), celula(view!, k, 'semanal')]),
       [
         ['–', '–'],
         ['–', '–'],
       ],
     )
-    await view.selectRows({ label: tabela }, ['alfa'])
-    assert.ok(view.find({ type: 'Table', label: tabela, text: pasta }))
-    await view.selectRows({ label: tabela }, ['alfa'])
-    await view.selectRows({ label: tabela }, ['beta'])
-    assert.ok(view.find({ type: 'Table', label: tabela, text: cli }))
-    assert.equal(view.find({ type: 'Table', label: tabela, text: /⚠/ }), null)
+    await abrir(view, 'alfa')
+    assert.ok(view.find({ ...lista(tabela), text: pasta }))
+    await abrir(view, 'alfa')
+    await abrir(view, 'beta')
+    assert.ok(view.find({ ...lista(tabela), text: cli }))
+    assert.equal(view.find({ ...lista(tabela), text: /⚠/ }), null)
   })
 }
 

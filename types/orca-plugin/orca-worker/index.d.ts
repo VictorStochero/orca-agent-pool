@@ -11,6 +11,8 @@ declare module 'orca/worker' {
     JsonValue,
     PluginEventName,
     PluginEvents,
+    PluginHookName,
+    PluginHooks,
     PluginPanelEvents,
     PluginRequestInput,
     PluginRequestOutput,
@@ -27,7 +29,9 @@ declare module 'orca/worker' {
     HostErrorCode,
     JsonValue,
     PluginEventName,
-    PluginEvents
+    PluginEvents,
+    PluginHookName,
+    PluginHooks
   } from 'orca/host'
 
   /** `signal` aborts when Orca stops waiting for the command. */
@@ -64,6 +68,17 @@ declare module 'orca/worker' {
       options?: { panel?: string }
     ): void
   }
+  const hookContinue: unique symbol
+  /** What `next(event)` returns; return it to let the chain go on. */
+  export type HookContinue = { readonly [hookContinue]: true }
+  export type HookHandler<H extends PluginHookName> = (
+    event: PluginHooks[H]['event'],
+    next: (event?: PluginHooks[H]['event']) => HookContinue
+  ) =>
+    | HookContinue
+    | PluginHooks[H]['result']
+    | void
+    | Promise<HookContinue | PluginHooks[H]['result'] | void>
   export type OrcaWorkerApi = {
     readonly api: HostApiVersion
     readonly commands: {
@@ -79,6 +94,13 @@ declare module 'orca/worker' {
         event: E,
         handler: (payload: PluginEvents[E]) => void | Promise<void>
       ): Disposable
+    }
+    readonly hooks: {
+      /** Only hooks listed in `contributes.hooks` run. Return `next(event)` to go on (with the
+       *  fields the hook allows changed), a result such as `{ deny: reason }` to stop, or nothing
+       *  to pass. Plugins run in turn, then Orca acts; past 2 s, or on a throw, Orca carries on as
+       *  if this plugin passed and logs it. */
+      on<H extends PluginHookName>(hook: H, handler: HookHandler<H>): Disposable
     }
     readonly host: HostApi<'worker'>
     /** This plugin's panels and custom editors. */

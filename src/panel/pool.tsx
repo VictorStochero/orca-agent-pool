@@ -47,13 +47,13 @@ export function SecaoPool({ e }: { e: Estado }) {
         [t.pool.papeis, c.papeis.map(p => t.pool.nomesPapel[p] ?? p).join(', ') || '-'],
         [t.pool.janelas, medida ? t.pool.janelasValor(medida.curta, medida.longa) : t.pool.semMedida],
         ...(medida?.limites.map(
-          (l): Detalhe => ({
-            celulas: {
-              conta: l.nome,
-              h5: l.curta === null ? '–' : t.pool.percentual(l.curta, false),
-              semanal: l.longa === null ? '–' : t.pool.percentual(l.longa, false),
-            },
-          }),
+          (l): Detalhe => [
+            l.nome,
+            t.pool.limiteValor(
+              l.curta === null ? '–' : t.pool.percentual(l.curta, false),
+              l.longa === null ? '–' : t.pool.percentual(l.longa, false),
+            ),
+          ],
         ) ?? []),
         [t.pool.medidaHa, c.cota?.medida_ha_min != null ? t.pool.minutos(c.cota.medida_ha_min) : '-'],
         ...se(t.pool.aviso, c.cota?.estado === 'antiga' && c.cota.medida_ha_min != null && t.pool.medidaAntiga(c.cota.medida_ha_min)),
@@ -70,11 +70,11 @@ export function SecaoPool({ e }: { e: Estado }) {
         <TabelaExpansivel
           label={t.pool.tabela}
           colunas={[
-            { key: 'conta', label: t.pool.colConta, width: 'auto', minWidth: 'md' },
-            { key: 'vagas', label: t.pool.colVagas, width: 'auto' },
-            { key: 'sessoes', label: t.pool.colSessoes, align: 'end', width: 'auto' },
-            { key: 'h5', label: t.pool.col5h, align: 'end', width: 'auto' },
-            { key: 'semanal', label: t.pool.colSemanal, align: 'end', width: 'auto' },
+            { key: 'conta', label: t.pool.colConta },
+            { key: 'vagas', label: t.pool.colVagas },
+            { key: 'sessoes', label: t.pool.colSessoes, align: 'end' },
+            { key: 'h5', label: t.pool.col5h, align: 'end' },
+            { key: 'semanal', label: t.pool.colSemanal, align: 'end' },
           ]}
           linhas={linhas}
           abertas={read(abertasConta)}

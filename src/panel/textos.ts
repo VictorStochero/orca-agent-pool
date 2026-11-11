@@ -65,7 +65,7 @@ const pt = {
         'Antes de cada comando de shell do Claude Code (Bash e PowerShell) e do Codex, o agente chama agent-pool hook. O hook só lê o comando, não envia nada pela rede e deixa passar todo o resto: recusa um teste solto (como php artisan test ou npm test), dizendo ao agente o comando pela fila, e recusa orca orchestration worker-start sem reserva de vaga. Antes de gravar, guarda uma cópia do arquivo original em ~/.agents/agent-pool/state/backup/. No Codex, o próprio Codex pede para você confiar no hook na primeira vez.',
     },
     porque: {
-      orca: 'Sem a versão 1.4.247 ou mais nova o plugin não roda. Atualize pelo Orca.',
+      orca: 'Sem a versão 1.4.248 ou mais nova o plugin não roda. Atualize pelo Orca.',
       orchestration: 'Sem ela não há workers para o pool distribuir.',
       skill: 'Sem ela os agentes não sabem que o pool e a fila existem, e nada passa por eles.',
       lancador:
@@ -208,6 +208,7 @@ const pt = {
     colSessoes: 'Sessões',
     col5h: '5h',
     colSemanal: 'Semanal',
+    limiteValor: (h5: string, semanal: string) => `5h ${h5} · Semanal ${semanal}`,
     percentual: (v: number | null, alerta: boolean) => `${alerta ? '⚠ ' : ''}${pct(v)}`,
     janelasValor: (curta: number | null, longa: number | null) => `5h ${pct(curta)} · semana ${pct(longa)}`,
     semLogin: 'sem login',
@@ -363,7 +364,7 @@ const en: typeof pt = {
         'Before every shell command of Claude Code (Bash and PowerShell) and Codex, the agent calls agent-pool hook. The hook only reads the command, sends nothing over the network and lets everything else through: it refuses a bare test (such as php artisan test or npm test), telling the agent the queued command, and refuses orca orchestration worker-start without a slot reservation. Before writing, it keeps a copy of the original file in ~/.agents/agent-pool/state/backup/. In Codex, Codex itself asks you to trust the hook the first time.',
     },
     porque: {
-      orca: 'Without version 1.4.247 or newer the plugin does not run. Update Orca.',
+      orca: 'Without version 1.4.248 or newer the plugin does not run. Update Orca.',
       orchestration: 'Without it there are no workers for the pool to hand out.',
       skill: 'Without it agents do not know the pool and the queue exist, and nothing goes through them.',
       lancador:
@@ -503,6 +504,7 @@ const en: typeof pt = {
     colSessoes: 'Sessions',
     col5h: '5h',
     colSemanal: 'Weekly',
+    limiteValor: (h5, semanal) => `5h ${h5} · Weekly ${semanal}`,
     percentual: (v, alerta) => `${alerta ? '⚠ ' : ''}${pct(v)}`,
     janelasValor: (curta, longa) => `5h ${pct(curta)} · week ${pct(longa)}`,
     semLogin: 'not signed in',

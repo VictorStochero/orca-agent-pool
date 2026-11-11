@@ -2,7 +2,7 @@
 
 [![ci](https://github.com/VictorStochero/orca-agent-pool/actions/workflows/ci.yml/badge.svg)](https://github.com/VictorStochero/orca-agent-pool/actions/workflows/ci.yml)
 ![license](https://img.shields.io/badge/license-MIT-blue)
-![orca](https://img.shields.io/badge/Orca-%E2%89%A5%201.4.247-black)
+![orca](https://img.shields.io/badge/Orca-%E2%89%A5%201.4.248-black)
 
 An [Orca](https://github.com/stablyai/orca) plugin that lets many coding agents share one machine safely. It gives you an **agent pool** (which account should do the next task, with slots per account), a **test queue** for any language (so parallel agents don't overload the machine or corrupt each other's test databases) and a **panel** in Orca to watch and configure both.
 
@@ -23,7 +23,7 @@ An [Orca](https://github.com/stablyai/orca) plugin that lets many coding agents 
 - Works with Orca's native orchestration (`orca orchestration worker-start`, `send`, `worker_done`).
 
 ## Requirements
-- Orca **1.4.247** or newer. The plugin's CLI runs on Orca's own runtime: no separate Node.js, Python or Git Bash.
+- Orca **1.4.248** or newer. The plugin's CLI runs on Orca's own runtime: no separate Node.js, Python or Git Bash.
 - Windows, macOS or Linux.
 
 ## Install
@@ -32,7 +32,7 @@ An [Orca](https://github.com/stablyai/orca) plugin that lets many coding agents 
 2. Approve the access it asks for (a trusted worker and its own storage).
 3. Open the **Agent Pool** panel. Activation only creates the plugin's own folder `~/.agents/agent-pool/` (`config.json` and `state/`) and writes nothing else.
 4. The panel shows the **Requirements** screen. Each item is a row you open to see what it does, why the plugin needs it and the exact files a click will write; its **Install** button is inside the open row. All of them are required for the plugin to do its job:
-   1. **Orca** 1.4.247 or newer;
+   1. **Orca** 1.4.248 or newer;
    2. Orca's own **orchestration** skill (Orca installs it in its skills folder);
    3. the **agent-pool skill**, copied to `~/.agents/skills/agent-pool` and linked into the skills folder of each agent of your active accounts (a copy you edited is not replaced: to reinstall it, delete `~/.agents/skills/agent-pool` and press **Install**);
    4. the **launcher** `~/.agents/bin/agent-pool` (plus `agent-pool.cmd` on Windows), the command agents and hooks call;
