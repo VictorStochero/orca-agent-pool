@@ -1,8 +1,9 @@
 // Entry do painel. O painel só acessa a máquina pelo contrato do worker em src/protocol.ts.
-// Só leitura nas tabelas (Fila e Pool, nativas); toda a edição fica em Configurações, no fim.
-import { Button, Card, EmptyState, Heading, type PanelContext, plugin, RelativeTime, Row, read, Spinner, Stack, Text } from 'orca'
+// Só leitura nas tabelas (Fila e Pool, próprias: List + Box); toda a edição fica em Configurações, no fim.
+import { Button, EmptyState, Heading, type PanelContext, plugin, RelativeTime, Row, read, Spinner, Stack, Text } from 'orca'
 import { Atencao } from './alertas'
 import { manterAtualizando } from './atualizacao'
+import { Secao } from './comum'
 import { carregarIntervalo, SecaoConfiguracoes } from './configuracoes'
 import { atualizar, carregando, concluido, erro, estado, requisitos } from './estado'
 import { SecaoFila } from './fila'
@@ -45,9 +46,9 @@ export default function Painel() {
       {r && !r.ok ? (
         <Stack gap="md">
           <SecaoRequisitos r={r} />
-          <Card>
+          <Secao>
             <CorpoDesinstalar />
-          </Card>
+          </Secao>
         </Stack>
       ) : e === null ? (
         x ? (

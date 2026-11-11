@@ -1,7 +1,7 @@
 // Seção Pool (só leitura) e os campos de configuração do pool.
-import { atom, Card, Input, read, Select, Stack, set, Text } from 'orca'
+import { atom, Input, read, Select, Stack, set, Text } from 'orca'
 import type { Conta, Estado } from '../protocol'
-import { ComDica, type Detalhe, type Linha, Mensagem, Salvar, se, TabelaExpansivel } from './comum'
+import { ComDica, type Detalhe, type Linha, Mensagem, Salvar, Secao, se, TabelaExpansivel } from './comum'
 import { edicoes, mudar } from './estado'
 import { t } from './textos'
 
@@ -47,13 +47,13 @@ export function SecaoPool({ e }: { e: Estado }) {
         [t.pool.papeis, c.papeis.map(p => t.pool.nomesPapel[p] ?? p).join(', ') || '-'],
         [t.pool.janelas, medida ? t.pool.janelasValor(medida.curta, medida.longa) : t.pool.semMedida],
         ...(medida?.limites.map(
-          (l): Detalhe => ({
-            celulas: {
-              conta: l.nome,
-              h5: l.curta === null ? '–' : t.pool.percentual(l.curta, false),
-              semanal: l.longa === null ? '–' : t.pool.percentual(l.longa, false),
-            },
-          }),
+          (l): Detalhe => [
+            l.nome,
+            t.pool.limiteValor(
+              l.curta === null ? '–' : t.pool.percentual(l.curta, false),
+              l.longa === null ? '–' : t.pool.percentual(l.longa, false),
+            ),
+          ],
         ) ?? []),
         [t.pool.medidaHa, c.cota?.medida_ha_min != null ? t.pool.minutos(c.cota.medida_ha_min) : '-'],
         ...se(t.pool.aviso, c.cota?.estado === 'antiga' && c.cota.medida_ha_min != null && t.pool.medidaAntiga(c.cota.medida_ha_min)),
@@ -63,25 +63,25 @@ export function SecaoPool({ e }: { e: Estado }) {
     }
   })
   return (
-    <Card title={t.pool.titulo} description={t.pool.resumo(pool.maquina.usadas, pool.maquina.teto, pool.sessoes, pool.escolha)}>
+    <Secao titulo={t.pool.titulo} descricao={t.pool.resumo(pool.maquina.usadas, pool.maquina.teto, pool.sessoes, pool.escolha)}>
       {pool.contas.length === 0 ? (
         <Text muted>{t.pool.semContas}</Text>
       ) : (
         <TabelaExpansivel
           label={t.pool.tabela}
           colunas={[
-            { key: 'conta', label: t.pool.colConta, width: 'auto', minWidth: 'md' },
-            { key: 'vagas', label: t.pool.colVagas, width: 'auto' },
-            { key: 'sessoes', label: t.pool.colSessoes, align: 'end', width: 'auto' },
-            { key: 'h5', label: t.pool.col5h, align: 'end', width: 'auto' },
-            { key: 'semanal', label: t.pool.colSemanal, align: 'end', width: 'auto' },
+            { key: 'conta', label: t.pool.colConta, largura: 170 },
+            { key: 'vagas', label: t.pool.colVagas, largura: 60 },
+            { key: 'sessoes', label: t.pool.colSessoes, align: 'end', largura: 70 },
+            { key: 'h5', label: t.pool.col5h, align: 'end', largura: 55 },
+            { key: 'semanal', label: t.pool.colSemanal, align: 'end', largura: 75 },
           ]}
           linhas={linhas}
           abertas={read(abertasConta)}
           onAbrir={k => set(abertasConta, k)}
         />
       )}
-    </Card>
+    </Secao>
   )
 }
 

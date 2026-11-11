@@ -6,6 +6,7 @@ import { test } from 'node:test'
 import { PADRAO } from '../core/config.ts'
 import { paths } from '../core/paths.ts'
 import type { Medida } from '../core/tipos.ts'
+import { publicar } from '../core/trava.ts'
 import { AMBIENTE_VAZIO, montarEstado } from './estado.ts'
 
 test('Orca ainda não verificado não gera alerta; fora do ar gera', async () => {
@@ -214,4 +215,60 @@ test('cota e alertas seguem o limite do modelo da conta; modelo e limite seguido
   } finally {
     rmSync(home, { recursive: true, force: true })
   }
+})
+
+/** Estado com um teste em execução (trava do próprio processo) iniciado em `desdeTs` e, opcionalmente, com saída em `saidaTs`. */
+async function estadoComTeste(semSaidaMin: number | undefined, desdeTs: number, saidaTs: number | null, agora: number, filhoTs?: number) {
+  const home = mkdtempSync(join(tmpdir(), 'estado-'))
+  try {
+    const p = paths(home)
+    const c = structuredClone(PADRAO)
+    if (semSaidaMin !== undefined) c.fila.semSaidaMin = semSaidaMin
+    const saida =
+      saidaTs === null
+        ? undefined
+        : { ts: saidaTs, linha: 'x', linhas: 1, pct: null, feitos: null, total: null, passou: null, falhou: null }
+    publicar(join(p.fila, 'global', '1'), {
+      pid: process.pid,
+      inicio: desdeTs,
+      projeto: 'marco1',
+      fila: 'global',
+      saida,
+      filho: filhoTs === undefined ? undefined : { pid: process.pid, inicio: filhoTs },
+    })
+    return (await montarEstado(p, c, null, AMBIENTE_VAZIO, agora)).alertas.filter(a => a.codigo === 'teste_sem_saida')
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+}
+
+test('teste_sem_saida: aparece acima do limite, com minutos inteiros e onde', async () => {
+  const agora = 1_800_000_000_000
+  const a = await estadoComTeste(5, agora - 3_600_000, agora - 7 * 60_000 - 5_000, agora)
+  assert.deepEqual(a, [{ codigo: 'teste_sem_saida', nivel: 'aviso', params: { pid: process.pid, onde: 'marco1', min: 7 } }])
+})
+
+test('teste_sem_saida: não aparece abaixo do limite, com 0 nem com o padrão ainda dentro de 5 min', async () => {
+  const agora = 1_800_000_000_000
+  assert.deepEqual(await estadoComTeste(5, agora - 3_600_000, agora - 4 * 60_000, agora), [])
+  assert.deepEqual(await estadoComTeste(0, agora - 3_600_000, agora - 600 * 60_000, agora), [])
+  assert.deepEqual(await estadoComTeste(undefined, agora - 3_600_000, agora - 4 * 60_000, agora), [])
+})
+
+test('teste_sem_saida: sem saida conta do início do processo, não da espera pelo teto', async () => {
+  const agora = 1_800_000_000_000
+  assert.deepEqual(await estadoComTeste(5, agora - 6 * 60_000, null, agora, agora - 60_000), [])
+  assert.equal((await estadoComTeste(5, agora - 60_000, null, agora, agora - 6 * 60_000)).length, 1)
+})
+
+test('teste_sem_saida: saida só com o total da listagem (ts 0) conta como sem saída, do início do processo', async () => {
+  const agora = 1_800_000_000_000
+  assert.deepEqual(await estadoComTeste(5, agora - 60_000, 0, agora, agora - 60_000), [])
+  assert.equal((await estadoComTeste(5, agora - 6 * 60_000, 0, agora, agora - 6 * 60_000))[0]?.params?.min, 6)
+})
+
+test('teste_sem_saida: sem saida e sem filho usa o início da trava', async () => {
+  const agora = 1_800_000_000_000
+  assert.equal((await estadoComTeste(5, agora - 6 * 60_000, null, agora)).length, 1)
+  assert.equal((await estadoComTeste(5, agora - 2 * 60_000, null, agora)).length, 0)
 })

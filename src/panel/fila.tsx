@@ -1,14 +1,14 @@
 // Seção Fila (só leitura) e os campos de configuração da fila.
-import { atom, Card, Checkbox, Input, RadioGroup, Row, read, Stack, set, Text } from 'orca'
+import { atom, Checkbox, Input, RadioGroup, Row, read, Stack, set, Text } from 'orca'
 import type { Estado, ItemFila, TesteFila } from '../protocol'
-import { ComDica, Dica, type Linha, Mensagem, Salvar, se, TabelaExpansivel } from './comum'
+import { ComDica, type Detalhe, Dica, type Linha, Mensagem, Salvar, Secao, se, TabelaExpansivel } from './comum'
 import { edicoes, mudar } from './estado'
 import { t } from './textos'
 
 /** Linhas abertas da tabela (várias ao mesmo tempo; clicar de novo recolhe). */
 const abertasTrava = atom<string[]>([])
 
-const ITENS_FILA: ItemFila[] = ['modo', 'vagas', 'vagas_projeto', 'teto', 'processos', 'limpar_bancos']
+const ITENS_FILA: ItemFila[] = ['modo', 'vagas', 'vagas_projeto', 'teto', 'processos', 'sem_saida_min', 'limpar_bancos']
 
 /** Rótulo da coluna Fila: vem da fila real da linha (quem começou antes da troca de modo segue na fila antiga); sem ela, do modo atual. */
 function rotuloFila(modo: Estado['fila']['modo'], x: TesteFila): string {
@@ -21,6 +21,29 @@ function rotuloFila(modo: Estado['fila']['modo'], x: TesteFila): string {
   if (r === 'geral') return t.fila.filaGeral
   const banco = /^[a-z]+ (\S+:\d+(?:\/\S*)?)$/.exec(r) // `<motor> <host>:<porta>[/<banco>]`: mysql, postgres, mongodb, redis
   return banco ? t.fila.filaBanco(banco[1]) : r || '-'
+}
+
+/** Barra de 10 posições com o total (`▓▓▓▓▓░░░░░ 52% (63/120)`) e, havendo contagem, `· ✓ N passaram · ⨯ M falharam`; pytest traz só a barra. */
+function textoProgresso(s: NonNullable<TesteFila['saida']>): string | null {
+  const contagem = s.passou == null || s.falhou == null ? null : t.fila.passaramFalharam(s.passou, s.falhou)
+  if (s.pct === null) return contagem
+  const cheias = Math.min(10, Math.floor(s.pct / 10))
+  const total = s.feitos !== null && s.total !== null ? ` (${s.feitos}/${s.total})` : ''
+  return `${'▓'.repeat(cheias)}${'░'.repeat(10 - cheias)} ${s.pct}%${total}${contagem ? ` · ${contagem}` : ''}`
+}
+
+/** Progresso e última saída do teste em execução; a coluna "Fila" leva o relativo (mesma célula da coluna Há). */
+function detalhesSaida(x: TesteFila): Detalhe[] {
+  const s = x.saida
+  if (x.estado !== 'execucao') return []
+  // Sem saída ainda (ts 0 = só o total listado chegou): o teste é acompanhado e só está calado (ex.: migrando o banco).
+  if (!s || s.ts === 0) return [...se(t.fila.progresso, s && textoProgresso(s)), [t.fila.ultimaSaida, t.fila.nenhumaAinda]]
+  return [
+    ...se(t.fila.progresso, textoProgresso(s)),
+    [t.fila.ultimaSaida, { type: 'relative', at: s.ts, format: 'duration' }],
+    ...se(t.fila.ultimaLinha, s.linha),
+    [t.fila.linhasSaida, s.linhas],
+  ]
 }
 
 export function SecaoFila({ e }: { e: Estado }) {
@@ -38,14 +61,15 @@ export function SecaoFila({ e }: { e: Estado }) {
     },
     detalhes: [
       ...se(t.fila.situacao, x.estado === 'parado' && t.fila.dicaParado),
+      ...detalhesSaida(x),
       [t.fila.ondeRoda, x.recurso ?? '-'],
-      [t.fila.comando, x.comando ?? '-'],
+      [t.fila.comando, x.comando ?? '-', true],
       [t.fila.pid, x.pid ?? '-'],
-      [t.fila.worktree, x.worktree ?? '-'],
+      [t.fila.worktree, x.worktree ?? '-', true],
     ],
   }))
   return (
-    <Card title={t.fila.titulo} description={t.fila.resumo(execucao, aguardando, fila.teto, t.fila.modos[fila.modo] ?? fila.modo)}>
+    <Secao titulo={t.fila.titulo} descricao={t.fila.resumo(execucao, aguardando, fila.teto, t.fila.modos[fila.modo] ?? fila.modo)}>
       <ComDica texto={t.fila.explica}>
         <Text muted size="xs">
           {t.fila.comoFunciona}
@@ -57,17 +81,17 @@ export function SecaoFila({ e }: { e: Estado }) {
         <TabelaExpansivel
           label={t.fila.tabela}
           colunas={[
-            { key: 'projeto', label: t.fila.colProjeto, width: 'auto', minWidth: 'md' },
-            { key: 'fila', label: t.fila.colFila, width: 'auto' },
-            { key: 'estado', label: t.fila.colEstado, width: 'auto' },
-            { key: 'ha', label: t.fila.colHa, width: 'auto' },
+            { key: 'projeto', label: t.fila.colProjeto, largura: 140 },
+            { key: 'fila', label: t.fila.colFila, largura: 130 },
+            { key: 'estado', label: t.fila.colEstado, largura: 130 },
+            { key: 'ha', label: t.fila.colHa, largura: 70 },
           ]}
           linhas={linhas}
           abertas={read(abertasTrava)}
           onAbrir={k => set(abertasTrava, k)}
         />
       )}
-    </Card>
+    </Secao>
   )
 }
 
@@ -108,7 +132,14 @@ function CampoFila({ item, e }: { item: Exclude<ItemFila, 'modo'>; e: Estado }) 
   )
 }
 
+/** Campos que valem no modo: por projeto usa só vagas_projeto; global e por banco (testes sem banco) usam vagas. */
+export function camposDoModo(modo: string): Exclude<ItemFila, 'modo' | 'limpar_bancos'>[] {
+  return [modo === 'projeto' ? 'vagas_projeto' : 'vagas', 'teto', 'processos', 'sem_saida_min']
+}
+
 export function ConfigFila({ e }: { e: Estado }) {
+  // O modo marcado, mesmo antes de salvar, decide quais campos aparecem.
+  const modo = read(edicoes)['fila.modo'] ?? String(e.fila.config.modo)
   return (
     <Stack gap="sm">
       <Text muted size="xs">
@@ -118,7 +149,7 @@ export function ConfigFila({ e }: { e: Estado }) {
         {t.fila.configurarDescricao}
       </Text>
       <CampoModo e={e} />
-      {(['vagas', 'vagas_projeto', 'teto', 'processos'] as const).map(i => (
+      {camposDoModo(modo).map(i => (
         <CampoFila key={i} item={i} e={e} />
       ))}
       <Row gap="xs" align="center">

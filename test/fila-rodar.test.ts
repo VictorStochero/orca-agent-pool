@@ -442,3 +442,215 @@ test('sem orfao injetado, o aquecimento real recupera a vaga de dono e filho mor
   const r = relogio()
   assert.equal(await rodarNaFila({ dir, comando: sai(0), config: cfg({ vagas: 1, esperaMaxS: 2 }), p, env: {}, ...r }), 0)
 })
+
+/** Lê `saida` das travas da vaga 1 de cada fila (a do teste e o teto) enquanto o filho roda. */
+function espiarSaida(p: ReturnType<typeof paths>, vistos: { fila: string; saida: { linha: string; linhas: number; ts: number } }[]) {
+  return setInterval(() => {
+    if (!existsSync(p.fila)) return
+    for (const fila of readdirSync(p.fila)) {
+      try {
+        const i = JSON.parse(readFileSync(join(p.fila, fila, '1', 'info.json'), 'utf8'))
+        if (i.saida) vistos.push({ fila, saida: i.saida })
+      } catch {
+        // trava ainda não publicada ou em troca
+      }
+    }
+  }, 20)
+}
+
+test('a saída do filho chega ao stdout do pai e o código é o do filho', async () => {
+  const p = paths(tmp())
+  const cmd = [process.execPath, '-e', "console.log('  3 / 10 ( 30%)'); setTimeout(() => process.exit(4), 50)"]
+  const escritos: Buffer[] = []
+  const original = process.stdout.write
+  process.stdout.write = ((c: Buffer | string) => {
+    escritos.push(Buffer.from(c))
+    return true
+  }) as typeof process.stdout.write
+  let code: number
+  try {
+    code = await rodarNaFila({ dir: tmp(), comando: cmd, config: cfg(), p, env: {} })
+  } finally {
+    process.stdout.write = original
+  }
+  assert.equal(code, 4)
+  assert.match(Buffer.concat(escritos).toString(), /3 \/ 10 \( 30%\)/)
+})
+
+test('a trava da fila e a do teto recebem saida; no máximo uma gravação por segundo', async () => {
+  const p = paths(tmp())
+  const vistos: { fila: string; saida: { linha: string; linhas: number; ts: number } }[] = []
+  const espia = espiarSaida(p, vistos)
+  const cmd = [process.execPath, '-e', "console.log('a'); setTimeout(() => { console.log('b'); setTimeout(() => {}, 500) }, 300)"]
+  try {
+    await rodarNaFila({ dir: tmp(), comando: cmd, config: cfg(), p, env: {} })
+  } finally {
+    clearInterval(espia)
+  }
+  assert.ok(new Set(vistos.map(v => v.fila)).has('_teto'))
+  assert.ok(new Set(vistos.map(v => v.fila)).size >= 2)
+  assert.deepEqual([vistos[0].saida.linha, vistos[0].saida.linhas, typeof vistos[0].saida.ts], ['a', 1, 'number'])
+  // 'b' chega 300 ms depois, dentro da janela de 1 s: não é gravada
+  assert.ok(vistos.every(v => v.saida.linhas === 1))
+})
+
+test('leitor que fecha o pipe cedo (| head) não derruba a fila: sai com o código do teste e solta as vagas', async () => {
+  const home = tmp()
+  const filho = spawn(process.execPath, ['--experimental-strip-types', join(import.meta.dirname, 'fila-pipe-fechado.ts'), home, tmp()], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let err = ''
+  filho.stderr.on('data', d => {
+    err += d
+  })
+  await new Promise<void>(r => filho.stdout.once('data', () => r()))
+  filho.stdout.destroy()
+  const code = await new Promise<number | null>(r => filho.on('close', r))
+  assert.equal(code, 3, err)
+  assert.doesNotMatch(err, /Unhandled 'error' event|EPIPE/)
+  const vagas = (existsSync(paths(home).fila) ? (readdirSync(paths(home).fila, { recursive: true }) as string[]) : []).filter(f =>
+    /(^|[/])\d+$/.test(f),
+  )
+  assert.deepEqual(vagas, [])
+})
+
+test('neto que herda a saída e segue vivo não prende a fila: devolve o código do teste e solta as vagas', async () => {
+  const p = paths(tmp())
+  const pidArq = join(tmp(), 'neto.pid')
+  const script = `const {spawn}=require('child_process');const n=spawn(process.execPath,['-e','setTimeout(()=>{},5000)'],{detached:true,stdio:'inherit'});require('fs').writeFileSync(${JSON.stringify(pidArq)},String(n.pid));n.unref()`
+  const t0 = Date.now()
+  try {
+    assert.equal(await rodarNaFila({ dir: tmp(), comando: [process.execPath, '-e', script], config: cfg(), p, env: {} }), 0)
+    assert.ok(Date.now() - t0 < 2000, `demorou ${Date.now() - t0} ms`)
+    assert.deepEqual(listarTestes(p), [])
+  } finally {
+    try {
+      process.kill(Number(readFileSync(pidArq, 'utf8')))
+    } catch {
+      // neto já saiu
+    }
+  }
+})
+
+test('a gravação pendente da saída chega à trava com o filho vivo e calado', async () => {
+  const p = paths(tmp())
+  const vistos: { fila: string; saida: { linha: string; linhas: number; ts: number } }[] = []
+  const espia = espiarSaida(p, vistos)
+  const cmd = [process.execPath, '-e', "console.log('a'); setTimeout(() => console.log('b'), 300); setTimeout(() => {}, 1800)"]
+  try {
+    await rodarNaFila({ dir: tmp(), comando: cmd, config: cfg(), p, env: {} })
+  } finally {
+    clearInterval(espia)
+  }
+  assert.ok(
+    vistos.some(v => v.saida.linhas === 2 && v.saida.linha === 'b'),
+    JSON.stringify(vistos.map(v => v.saida.linhas)),
+  )
+})
+
+test('terminal lento (contrapressão): a folga do exit espera o drain e o resumo final chega', async () => {
+  const p = paths(tmp())
+  const script = "let i=0;const t=setInterval(()=>{console.log('linha '+i);if(++i===10){clearInterval(t);console.log('RESUMO FINAL')}},10)"
+  const chunks: Buffer[] = []
+  const original = process.stdout.write
+  let travado = true
+  process.stdout.write = ((c: Buffer | string, ...resto: never[]) => {
+    // Só a saída do filho é retida; os eventos do reporter do node:test seguem para o stdout real.
+    if (!/^((linha \d|RESUMO FINAL)\r?\n)+$/.test(Buffer.from(c).toString())) return original.call(process.stdout, c, ...resto)
+    chunks.push(Buffer.from(c))
+    return !travado
+  }) as typeof process.stdout.write
+  // O drain só vem bem depois do exit + 500 ms da folga.
+  const drenar = setTimeout(() => {
+    travado = false
+    process.stdout.emit('drain')
+  }, 2000)
+  let code: number
+  try {
+    code = await rodarNaFila({ dir: tmp(), comando: [process.execPath, '-e', script], config: cfg(), p, env: {} })
+  } finally {
+    clearTimeout(drenar)
+    process.stdout.write = original
+  }
+  const saida = Buffer.concat(chunks).toString()
+  assert.equal(code, 0)
+  assert.match(saida, /^RESUMO FINAL\r?$/m)
+  assert.equal(saida.match(/linha \d\r?$/gm)?.length, 10)
+})
+
+const scriptListagem = (corpo: string) => [process.execPath, '-e', corpo]
+const plano = (corpo: string) => () => scriptListagem(corpo)
+const calado = [process.execPath, '-e', "console.log('x'); setTimeout(() => {}, 1500)"]
+
+test('listagem em paralelo grava o total na saida das duas travas', async () => {
+  const p = paths(tmp())
+  const vistos: { fila: string; saida: { total: number | null; ts: number } }[] = []
+  const espia = espiarSaida(p, vistos as never)
+  const lista = "console.log('Available tests:'); for (const n of ['a', 'b', 'c']) console.log(' - T\\X::' + n)"
+  try {
+    await rodarNaFila({ dir: tmp(), comando: calado, config: cfg(), p, env: {}, listagem: plano(lista) })
+  } finally {
+    clearInterval(espia)
+  }
+  const comTotal = vistos.filter(v => v.saida.total === 3)
+  assert.ok(comTotal.length > 0, JSON.stringify(vistos))
+  assert.ok(new Set(comTotal.map(v => v.fila)).size >= 2, 'as duas travas')
+})
+
+test('listagem que falha, sai com erro ou não lista nada não grava total', async () => {
+  for (const corpo of ["console.log('Available tests:'); process.exit(1)", "console.log('Available tests:')", 'process.exit(0)']) {
+    const p = paths(tmp())
+    const vistos: { fila: string; saida: { total: number | null } }[] = []
+    const espia = espiarSaida(p, vistos as never)
+    try {
+      await rodarNaFila({ dir: tmp(), comando: calado, config: cfg(), p, env: {}, listagem: plano(corpo) })
+    } finally {
+      clearInterval(espia)
+    }
+    assert.ok(vistos.length > 0 && vistos.every(v => v.saida.total === null), corpo)
+  }
+})
+
+test('listagem ainda rodando é morta quando o teste termina', async () => {
+  const p = paths(tmp())
+  const pidArq = join(tmp(), 'listagem.pid')
+  const corpo = `require('fs').writeFileSync(${JSON.stringify(pidArq)}, String(process.pid)); setTimeout(() => {}, 30000)`
+  assert.equal(await rodarNaFila({ dir: tmp(), comando: calado, config: cfg(), p, env: {}, listagem: plano(corpo) }), 0)
+  const pid = Number(readFileSync(pidArq, 'utf8'))
+  let vivo = true
+  for (let i = 0; i < 30 && vivo; i++) {
+    try {
+      process.kill(pid, 0)
+      await new Promise(r => setTimeout(r, 100))
+    } catch {
+      vivo = false
+    }
+  }
+  assert.equal(vivo, false, 'listagem deixada viva')
+})
+
+test('a saída da listagem nunca vai ao stdout do pai', async () => {
+  const p = paths(tmp())
+  const escritos: string[] = []
+  const original = process.stdout.write
+  process.stdout.write = ((c: Buffer | string, ...resto: never[]) => {
+    escritos.push(Buffer.from(c).toString())
+    return original.call(process.stdout, c, ...resto)
+  }) as typeof process.stdout.write
+  try {
+    await rodarNaFila({
+      dir: tmp(),
+      comando: calado,
+      config: cfg(),
+      p,
+      env: {},
+      listagem: plano(
+        "console.log('Available tests:'); console.log(' - SEGREDO_DA_LISTAGEM::a'); console.error('SEGREDO_DA_LISTAGEM_ERR')",
+      ),
+    })
+  } finally {
+    process.stdout.write = original
+  }
+  assert.ok(escritos.some(e => e.includes('x')))
+  assert.ok(!escritos.some(e => e.includes('SEGREDO_DA_LISTAGEM')))
+})

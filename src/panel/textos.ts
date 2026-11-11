@@ -34,6 +34,7 @@ const pt = {
     sem_login: (conta: string) => `${conta}: sem login`,
     erro_medida: (conta: string, detalhe?: string) => `${conta}: ${pt.pool.erroMedida(detalhe)}`,
     teste_parado: (pid: number | null, onde: string) => `Teste parado (pid ${pid ?? '?'}) em ${onde}`,
+    teste_sem_saida: (pid: number | null, onde: string, min: number) => `Teste sem saída há ${min} min (pid ${pid ?? '?'}) em ${onde}`,
   },
   atualizadoEm: 'Atualizado',
   plugin: 'Plugin',
@@ -64,7 +65,7 @@ const pt = {
         'Antes de cada comando de shell do Claude Code (Bash e PowerShell) e do Codex, o agente chama agent-pool hook. O hook só lê o comando, não envia nada pela rede e deixa passar todo o resto: recusa um teste solto (como php artisan test ou npm test), dizendo ao agente o comando pela fila, e recusa orca orchestration worker-start sem reserva de vaga. Antes de gravar, guarda uma cópia do arquivo original em ~/.agents/agent-pool/state/backup/. No Codex, o próprio Codex pede para você confiar no hook na primeira vez.',
     },
     porque: {
-      orca: 'Sem a versão 1.4.247 ou mais nova o plugin não roda. Atualize pelo Orca.',
+      orca: 'Sem a versão 1.4.248 ou mais nova o plugin não roda. Atualize pelo Orca.',
       orchestration: 'Sem ela não há workers para o pool distribuir.',
       skill: 'Sem ela os agentes não sabem que o pool e a fila existem, e nada passa por eles.',
       lancador:
@@ -156,6 +157,12 @@ const pt = {
     filaTeto: 'Teto da máquina',
     estados: { execucao: 'Em execução', aguardando: 'Aguardando vaga', parado: '⚠ Parado' } as Record<string, string>,
     dicaParado: 'O processo terminou e deixou a vaga presa.',
+    progresso: 'Progresso',
+    passaramFalharam: (passou: number, falhou: number) => `✓ ${passou} passaram · ⨯ ${falhou} falharam`,
+    ultimaSaida: 'Última saída',
+    nenhumaAinda: 'nenhuma ainda',
+    ultimaLinha: 'Última linha',
+    linhasSaida: 'Linhas de saída',
     ondeRoda: 'Onde roda',
     comando: 'Comando',
     pid: 'PID',
@@ -168,6 +175,7 @@ const pt = {
       vagas_projeto: 'Vagas por projeto',
       teto: 'Teto da máquina',
       processos: 'Processos (--parallel)',
+      sem_saida_min: 'Aviso de teste sem saída (min)',
       limpar_bancos: 'Apagar os bancos <banco>_test_N depois do teste paralelo do Laravel',
     },
     dicas: {
@@ -182,6 +190,7 @@ const pt = {
       teto: 'Máximo de testes ao mesmo tempo na máquina, somando todas as filas.',
       processos:
         'Processos em paralelo do teste. Também é o teto das flags de paralelismo que o agente passa (--processes, -n, --maxWorkers): pedido maior é reduzido a este valor.',
+      sem_saida_min: 'Minutos sem o teste imprimir nada até o aviso na tela. 0 desliga o aviso.',
       limpar_bancos:
         'Desligado por padrão. Ligado, a fila acrescenta --drop-databases ao artisan test paralelo (--parallel ou -p; Laravel 9 ou mais novo) e o Laravel apaga as cópias <banco>_test_1, _test_2… que criou, em qualquer banco, para não acumular bancos. O banco principal nunca é tocado.',
     },
@@ -200,6 +209,7 @@ const pt = {
     colSessoes: 'Sessões',
     col5h: '5h',
     colSemanal: 'Semanal',
+    limiteValor: (h5: string, semanal: string) => `5h ${h5} · Semanal ${semanal}`,
     percentual: (v: number | null, alerta: boolean) => `${alerta ? '⚠ ' : ''}${pct(v)}`,
     janelasValor: (curta: number | null, longa: number | null) => `5h ${pct(curta)} · semana ${pct(longa)}`,
     semLogin: 'sem login',
@@ -324,6 +334,7 @@ const en: typeof pt = {
     sem_login: conta => `${conta}: not signed in`,
     erro_medida: (conta, detalhe) => `${conta}: ${en.pool.erroMedida(detalhe)}`,
     teste_parado: (pid, onde) => `Stopped test (pid ${pid ?? '?'}) in ${onde}`,
+    teste_sem_saida: (pid, onde, min) => `Test with no output for ${min} min (pid ${pid ?? '?'}) in ${onde}`,
   },
   atualizadoEm: 'Updated',
   plugin: 'Plugin',
@@ -354,7 +365,7 @@ const en: typeof pt = {
         'Before every shell command of Claude Code (Bash and PowerShell) and Codex, the agent calls agent-pool hook. The hook only reads the command, sends nothing over the network and lets everything else through: it refuses a bare test (such as php artisan test or npm test), telling the agent the queued command, and refuses orca orchestration worker-start without a slot reservation. Before writing, it keeps a copy of the original file in ~/.agents/agent-pool/state/backup/. In Codex, Codex itself asks you to trust the hook the first time.',
     },
     porque: {
-      orca: 'Without version 1.4.247 or newer the plugin does not run. Update Orca.',
+      orca: 'Without version 1.4.248 or newer the plugin does not run. Update Orca.',
       orchestration: 'Without it there are no workers for the pool to hand out.',
       skill: 'Without it agents do not know the pool and the queue exist, and nothing goes through them.',
       lancador:
@@ -444,6 +455,12 @@ const en: typeof pt = {
     filaTeto: 'Machine cap',
     estados: { execucao: 'Running', aguardando: 'Waiting for a slot', parado: '⚠ Stopped' },
     dicaParado: 'The process ended and left a slot locked.',
+    progresso: 'Progress',
+    passaramFalharam: (passou, falhou) => `✓ ${passou} passed · ⨯ ${falhou} failed`,
+    ultimaSaida: 'Last output',
+    nenhumaAinda: 'none yet',
+    ultimaLinha: 'Last line',
+    linhasSaida: 'Output lines',
     ondeRoda: 'Runs on',
     comando: 'Command',
     pid: 'PID',
@@ -456,6 +473,7 @@ const en: typeof pt = {
       vagas_projeto: 'Slots per project',
       teto: 'Machine cap',
       processos: 'Processes (--parallel)',
+      sem_saida_min: 'No-output warning (min)',
       limpar_bancos: 'Drop the <database>_test_N databases after a parallel Laravel test',
     },
     dicas: {
@@ -470,6 +488,7 @@ const en: typeof pt = {
       teto: 'Maximum concurrent tests on the machine across all queues.',
       processos:
         'Parallel processes of the test. Also a cap on the parallelism flags an agent passes (--processes, -n, --maxWorkers): a larger request is lowered to this value.',
+      sem_saida_min: 'Minutes without the test printing anything before the warning shows. 0 turns the warning off.',
       limpar_bancos:
         'Off by default. When on, the queue adds --drop-databases to a parallel artisan test (--parallel or -p; Laravel 9 or newer) and Laravel drops the <database>_test_1, _test_2… copies it created, on any database, so they do not pile up. The main database is never touched.',
     },
@@ -487,6 +506,7 @@ const en: typeof pt = {
     colSessoes: 'Sessions',
     col5h: '5h',
     colSemanal: 'Weekly',
+    limiteValor: (h5, semanal) => `5h ${h5} · Weekly ${semanal}`,
     percentual: (v, alerta) => `${alerta ? '⚠ ' : ''}${pct(v)}`,
     janelasValor: (curta, longa) => `5h ${pct(curta)} · week ${pct(longa)}`,
     semLogin: 'not signed in',

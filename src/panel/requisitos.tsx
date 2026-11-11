@@ -1,7 +1,7 @@
 // Requisitos de instalação (tela de pendências e Configurações > Instalação) e a desinstalação.
-import { atom, Button, Card, Collapsible, plugin, Row, read, Stack, set, Text, update } from 'orca'
+import { atom, Button, Collapsible, plugin, Row, read, Stack, set, Text, update } from 'orca'
 import type { DetalheRequisito, IdInstalavel, RequisitoItem, Requisitos } from '../protocol'
-import { Arquivos, Mensagem } from './comum'
+import { Arquivos, Mensagem, Secao } from './comum'
 import { textoErro, traduzirCodigos } from './erros'
 import {
   aplicarLeitura,
@@ -139,9 +139,9 @@ function CorpoRequisitos({ r }: { r: Requisitos }) {
 
 export function SecaoRequisitos({ r }: { r: Requisitos }) {
   return (
-    <Card title={t.requisitos.titulo} description={t.requisitos.explica}>
+    <Secao titulo={t.requisitos.titulo} descricao={t.requisitos.explica}>
       <CorpoRequisitos r={r} />
-    </Card>
+    </Secao>
   )
 }
 

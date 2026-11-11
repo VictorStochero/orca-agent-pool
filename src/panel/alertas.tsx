@@ -17,6 +17,8 @@ function textoAlerta(a: Alerta): string {
       return t.alertas.erro_medida(p.conta ?? '', p.detalhe)
     case 'teste_parado':
       return t.alertas.teste_parado(p.pid ?? null, p.onde ?? '–')
+    case 'teste_sem_saida':
+      return t.alertas.teste_sem_saida(p.pid ?? null, p.onde ?? '–', p.min ?? 0)
   }
 }
 
