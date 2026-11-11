@@ -513,3 +513,37 @@ test('leitor que fecha o pipe cedo (| head) não derruba a fila: sai com o códi
   )
   assert.deepEqual(vagas, [])
 })
+
+test('neto que herda a saída e segue vivo não prende a fila: devolve o código do teste e solta as vagas', async () => {
+  const p = paths(tmp())
+  const pidArq = join(tmp(), 'neto.pid')
+  const script = `const {spawn}=require('child_process');const n=spawn(process.execPath,['-e','setTimeout(()=>{},5000)'],{detached:true,stdio:'inherit'});require('fs').writeFileSync(${JSON.stringify(pidArq)},String(n.pid));n.unref()`
+  const t0 = Date.now()
+  try {
+    assert.equal(await rodarNaFila({ dir: tmp(), comando: [process.execPath, '-e', script], config: cfg(), p, env: {} }), 0)
+    assert.ok(Date.now() - t0 < 2000, `demorou ${Date.now() - t0} ms`)
+    assert.deepEqual(listarTestes(p), [])
+  } finally {
+    try {
+      process.kill(Number(readFileSync(pidArq, 'utf8')))
+    } catch {
+      // neto já saiu
+    }
+  }
+})
+
+test('a gravação pendente da saída chega à trava com o filho vivo e calado', async () => {
+  const p = paths(tmp())
+  const vistos: { fila: string; saida: { linha: string; linhas: number; ts: number } }[] = []
+  const espia = espiarSaida(p, vistos)
+  const cmd = [process.execPath, '-e', "console.log('a'); setTimeout(() => console.log('b'), 300); setTimeout(() => {}, 1800)"]
+  try {
+    await rodarNaFila({ dir: tmp(), comando: cmd, config: cfg(), p, env: {} })
+  } finally {
+    clearInterval(espia)
+  }
+  assert.ok(
+    vistos.some(v => v.saida.linhas === 2 && v.saida.linha === 'b'),
+    JSON.stringify(vistos.map(v => v.saida.linhas)),
+  )
+})

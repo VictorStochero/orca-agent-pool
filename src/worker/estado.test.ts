@@ -218,14 +218,21 @@ test('cota e alertas seguem o limite do modelo da conta; modelo e limite seguido
 })
 
 /** Estado com um teste em execução (trava do próprio processo) iniciado em `desdeTs` e, opcionalmente, com saída em `saidaTs`. */
-async function estadoComTeste(semSaidaMin: number | undefined, desdeTs: number, saidaTs: number | null, agora: number) {
+async function estadoComTeste(semSaidaMin: number | undefined, desdeTs: number, saidaTs: number | null, agora: number, filhoTs?: number) {
   const home = mkdtempSync(join(tmpdir(), 'estado-'))
   try {
     const p = paths(home)
     const c = structuredClone(PADRAO)
     if (semSaidaMin !== undefined) c.fila.semSaidaMin = semSaidaMin
     const saida = saidaTs === null ? undefined : { ts: saidaTs, linha: 'x', linhas: 1, pct: null, feitos: null, total: null }
-    publicar(join(p.fila, 'global', '1'), { pid: process.pid, inicio: desdeTs, projeto: 'marco1', fila: 'global', saida })
+    publicar(join(p.fila, 'global', '1'), {
+      pid: process.pid,
+      inicio: desdeTs,
+      projeto: 'marco1',
+      fila: 'global',
+      saida,
+      filho: filhoTs === undefined ? undefined : { pid: process.pid, inicio: filhoTs },
+    })
     return (await montarEstado(p, c, null, AMBIENTE_VAZIO, agora)).alertas.filter(a => a.codigo === 'teste_sem_saida')
   } finally {
     rmSync(home, { recursive: true, force: true })
@@ -245,7 +252,13 @@ test('teste_sem_saida: não aparece abaixo do limite, com 0 nem com o padrão ai
   assert.deepEqual(await estadoComTeste(undefined, agora - 3_600_000, agora - 4 * 60_000, agora), [])
 })
 
-test('teste_sem_saida: sem saida usa o início da execução', async () => {
+test('teste_sem_saida: sem saida conta do início do processo, não da espera pelo teto', async () => {
+  const agora = 1_800_000_000_000
+  assert.deepEqual(await estadoComTeste(5, agora - 6 * 60_000, null, agora, agora - 60_000), [])
+  assert.equal((await estadoComTeste(5, agora - 60_000, null, agora, agora - 6 * 60_000)).length, 1)
+})
+
+test('teste_sem_saida: sem saida e sem filho usa o início da trava', async () => {
   const agora = 1_800_000_000_000
   assert.equal((await estadoComTeste(5, agora - 6 * 60_000, null, agora)).length, 1)
   assert.equal((await estadoComTeste(5, agora - 2 * 60_000, null, agora)).length, 0)

@@ -181,6 +181,7 @@ test('fila por banco: Postgres também aparece como banco', async () => {
       comando: 'x',
       fila: null,
       desde_ts: 1,
+      filho_ts: null,
       saida: null,
     },
   ]

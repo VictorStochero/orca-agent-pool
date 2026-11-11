@@ -1,14 +1,8 @@
 import { StringDecoder } from 'node:string_decoder'
+import type { InfoTrava } from '../trava.ts'
 
-export type SaidaTeste = {
-  /** epoch ms do último chunk recebido (stdout ou stderr). */
-  ts: number
-  linha: string | null
-  linhas: number
-  pct: number | null
-  feitos: number | null
-  total: number | null
-}
+/** `ts` é o epoch ms do último chunk recebido (stdout ou stderr). */
+export type SaidaTeste = NonNullable<InfoTrava['saida']>
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: o ESC é o que se quer remover
 const ANSI = /\u001b\[[0-9;?]*[ -/]*[@-~]/g

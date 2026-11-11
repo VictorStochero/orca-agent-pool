@@ -14,6 +14,7 @@ import { limparTravasMortas, soltarVaga, TETO, tomarVaga } from './travas.ts'
 
 const POLL_MS = 250
 const GRAVAR_SAIDA_MS = 1000
+const DRENAR_SAIDA_MS = 500
 
 /** Avisos da fila como código + dados; quem exibe (CLI) traduz. */
 export type EventoFila =
@@ -215,14 +216,25 @@ export async function rodarNaFila(o: OpcoesRodar): Promise<number> {
       }
       filho.stdout?.on('data', aoChunk('out'))
       filho.stderr?.on('data', aoChunk('err'))
+      let folga: NodeJS.Timeout | null = null
+      const fim = (codigo: number) => {
+        if (pendente) clearTimeout(pendente)
+        if (folga) clearTimeout(folga)
+        resolve(codigo)
+      }
       filho.on('error', e => {
-        if (pendente) clearTimeout(pendente)
         avisar({ codigo: 'falha_inicio', comando: lancado[0], erro: e.message })
-        resolve(127)
+        fim(127)
       })
-      filho.on('close', (c, s) => {
-        if (pendente) clearTimeout(pendente)
-        resolve(c ?? 128 + (constants.signals[s as NodeJS.Signals] ?? 0))
+      // O código vem do `exit`: um neto que herdou a saída segura o `close` e prenderia as vagas.
+      filho.on('exit', (c, s) => {
+        const codigo = c ?? 128 + (constants.signals[s as NodeJS.Signals] ?? 0)
+        folga = setTimeout(() => {
+          filho?.stdout?.destroy()
+          filho?.stderr?.destroy()
+          fim(codigo)
+        }, DRENAR_SAIDA_MS)
+        filho?.once('close', () => fim(codigo))
       })
     })
 
