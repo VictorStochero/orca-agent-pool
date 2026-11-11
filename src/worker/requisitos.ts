@@ -4,7 +4,7 @@ import { skillPronta } from '../core/skill.ts'
 import type { SituacaoHook } from '../hooks/comum.ts'
 import type { DetalheRequisito, IdInstalavel, IdRequisito, RequisitoItem, Requisitos } from '../protocol.ts'
 
-export const ORCA_MINIMO = '1.4.247'
+export const ORCA_MINIMO = '1.4.248'
 const VALIDADE_MS = 60_000
 const INSTALAVEIS: readonly IdInstalavel[] = ['orchestration', 'skill', 'lancador', 'hooks']
 

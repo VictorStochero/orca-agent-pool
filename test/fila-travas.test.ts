@@ -45,3 +45,13 @@ test('trava com filho null não derruba a varredura', () => {
   travas.limparTravasMortas(p)
   assert.equal(existsSync(join(p.fila, 'global', '1')), false)
 })
+
+test('listarTestes devolve a saida da trava e null sem ela', () => {
+  const p = paths(tmp())
+  const saida = { ts: 5, linha: 'x', linhas: 2, pct: 10, feitos: 1, total: 10, passou: 1, falhou: 0 }
+  assert.ok(publicar(join(p.fila, 'global', '1'), { pid: process.pid, inicio: 1, saida }))
+  assert.ok(publicar(join(p.fila, 'global', '2'), { pid: process.pid, inicio: 2 }))
+  const [a, b] = travas.listarTestes(p, () => true)
+  assert.deepEqual(a.saida, saida)
+  assert.equal(b.saida, null)
+})

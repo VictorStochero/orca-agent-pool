@@ -24,6 +24,8 @@ export type ConfigFila = {
   teto: number
   processos: number
   esperaMaxS: number
+  /** Minutos sem saída do teste em execução até o aviso `teste_sem_saida`; 0 desliga. */
+  semSaidaMin?: number
   /** Apaga os bancos `<base>_test_N` depois de `artisan test --parallel`; ausente = desligado, até o usuário ligar. */
   limparBancos?: boolean
 }

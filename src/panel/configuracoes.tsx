@@ -1,7 +1,7 @@
 // Seção Configurações: um seletor de assunto (cabe em painel estreito); a edição das contas, da fila, do pool etc. fica no módulo de cada uma.
-import { atom, Button, Card, Collapsible, Input, read, Select, Stack, set, storage, Text, update } from 'orca'
+import { atom, Button, Collapsible, Input, read, Select, Stack, set, storage, Text, update } from 'orca'
 import { CHAVE_INTERVALO, type Estado, INTERVALO_S } from '../protocol'
-import { ComDica, Mensagem } from './comum'
+import { ComDica, Mensagem, Secao } from './comum'
 import { ConfigContas } from './contas'
 import { avisar, edicoes, mudar } from './estado'
 import { ConfigFila } from './fila'
@@ -67,7 +67,7 @@ export function SecaoConfiguracoes({ e }: { e: Estado }) {
     { id: 'painel', corpo: <ConfigPainel /> },
   ] as const
   return (
-    <Card>
+    <Secao>
       <Collapsible title={t.configuracoes.titulo} description={t.configuracoes.descricao}>
         <Stack gap="sm">
           <Select
@@ -79,6 +79,6 @@ export function SecaoConfiguracoes({ e }: { e: Estado }) {
           {abas.find(a => a.id === assunto)?.corpo}
         </Stack>
       </Collapsible>
-    </Card>
+    </Secao>
   )
 }

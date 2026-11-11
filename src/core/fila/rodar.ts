@@ -6,12 +6,18 @@ import type { Paths } from '../paths.ts'
 import type { ConfigFila } from '../tipos.ts'
 import { anotar, esperar, type InfoTrava, publicar, removerMelhorEsforco, vivoPadrao } from '../trava.ts'
 import { detectarExecutor, type Executor } from './executores.ts'
+import { contarListagem, type PlanoListagem, planoDeListagem, planoDoExecutor } from './listagem.ts'
 import { aquecerOrfaos } from './orfao.ts'
 import { comLimpezaDeBancos, limitarProcessos } from './processos.ts'
 import { chaveFila, detectarRecurso, nomeProjeto } from './recurso.ts'
+import { acompanharSaida } from './saida.ts'
 import { limparTravasMortas, soltarVaga, TETO, tomarVaga } from './travas.ts'
 
 const POLL_MS = 250
+const GRAVAR_SAIDA_MS = 1000
+const DRENAR_SAIDA_MS = 500
+const LISTAGEM_MAX_MS = 120_000
+const LISTAGEM_MAX_BYTES = 20 * 1024 * 1024
 
 /** Avisos da fila como código + dados; quem exibe (CLI) traduz. */
 export type EventoFila =
@@ -35,6 +41,8 @@ export type OpcoesRodar = {
   aquecer?: () => Promise<void>
   /** Relê vagas e teto a cada volta da espera (a chave e o modo do início ficam); padrão: `config`, sem reler. */
   lerConfig?: () => ConfigFila
+  /** Comando que lista os testes (total da barra de progresso); padrão: `planoDeListagem`. Os testes trocam para não chamar php/vitest. */
+  listagem?: (comando: string[]) => PlanoListagem | null
 }
 
 /** `VAR=x cmd` vira env do filho (o spawn não interpreta atribuição); `FOO=bar` sozinho segue sendo o comando. */
@@ -107,9 +115,11 @@ export async function rodarNaFila(o: OpcoesRodar): Promise<number> {
 
   let sinal: NodeJS.Signals | null = null
   let filho: ChildProcess | null = null
+  let listando = null as ChildProcess | null
   const aoSinal = (s: NodeJS.Signals) => {
     sinal = s
     filho?.kill()
+    listando?.kill()
   }
   process.on('SIGINT', aoSinal)
   process.on('SIGTERM', aoSinal)
@@ -144,6 +154,7 @@ export async function rodarNaFila(o: OpcoesRodar): Promise<number> {
     }
   }
 
+  const limpezas: (() => void)[] = []
   let vagaFila: number | null = null
   let vagaTeto: number | null = null
   try {
@@ -158,21 +169,123 @@ export async function rodarNaFila(o: OpcoesRodar): Promise<number> {
     const { comando: lancado, ajustes } = ajustado()
     for (const a of ajustes) avisar({ codigo: 'processos_ajustados', ...a })
     const code = await new Promise<number>(resolve => {
-      filho = lancar(lancado, o.dir, { CI: '1', ...envTeste })
+      filho = lancar(lancado, o.dir, { CI: '1', ...envTeste }, ['inherit', 'pipe', 'pipe'])
+      const dirs = [join(base, String(vagaFila)), join(baseTeto, String(vagaTeto))]
       if (filho.pid) {
         const f = { pid: filho.pid, inicio: agora() }
-        anotar(join(base, String(vagaFila)), { filho: f, comando: lancado.join(' ') })
-        anotar(join(baseTeto, String(vagaTeto)), { filho: f, comando: lancado.join(' ') })
+        for (const d of dirs) anotar(d, { filho: f, comando: lancado.join(' ') })
+      }
+      // Grava a primeira saída na hora e depois no máximo 1x/s; a última fica pendente num timer.
+      const acomp = acompanharSaida(agora)
+      let ultima = 0
+      let pendente: NodeJS.Timeout | null = null
+      const gravar = () => {
+        pendente = null
+        ultima = agora()
+        const saida = acomp.estado()
+        if (saida) for (const d of dirs) anotar(d, { saida })
+      }
+      const aoChunk = (fonte: 'out' | 'err') => {
+        const destino = fonte === 'out' ? process.stdout : process.stderr
+        const origem = fonte === 'out' ? filho!.stdout : filho!.stderr
+        let aberto = true
+        const retomar = () => origem?.resume()
+        // Erro de escrita (EPIPE: leitor fechou o pipe) só para o repasse; a fila segue lendo o filho.
+        const aoErro = () => {
+          aberto = false
+          retomar()
+        }
+        destino.on('error', aoErro)
+        destino.on('drain', retomar)
+        limpezas.push(() => {
+          destino.off('error', aoErro)
+          destino.off('drain', retomar)
+        })
+        return (chunk: Buffer) => {
+          // Bytes crus ao terminal: o filho pode escrever em codepage e recodificar corromperia.
+          if (aberto) {
+            try {
+              // Contrapressão: o filho fica parado no pipe até o terminal drenar.
+              if (!destino.write(chunk)) origem?.pause()
+            } catch {
+              aberto = false
+            }
+          }
+          visto(fonte, chunk)
+        }
+      }
+      const visto = (fonte: 'out' | 'err', chunk: Buffer) => {
+        acomp.receber(fonte, chunk)
+        if (pendente) return
+        const espera = ultima + GRAVAR_SAIDA_MS - agora()
+        if (espera <= 0) gravar()
+        else pendente = setTimeout(gravar, espera)
+      }
+      filho.stdout?.on('data', aoChunk('out'))
+      filho.stderr?.on('data', aoChunk('err'))
+      let folga: NodeJS.Timeout | null = null
+      let terminou = false
+      const fim = (codigo: number) => {
+        terminou = true
+        if (pendente) clearTimeout(pendente)
+        if (folga) clearTimeout(folga)
+        listando?.kill()
+        resolve(codigo)
+      }
+
+      // Em paralelo, sem atrasar o teste: lista os testes só para saber o total (a % da barra); qualquer falha é ignorada.
+      const plano = (o.listagem ?? ((c: string[]) => planoDeListagem(c) ?? (argv.length ? null : planoDoExecutor(executor.nome, o.dir))))(
+        lancado,
+      )
+      if (plano) {
+        const partes: Buffer[] = []
+        let bytes = 0
+        const l = lancar(plano.comando, o.dir, { CI: '1', ...envTeste }, ['ignore', 'pipe', 'pipe'])
+        listando = l
+        const limiteListagem = setTimeout(() => l.kill(), LISTAGEM_MAX_MS)
+        l.stdout?.on('data', (c: Buffer) => {
+          bytes += c.length
+          if (bytes <= LISTAGEM_MAX_BYTES) partes.push(c)
+        })
+        l.stderr?.resume()
+        l.on('error', () => clearTimeout(limiteListagem))
+        l.on('close', code => {
+          clearTimeout(limiteListagem)
+          if (listando === l) listando = null
+          if (code !== 0 || bytes > LISTAGEM_MAX_BYTES || terminou) return
+          const n = contarListagem(plano.tipo, Buffer.concat(partes).toString('utf8'))
+          if (n === null) return
+          acomp.definirTotal(n)
+          if (pendente) clearTimeout(pendente)
+          gravar()
+        })
       }
       filho.on('error', e => {
         avisar({ codigo: 'falha_inicio', comando: lancado[0], erro: e.message })
-        resolve(127)
+        fim(127)
       })
-      filho.on('close', (c, s) => resolve(c ?? 128 + (constants.signals[s as NodeJS.Signals] ?? 0)))
+      // O código vem do `exit`: um neto que herdou a saída segura o `close` e prenderia as vagas.
+      filho.on('exit', (c, s) => {
+        const codigo = c ?? 128 + (constants.signals[s as NodeJS.Signals] ?? 0)
+        // Leitura pausada = terminal lento e saída ainda por repassar: a folga só conta com o repasse em dia.
+        const soltar = () => {
+          if (filho?.stdout?.isPaused() || filho?.stderr?.isPaused()) {
+            folga = setTimeout(soltar, DRENAR_SAIDA_MS)
+            return
+          }
+          filho?.stdout?.destroy()
+          filho?.stderr?.destroy()
+          fim(codigo)
+        }
+        folga = setTimeout(soltar, DRENAR_SAIDA_MS)
+        filho?.once('close', () => fim(codigo))
+      })
     })
 
     return code
   } finally {
+    for (const l of limpezas) l()
+    listando?.kill()
     if (vagaTeto !== null) soltarVaga(baseTeto, vagaTeto)
     if (vagaFila !== null) soltarVaga(base, vagaFila)
     process.off('SIGINT', aoSinal)

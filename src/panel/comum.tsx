@@ -1,5 +1,23 @@
 // Componentes usados por mais de uma seção.
-import { Button, Code, IconButton, type OrcaNode, Row, read, Stack, Table, type TableCell, type TableRow, Text } from 'orca'
+import {
+  Box,
+  Button,
+  Code,
+  env,
+  IconButton,
+  List,
+  ListItem,
+  type OrcaNode,
+  RelativeTime,
+  type RelativeTimeCell,
+  Row,
+  read,
+  Separator,
+  Stack,
+  type TableCell,
+  Text,
+  type TextProps,
+} from 'orca'
 import { avisos, gravando, releituraFalhou, salvar } from './estado'
 import { t } from './textos'
 
@@ -42,6 +60,25 @@ export function ComDica({ texto, children }: { texto: string; children: OrcaNode
 }
 
 /** Lista de arquivos que um clique vai gravar, um por linha. */
+/** Cartão das seções: borda, cantos e fundo do tema, com menos espaço interno que o Card nativo (que não aceita padding). */
+export function Secao({ titulo, descricao, children }: { titulo?: string; descricao?: string; children?: OrcaNode }) {
+  return (
+    <Box border radius="lg" background="card" padding="lg" gap="md">
+      {titulo ? (
+        <Stack gap="none">
+          <Text weight="semibold">{titulo}</Text>
+          {descricao ? (
+            <Text size="sm" muted>
+              {descricao}
+            </Text>
+          ) : null}
+        </Stack>
+      ) : null}
+      {children}
+    </Box>
+  )
+}
+
 export function Arquivos({ titulo, lista }: { titulo: string; lista: readonly string[] }) {
   return (
     <Stack gap="xs">
@@ -55,8 +92,8 @@ export function Arquivos({ titulo, lista }: { titulo: string; lista: readonly st
   )
 }
 
-/** Detalhe: [rótulo, valor] nas duas primeiras colunas, ou células por coluna (ex.: limite separado em 5h e Semanal). */
-export type Detalhe = [string, string | number] | { celulas: Record<string, TableCell> }
+/** Detalhe: [rótulo, valor]; o valor pode ser um tempo relativo, que o Orca mantém atualizado. */
+export type Detalhe = [string, string | number | RelativeTimeCell]
 /** Linha de detalhe condicional: some quando o valor é vazio ou falso. */
 export const se = (rotulo: string, valor: string | false | null | undefined): Detalhe[] => (valor ? [[rotulo, valor]] : [])
 export type Linha = { key: string; cells: Record<string, TableCell>; detalhes: Detalhe[] }
@@ -64,21 +101,46 @@ type Coluna = {
   key: string
   label: string
   align?: 'start' | 'center' | 'end'
-  width?: 'auto' | 'xs' | 'sm' | 'md' | 'lg'
-  minWidth?: 'auto' | 'xs' | 'sm' | 'md'
+  /** Largura em px: mínima na primeira coluna (que cresce) e fixa nas demais. */
+  largura: number
 }
 
-/** O Orca invalida a Table inteira se uma célula de texto passar de 1024 caracteres (maxLabelLength). */
-const LIMITE_CELULA = 1024
-function caber<T>(v: T): T | string {
-  if (typeof v !== 'string' || v.length <= LIMITE_CELULA) return v
-  const alto = /[\uD800-\uDBFF]/.test(v[LIMITE_CELULA - 2]) // não deixa metade de um par substituto antes do "…"
-  return `${v.slice(0, LIMITE_CELULA - (alto ? 2 : 1))}…`
+/** Largura (px) da coluna da seta e do respiro entre as colunas, para a soma da largura mínima da tabela. */
+const LARGURA_SETA = 28
+const RESPIRO_COLUNA = 8
+/** Largura do rótulo na linha de detalhe; o valor ocupa o resto e quebra linha. */
+const LARGURA_ROTULO = '35%'
+/** Pontos onde o navegador pode quebrar um valor longo (caminho, comando, endereço). */
+const PONTOS_DE_QUEBRA = /([/\\_:-])/g
+/** O Text do Orca não quebra palavra: um ZWSP depois de / \ _ : - deixa quebrar sem mudar o texto à vista. */
+const quebravel = (s: string) => s.replace(PONTOS_DE_QUEBRA, '$1​')
+/** Rótulo do cabeçalho em maiúsculas, nas regras do idioma do painel. */
+function maiusculas(s: string): string {
+  try {
+    return s.toLocaleUpperCase(env.locale || undefined)
+  } catch {
+    return s.toUpperCase()
+  }
+}
+
+function Valor({ v, truncar, quebrar, ...props }: { v: TableCell | RelativeTimeCell; truncar?: boolean; quebrar?: boolean } & TextProps) {
+  return (
+    <Text {...props} truncate={truncar}>
+      {typeof v === 'object' && v !== null ? (
+        <RelativeTime at={v.at} format={v.format} />
+      ) : quebrar ? (
+        quebravel(String(v ?? ''))
+      ) : (
+        String(v ?? '')
+      )}
+    </Text>
+  )
 }
 
 /**
- * Table nativa que expande a linha: a selecionada ganha, logo abaixo, linhas de detalhe (desabilitadas) com o rótulo na
- * primeira coluna e o valor na segunda (ou, no detalhe com células, o valor de cada coluna). Cada clique alterna a linha (várias abertas; clicar de novo recolhe). Só leitura.
+ * Tabela própria (List + Box, com o tema do Orca): contorno arredondado, cabeçalho em maiúsculas, uma List por linha (a linha
+ * inteira é o clique) com divisória entre elas e, na aberta, um bloco de duas colunas (rótulo e valor inteiro) colado nela.
+ * Várias abertas; clicar de novo recolhe. Abaixo da largura mínima das colunas rola na horizontal, dentro do contorno. Só leitura.
  */
 export function TabelaExpansivel(props: {
   label: string
@@ -87,34 +149,83 @@ export function TabelaExpansivel(props: {
   abertas: string[]
   onAbrir: (keys: string[]) => void
 }) {
-  const [c0, c1] = props.colunas
-  const rows: TableRow[] = props.linhas.flatMap(l => [
-    { key: l.key, cells: Object.fromEntries(Object.entries(l.cells).map(([k, v]) => [k, caber(v)])) } as TableRow,
-    ...(props.abertas.includes(l.key)
-      ? l.detalhes.map(
-          (d, i) =>
-            ({
-              key: `${l.key}#${i}`,
-              disabled: true,
-              cells: Array.isArray(d)
-                ? { [c0.key]: caber(d[0]), [c1.key]: caber(d[1]) }
-                : Object.fromEntries(Object.entries(d.celulas).map(([k, v]) => [k, caber(v)])),
-            }) as TableRow,
-        )
-      : []),
-  ])
+  const larguraMinima = LARGURA_SETA + props.colunas.reduce((n, c) => n + c.largura + RESPIRO_COLUNA, 0)
+  const celula = (prefixo: string, c: Coluna, i: number, conteudo: OrcaNode) => (
+    <Box
+      key={`${prefixo}.${c.key}`}
+      direction="row"
+      justify={c.align === 'end' ? 'end' : 'start'}
+      grow={i === 0}
+      shrink={i === 0}
+      minWidth={i === 0 ? c.largura : undefined}
+      width={i === 0 ? undefined : c.largura}
+    >
+      {conteudo}
+    </Box>
+  )
+  // Seta e colunas num só array: as chaves das células ficam visíveis (e testáveis).
+  const linhaDe = (prefixo: string, seta: OrcaNode, celulas: (c: Coluna, i: number) => OrcaNode) => (
+    <Box direction="row" gap="sm" align="center">
+      {[
+        <Box key={`${prefixo}.seta`} width={LARGURA_SETA} shrink={false}>
+          {seta}
+        </Box>,
+        ...props.colunas.map((c, i) => celula(prefixo, c, i, celulas(c, i))),
+      ]}
+    </Box>
+  )
+  const alternar = (k: string) => props.onAbrir(props.abertas.includes(k) ? props.abertas.filter(x => x !== k) : [...props.abertas, k])
   return (
-    <Table
-      label={props.label}
-      columns={props.colunas}
-      rows={rows}
-      // Seleção sempre vazia: todo clique chega como evento e alterna a linha (o clique comum do Orca substitui a seleção e não recolhe).
-      selectionMode="single"
-      selected={[]}
-      onSelectionChange={({ keys }) => {
-        const k = keys.find(x => !x.includes('#'))
-        if (k) props.onAbrir(props.abertas.includes(k) ? props.abertas.filter(x => x !== k) : [...props.abertas, k])
-      }}
-    />
+    <Box key={`tabela:${props.label}`} border radius="md">
+      <Box scroll="x">
+        <Box gap="none" minWidth={larguraMinima}>
+          {[
+            // Cabeçalho também em ListItem (sem clique) para ter o mesmo recuo das linhas.
+            <List key="cabecalho" label={props.label}>
+              <ListItem>
+                {linhaDe('cabecalho', null, c => (
+                  <Text size="xs" muted weight="semibold" truncate>
+                    {maiusculas(c.label)}
+                  </Text>
+                ))}
+              </ListItem>
+            </List>,
+            ...props.linhas.flatMap(l => {
+              const aberta = props.abertas.includes(l.key)
+              return [
+                <Separator key={`${l.key}#divisoria`} />,
+                // Uma List por linha: o ListItem dá o clique na linha inteira e o hover do tema; a List só aceita ListItem.
+                <List key={l.key} label={`${props.label}: ${l.key}`}>
+                  <ListItem onPress={() => alternar(l.key)}>
+                    {linhaDe(l.key, <Text muted>{aberta ? '⌄' : '›'}</Text>, c => (
+                      <Valor v={l.cells[c.key]} truncar />
+                    ))}
+                  </ListItem>
+                </List>,
+                ...(aberta
+                  ? [
+                      <Box key={`${l.key}#detalhes`} background="muted" radius="md" padding="sm" gap="sm" margin="xs">
+                        {l.detalhes.flatMap(([rotulo, valor], i) => [
+                          ...(i > 0 ? [<Separator key={`${l.key}#${i}:divisoria`} />] : []),
+                          <Box key={`${l.key}#${i}`} direction="row" gap="sm" align="start">
+                            <Box key={`${l.key}#${i}:rotulo`} width={LARGURA_ROTULO} shrink={false}>
+                              <Text size="sm" muted>
+                                {rotulo}
+                              </Text>
+                            </Box>
+                            <Box key={`${l.key}#${i}:valor`} grow>
+                              <Valor v={valor} size="sm" quebrar />
+                            </Box>
+                          </Box>,
+                        ])}
+                      </Box>,
+                    ]
+                  : []),
+              ]
+            }),
+          ]}
+        </Box>
+      </Box>
+    </Box>
   )
 }

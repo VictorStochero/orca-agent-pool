@@ -245,3 +245,19 @@ test('config.json já gravada com caminho acentuado carrega; a entrada nova com 
   recusa(() => aplicar(gravada, { 'conta.w.config': 'C:/Users/João/outro' }), 'valor_invalido')
   fim()
 })
+
+test('fila.sem_saida_min: 0 a 1440, padrão 5, config antiga sem a chave lê o padrão', () => {
+  assert.equal(PADRAO.fila.semSaidaMin, 5)
+  assert.equal(aplicar(PADRAO, { 'fila.sem_saida_min': '0' }).fila.semSaidaMin, 0)
+  assert.equal(aplicar(PADRAO, { 'fila.sem_saida_min': '1440' }).fila.semSaidaMin, 1440)
+  for (const v of ['-1', '1441', 'abc']) recusa(() => aplicar(PADRAO, { 'fila.sem_saida_min': v }), 'valor_invalido')
+  const { p, fim } = casa()
+  try {
+    mkdirSync(p.raiz, { recursive: true })
+    const { semSaidaMin: _, ...filaAntiga } = PADRAO.fila
+    writeFileSync(p.config, JSON.stringify({ ...PADRAO, fila: filaAntiga }))
+    assert.equal(carregar(p).fila.semSaidaMin, 5)
+  } finally {
+    fim()
+  }
+})
