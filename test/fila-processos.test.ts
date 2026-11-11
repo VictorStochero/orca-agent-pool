@@ -186,6 +186,8 @@ describe('rodarNaFila com comando explícito', () => {
         config: { ...cfg(4), limparBancos },
         p: paths(tmp()),
         env: { SAIDA: saida },
+        // `artisan test` ganharia a listagem em paralelo, que roda o mesmo script e regravaria o argv.json.
+        listagem: () => null,
       })
       const argv: string[] = JSON.parse(readFileSync(saida, 'utf8'))
       assert.equal(argv.includes('--drop-databases'), limparBancos)
