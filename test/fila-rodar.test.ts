@@ -547,3 +547,39 @@ test('a gravação pendente da saída chega à trava com o filho vivo e calado',
     JSON.stringify(vistos.map(v => v.saida.linhas)),
   )
 })
+
+test('terminal lento (contrapressão): a folga do exit espera o drain e o fim da saída chega', async () => {
+  const p = paths(tmp())
+  const pidArq = join(tmp(), 'neto.pid')
+  // O neto detached segura o pipe aberto: sem ele o Windows entrega o que ficou pausado no EOF e o corte não aparece.
+  const script = `const {spawn}=require('child_process');const n=spawn(process.execPath,['-e','setTimeout(()=>{},5000)'],{detached:true,stdio:'inherit'});require('fs').writeFileSync(${JSON.stringify(pidArq)},String(n.pid));n.unref();console.log('a');for(let i=1;i<=10;i++)setTimeout(()=>console.log('b'+i),i*30);setTimeout(()=>console.log('fim'),350)`
+  const cmd = [process.execPath, '-e', script]
+  const chunks: Buffer[] = []
+  const original = process.stdout.write
+  let lento = false
+  process.stdout.write = ((c: Buffer | string) => {
+    chunks.push(Buffer.from(c))
+    // O reporter do node:test também escreve no stdout: a contrapressão começa na saída do filho ('a') e vale até o drain.
+    if (/^a\r?\n$/.test(Buffer.from(c).toString())) lento = true
+    return !lento
+  }) as typeof process.stdout.write
+  const drenar = setTimeout(() => {
+    lento = false
+    process.stdout.emit('drain')
+  }, 2000)
+  let code: number
+  try {
+    code = await rodarNaFila({ dir: tmp(), comando: cmd, config: cfg(), p, env: {} })
+  } finally {
+    clearTimeout(drenar)
+    process.stdout.write = original
+    try {
+      process.kill(Number(readFileSync(pidArq, 'utf8')))
+    } catch {
+      // neto já saiu
+    }
+  }
+  assert.equal(code, 0)
+  // Linha inteira: o reporter do node:test também passa por este write (o nome do teste contém "fim").
+  assert.match(Buffer.concat(chunks).toString(), /^fim\r?$/m)
+})

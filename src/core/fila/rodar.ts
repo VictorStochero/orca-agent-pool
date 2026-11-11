@@ -229,11 +229,17 @@ export async function rodarNaFila(o: OpcoesRodar): Promise<number> {
       // O código vem do `exit`: um neto que herdou a saída segura o `close` e prenderia as vagas.
       filho.on('exit', (c, s) => {
         const codigo = c ?? 128 + (constants.signals[s as NodeJS.Signals] ?? 0)
-        folga = setTimeout(() => {
+        // Leitura pausada = terminal lento e saída ainda por repassar: a folga só conta com o repasse em dia.
+        const soltar = () => {
+          if (filho?.stdout?.isPaused() || filho?.stderr?.isPaused()) {
+            folga = setTimeout(soltar, DRENAR_SAIDA_MS)
+            return
+          }
           filho?.stdout?.destroy()
           filho?.stderr?.destroy()
           fim(codigo)
-        }, DRENAR_SAIDA_MS)
+        }
+        folga = setTimeout(soltar, DRENAR_SAIDA_MS)
         filho?.once('close', () => fim(codigo))
       })
     })
