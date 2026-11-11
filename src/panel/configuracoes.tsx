@@ -1,7 +1,7 @@
 // Seção Configurações: abas por assunto; a edição das contas, da fila, do pool etc. fica no módulo de cada uma.
-import { atom, Button, Card, Collapsible, Input, read, Stack, set, storage, Tab, Tabs, Text, update } from 'orca'
+import { atom, Button, Collapsible, Input, read, Stack, set, storage, Tab, Tabs, Text, update } from 'orca'
 import { CHAVE_INTERVALO, type Estado, INTERVALO_S } from '../protocol'
-import { ComDica, Mensagem } from './comum'
+import { ComDica, Mensagem, Secao } from './comum'
 import { ConfigContas } from './contas'
 import { avisar, edicoes, mudar } from './estado'
 import { ConfigFila } from './fila'
@@ -64,7 +64,7 @@ export function SecaoConfiguracoes({ e }: { e: Estado }) {
     { id: 'painel', corpo: <ConfigPainel /> },
   ] as const
   return (
-    <Card>
+    <Secao>
       <Collapsible title={t.configuracoes.titulo} description={t.configuracoes.descricao}>
         <Tabs label={t.configuracoes.assuntos} defaultValue="fila">
           {abas.map(a => (
@@ -74,6 +74,6 @@ export function SecaoConfiguracoes({ e }: { e: Estado }) {
           ))}
         </Tabs>
       </Collapsible>
-    </Card>
+    </Secao>
   )
 }

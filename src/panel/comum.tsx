@@ -12,6 +12,7 @@ import {
   type RelativeTimeCell,
   Row,
   read,
+  Separator,
   Stack,
   type TableCell,
   Text,
@@ -59,6 +60,25 @@ export function ComDica({ texto, children }: { texto: string; children: OrcaNode
 }
 
 /** Lista de arquivos que um clique vai gravar, um por linha. */
+/** Cartão das seções: borda, cantos e fundo do tema, com menos espaço interno que o Card nativo (que não aceita padding). */
+export function Secao({ titulo, descricao, children }: { titulo?: string; descricao?: string; children?: OrcaNode }) {
+  return (
+    <Box border radius="lg" background="card" padding="sm" gap="sm">
+      {titulo ? (
+        <Stack gap="none">
+          <Text weight="semibold">{titulo}</Text>
+          {descricao ? (
+            <Text size="sm" muted>
+              {descricao}
+            </Text>
+          ) : null}
+        </Stack>
+      ) : null}
+      {children}
+    </Box>
+  )
+}
+
 export function Arquivos({ titulo, lista }: { titulo: string; lista: readonly string[] }) {
   return (
     <Stack gap="xs">
@@ -137,9 +157,13 @@ export function TabelaExpansivel(props: {
         const aberta = props.abertas.includes(l.key)
         return [
           <ListItem key={l.key} current={aberta} onPress={() => alternar(l.key)}>
-            <Box direction="row" gap="xs">
-              {props.colunas.map((c, i) => celula(l.key, c, i, <Valor v={l.cells[c.key]} truncar />))}
-            </Box>
+            {/* Divisória entre as linhas, como a Table nativa; a List só aceita ListItem como filho. */}
+            <Stack gap="xs">
+              <Separator />
+              <Box direction="row" gap="xs">
+                {props.colunas.map((c, i) => celula(l.key, c, i, <Valor v={l.cells[c.key]} truncar />))}
+              </Box>
+            </Stack>
           </ListItem>,
           ...(aberta
             ? [

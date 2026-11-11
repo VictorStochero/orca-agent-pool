@@ -226,8 +226,9 @@ for (const [locale, fila, pool, config, imposicao, remover, reinstalar, ausencia
     assert.equal(chaves(view, fila).length, 3)
     assert.equal(chaves(view, pool).length, 3)
     assert.ok(view.find({ type: 'Collapsible', label: config }))
-    assert.equal(view.find({ type: 'Card', label: imposicao }), null) // o bloco solto saiu do corpo
-    assert.ok(view.find({ type: 'Card', text: new RegExp(config) })) // Configurações ganha o cartão das outras seções
+    assert.equal(view.find({ type: 'Card' }), null) // as seções usam o cartão próprio (Secao), mais justo que o Card
+    assert.equal(view.find({ text: new RegExp(`^${imposicao}$`) }), null) // o bloco solto de hooks saiu do corpo
+    assert.ok(view.find({ type: 'Box', text: new RegExp(config) })) // Configurações ganha o cartão das outras seções
     assert.equal(view.find({ type: 'Button', text: reinstalar }), null) // recolhida: os hooks só aparecem dentro dela
     await view.toggle({ label: config })
     await view.select({ label: t.configuracoes.assuntos }, 'imposicao')

@@ -1,7 +1,7 @@
 // Seção Fila (só leitura) e os campos de configuração da fila.
-import { atom, Card, Checkbox, Input, RadioGroup, Row, read, Stack, set, Text } from 'orca'
+import { atom, Checkbox, Input, RadioGroup, Row, read, Stack, set, Text } from 'orca'
 import type { Estado, ItemFila, TesteFila } from '../protocol'
-import { ComDica, type Detalhe, Dica, type Linha, Mensagem, Salvar, se, TabelaExpansivel } from './comum'
+import { ComDica, type Detalhe, Dica, type Linha, Mensagem, Salvar, Secao, se, TabelaExpansivel } from './comum'
 import { edicoes, mudar } from './estado'
 import { t } from './textos'
 
@@ -66,7 +66,7 @@ export function SecaoFila({ e }: { e: Estado }) {
     ],
   }))
   return (
-    <Card title={t.fila.titulo} description={t.fila.resumo(execucao, aguardando, fila.teto, t.fila.modos[fila.modo] ?? fila.modo)}>
+    <Secao titulo={t.fila.titulo} descricao={t.fila.resumo(execucao, aguardando, fila.teto, t.fila.modos[fila.modo] ?? fila.modo)}>
       <ComDica texto={t.fila.explica}>
         <Text muted size="xs">
           {t.fila.comoFunciona}
@@ -88,7 +88,7 @@ export function SecaoFila({ e }: { e: Estado }) {
           onAbrir={k => set(abertasTrava, k)}
         />
       )}
-    </Card>
+    </Secao>
   )
 }
 
