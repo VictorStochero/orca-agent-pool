@@ -577,3 +577,80 @@ test('terminal lento (contrapressão): a folga do exit espera o drain e o resumo
   assert.match(saida, /^RESUMO FINAL\r?$/m)
   assert.equal(saida.match(/linha \d\r?$/gm)?.length, 10)
 })
+
+const scriptListagem = (corpo: string) => [process.execPath, '-e', corpo]
+const plano = (corpo: string) => () => ({ tipo: 'phpunit' as const, comando: scriptListagem(corpo) })
+const calado = [process.execPath, '-e', "console.log('x'); setTimeout(() => {}, 1500)"]
+
+test('listagem em paralelo grava o total na saida das duas travas', async () => {
+  const p = paths(tmp())
+  const vistos: { fila: string; saida: { total: number | null; ts: number } }[] = []
+  const espia = espiarSaida(p, vistos as never)
+  const lista = "console.log('Available tests:'); for (const n of ['a', 'b', 'c']) console.log(' - T\\X::' + n)"
+  try {
+    await rodarNaFila({ dir: tmp(), comando: calado, config: cfg(), p, env: {}, listagem: plano(lista) })
+  } finally {
+    clearInterval(espia)
+  }
+  const comTotal = vistos.filter(v => v.saida.total === 3)
+  assert.ok(comTotal.length > 0, JSON.stringify(vistos))
+  assert.ok(new Set(comTotal.map(v => v.fila)).size >= 2, 'as duas travas')
+})
+
+test('listagem que falha, sai com erro ou não lista nada não grava total', async () => {
+  for (const corpo of ["console.log('Available tests:'); process.exit(1)", "console.log('Available tests:')", 'process.exit(0)']) {
+    const p = paths(tmp())
+    const vistos: { fila: string; saida: { total: number | null } }[] = []
+    const espia = espiarSaida(p, vistos as never)
+    try {
+      await rodarNaFila({ dir: tmp(), comando: calado, config: cfg(), p, env: {}, listagem: plano(corpo) })
+    } finally {
+      clearInterval(espia)
+    }
+    assert.ok(vistos.length > 0 && vistos.every(v => v.saida.total === null), corpo)
+  }
+})
+
+test('listagem ainda rodando é morta quando o teste termina', async () => {
+  const p = paths(tmp())
+  const pidArq = join(tmp(), 'listagem.pid')
+  const corpo = `require('fs').writeFileSync(${JSON.stringify(pidArq)}, String(process.pid)); setTimeout(() => {}, 30000)`
+  assert.equal(await rodarNaFila({ dir: tmp(), comando: calado, config: cfg(), p, env: {}, listagem: plano(corpo) }), 0)
+  const pid = Number(readFileSync(pidArq, 'utf8'))
+  let vivo = true
+  for (let i = 0; i < 30 && vivo; i++) {
+    try {
+      process.kill(pid, 0)
+      await new Promise(r => setTimeout(r, 100))
+    } catch {
+      vivo = false
+    }
+  }
+  assert.equal(vivo, false, 'listagem deixada viva')
+})
+
+test('a saída da listagem nunca vai ao stdout do pai', async () => {
+  const p = paths(tmp())
+  const escritos: string[] = []
+  const original = process.stdout.write
+  process.stdout.write = ((c: Buffer | string, ...resto: never[]) => {
+    escritos.push(Buffer.from(c).toString())
+    return original.call(process.stdout, c, ...resto)
+  }) as typeof process.stdout.write
+  try {
+    await rodarNaFila({
+      dir: tmp(),
+      comando: calado,
+      config: cfg(),
+      p,
+      env: {},
+      listagem: plano(
+        "console.log('Available tests:'); console.log(' - SEGREDO_DA_LISTAGEM::a'); console.error('SEGREDO_DA_LISTAGEM_ERR')",
+      ),
+    })
+  } finally {
+    process.stdout.write = original
+  }
+  assert.ok(escritos.some(e => e.includes('x')))
+  assert.ok(!escritos.some(e => e.includes('SEGREDO_DA_LISTAGEM')))
+})

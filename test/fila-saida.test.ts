@@ -143,3 +143,27 @@ test('sem símbolos nem marcas (pytest ou nada) passou e falhou ficam null', () 
 test('só pulados: contou algo, então passou 0 e falhou 0', () => {
   assert.deepEqual(contagem('ss\n'), [0, 0, 2, null])
 })
+
+test('total da listagem: % = feitos ÷ total, travada em 99; sem saída ainda dá 0% (0/N) com ts 0', () => {
+  const a = acompanharSaida(() => 5)
+  a.definirTotal(4)
+  assert.deepEqual(a.estado(), { ts: 0, linha: null, linhas: 0, pct: 0, feitos: 0, total: 4, passou: null, falhou: null })
+  a.receber('out', Buffer.from('  ✓ a\n  ⨯ b\n'))
+  assert.deepEqual([a.estado()?.pct, a.estado()?.feitos, a.estado()?.total, a.estado()?.passou, a.estado()?.falhou], [50, 2, 4, 1, 1])
+  a.receber('out', Buffer.from('  ✓ c\n  ✓ d\n  ✓ e\n'))
+  assert.deepEqual([a.estado()?.pct, a.estado()?.feitos], [99, 5]) // passa do total listado: trava em 99
+})
+
+test('o total impresso pelo PHPUnit tem precedência sobre o listado', () => {
+  const a = acompanharSaida(() => 1)
+  a.definirTotal(500)
+  a.receber('out', Buffer.from('..  4 / 10 ( 40%)\n'))
+  assert.deepEqual([a.estado()?.total, a.estado()?.pct, a.estado()?.feitos], [10, 40, 4])
+})
+
+test('pytest com pct impresso não é sobrescrito pelo total listado', () => {
+  const a = acompanharSaida(() => 1)
+  a.definirTotal(100)
+  a.receber('out', Buffer.from('x.py ..  [ 45%]\n'))
+  assert.equal(a.estado()?.pct, 45)
+})

@@ -36,8 +36,8 @@ function textoProgresso(s: NonNullable<TesteFila['saida']>): string | null {
 function detalhesSaida(x: TesteFila): Detalhe[] {
   const s = x.saida
   if (x.estado !== 'execucao') return []
-  // Sem saída ainda: o teste é acompanhado e só está calado (ex.: migrando o banco).
-  if (!s) return [[t.fila.ultimaSaida, t.fila.nenhumaAinda]]
+  // Sem saída ainda (ts 0 = só o total listado chegou): o teste é acompanhado e só está calado (ex.: migrando o banco).
+  if (!s || s.ts === 0) return [...se(t.fila.progresso, s && textoProgresso(s)), [t.fila.ultimaSaida, t.fila.nenhumaAinda]]
   return [
     ...se(t.fila.progresso, textoProgresso(s)),
     [t.fila.ultimaSaida, { type: 'relative', at: s.ts, format: 'duration' }],

@@ -6,6 +6,7 @@ import type { Paths } from '../paths.ts'
 import type { ConfigFila } from '../tipos.ts'
 import { anotar, esperar, type InfoTrava, publicar, removerMelhorEsforco, vivoPadrao } from '../trava.ts'
 import { detectarExecutor, type Executor } from './executores.ts'
+import { contarListagem, type PlanoListagem, planoDeListagem, planoDoExecutor } from './listagem.ts'
 import { aquecerOrfaos } from './orfao.ts'
 import { comLimpezaDeBancos, limitarProcessos } from './processos.ts'
 import { chaveFila, detectarRecurso, nomeProjeto } from './recurso.ts'
@@ -15,6 +16,8 @@ import { limparTravasMortas, soltarVaga, TETO, tomarVaga } from './travas.ts'
 const POLL_MS = 250
 const GRAVAR_SAIDA_MS = 1000
 const DRENAR_SAIDA_MS = 500
+const LISTAGEM_MAX_MS = 120_000
+const LISTAGEM_MAX_BYTES = 20 * 1024 * 1024
 
 /** Avisos da fila como código + dados; quem exibe (CLI) traduz. */
 export type EventoFila =
@@ -38,6 +41,8 @@ export type OpcoesRodar = {
   aquecer?: () => Promise<void>
   /** Relê vagas e teto a cada volta da espera (a chave e o modo do início ficam); padrão: `config`, sem reler. */
   lerConfig?: () => ConfigFila
+  /** Comando que lista os testes (total da barra de progresso); padrão: `planoDeListagem`. Os testes trocam para não chamar php/vitest. */
+  listagem?: (comando: string[]) => PlanoListagem | null
 }
 
 /** `VAR=x cmd` vira env do filho (o spawn não interpreta atribuição); `FOO=bar` sozinho segue sendo o comando. */
@@ -110,9 +115,11 @@ export async function rodarNaFila(o: OpcoesRodar): Promise<number> {
 
   let sinal: NodeJS.Signals | null = null
   let filho: ChildProcess | null = null
+  let listando = null as ChildProcess | null
   const aoSinal = (s: NodeJS.Signals) => {
     sinal = s
     filho?.kill()
+    listando?.kill()
   }
   process.on('SIGINT', aoSinal)
   process.on('SIGTERM', aoSinal)
@@ -217,10 +224,41 @@ export async function rodarNaFila(o: OpcoesRodar): Promise<number> {
       filho.stdout?.on('data', aoChunk('out'))
       filho.stderr?.on('data', aoChunk('err'))
       let folga: NodeJS.Timeout | null = null
+      let terminou = false
       const fim = (codigo: number) => {
+        terminou = true
         if (pendente) clearTimeout(pendente)
         if (folga) clearTimeout(folga)
+        listando?.kill()
         resolve(codigo)
+      }
+
+      // Em paralelo, sem atrasar o teste: lista os testes só para saber o total (a % da barra); qualquer falha é ignorada.
+      const plano = (o.listagem ?? ((c: string[]) => planoDeListagem(c) ?? (argv.length ? null : planoDoExecutor(executor.nome, o.dir))))(
+        lancado,
+      )
+      if (plano) {
+        const partes: Buffer[] = []
+        let bytes = 0
+        const l = lancar(plano.comando, o.dir, { CI: '1', ...envTeste }, ['ignore', 'pipe', 'pipe'])
+        listando = l
+        const limiteListagem = setTimeout(() => l.kill(), LISTAGEM_MAX_MS)
+        l.stdout?.on('data', (c: Buffer) => {
+          bytes += c.length
+          if (bytes <= LISTAGEM_MAX_BYTES) partes.push(c)
+        })
+        l.stderr?.resume()
+        l.on('error', () => clearTimeout(limiteListagem))
+        l.on('close', code => {
+          clearTimeout(limiteListagem)
+          if (listando === l) listando = null
+          if (code !== 0 || bytes > LISTAGEM_MAX_BYTES || terminou) return
+          const n = contarListagem(plano.tipo, Buffer.concat(partes).toString('utf8'))
+          if (n === null) return
+          acomp.definirTotal(n)
+          if (pendente) clearTimeout(pendente)
+          gravar()
+        })
       }
       filho.on('error', e => {
         avisar({ codigo: 'falha_inicio', comando: lancado[0], erro: e.message })
@@ -247,6 +285,7 @@ export async function rodarNaFila(o: OpcoesRodar): Promise<number> {
     return code
   } finally {
     for (const l of limpezas) l()
+    listando?.kill()
     if (vagaTeto !== null) soltarVaga(baseTeto, vagaTeto)
     if (vagaFila !== null) soltarVaga(base, vagaFila)
     process.off('SIGINT', aoSinal)

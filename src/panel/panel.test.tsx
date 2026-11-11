@@ -194,6 +194,31 @@ for (const [locale, fila, pool, config, imposicao, remover, reinstalar, ausencia
     assert.deepEqual(gravados, [{ 'fila.modo': 'banco' }]) // só o editado
   })
 
+  test(`${locale}: total listado: barra e % mesmo no Pest, travada em 99; sem saída ainda mostra 0% (0/N)`, async () => {
+    const com = (saida: NonNullable<Estado['fila']['testes'][0]['saida']>): Estado => ({
+      ...estadoExemplo,
+      fila: { ...estadoExemplo.fila, testes: [{ ...estadoExemplo.fila.testes[0], saida }] },
+    })
+    // Pest: feitos vêm dos ✓/⨯ e passam do total listado; o worker já manda o % em 99
+    view = await mount(panel, {
+      locale,
+      host: hostCom([], com({ ts: 1793650480000, linha: 'x', linhas: 9, pct: 99, feitos: 130, total: 120, passou: 128, falhou: 2 })),
+    })
+    await abrir(view, 'p4242')
+    assert.equal(valorDe(view, 'p4242', 0), `▓▓▓▓▓▓▓▓▓░ 99% (130/120) · ${t.fila.passaramFalharam(128, 2)}`)
+    await view.unmount()
+    // total listado antes de qualquer saída (ts 0): 0% (0/N) e "nenhuma ainda"
+    view = await mount(panel, {
+      locale,
+      host: hostCom([], com({ ts: 0, linha: null, linhas: 0, pct: 0, feitos: 0, total: 120, passou: null, falhou: null })),
+    })
+    await abrir(view, 'p4242')
+    assert.deepEqual([rotuloDe(view, 'p4242', 0), valorDe(view, 'p4242', 0)], [t.fila.progresso, '░░░░░░░░░░ 0% (0/120)'])
+    assert.deepEqual([rotuloDe(view, 'p4242', 1), valorDe(view, 'p4242', 1)], [t.fila.ultimaSaida, t.fila.nenhumaAinda])
+    assert.equal(rotuloDe(view, 'p4242', 2), t.fila.ondeRoda) // sem última linha nem linhas de saída
+    assert.equal(tem(view, lista(fila), new RegExp(t.fila.linhasSaida)), null)
+  })
+
   test(`${locale}: sem pct, o progresso diz quantos passaram e quantos falharam`, async () => {
     const e: Estado = {
       ...estadoExemplo,

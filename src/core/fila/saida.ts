@@ -47,6 +47,7 @@ export function acompanharSaida(agora: () => number) {
   const s: SaidaTeste = { ts: 0, linha: null, linhas: 0, pct: null, feitos: null, total: null, passou: null, falhou: null }
   let acc = VAZIA
   let visto = false
+  let totalListado: number | null = null
 
   const linha = (bruta: string) => {
     const l = bruta.replace(ANSI, '').trim()
@@ -72,16 +73,27 @@ export function acompanharSaida(agora: () => number) {
       resto[fonte] = partes.pop() ?? ''
       for (const p of partes) linha(p)
     },
+    /** Total vindo da listagem dos testes; só vale quando a própria saída não traz total. */
+    definirTotal(n: number) {
+      totalListado = n
+    },
     estado(): SaidaTeste | null {
-      if (!visto) return null
+      if (!visto && totalListado === null) return null
       // O compacto imprime os pontos na mesma linha, sem \n: o pedaço pendente só de símbolos conta (uma vez, até a linha fechar).
       const c = somar(somar(acc, contarSimbolos(resto.out)), contarSimbolos(resto.err))
-      return {
+      const r: SaidaTeste = {
         ...s,
         feitos: s.total === null && c.feitos ? c.feitos : s.feitos,
         passou: c.feitos ? c.passou : null,
         falhou: c.feitos ? c.falhou : null,
       }
+      if (s.total === null && totalListado !== null) {
+        r.total = totalListado
+        r.feitos ??= 0
+        // Travada em 99% enquanto roda: os feitos podem passar do total listado (data sets, testes dinâmicos).
+        r.pct ??= Math.min(99, Math.floor((r.feitos * 100) / totalListado))
+      }
+      return r
     },
   }
 }
