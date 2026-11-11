@@ -15,7 +15,16 @@ export type TesteFila = {
   /** Epoch em ms: início da trava (execução, parado) ou da espera (aguardando). */
   desde_ts: number | null
   /** Última saída do teste em execução (null sem ela); `ts` em epoch ms. */
-  saida: { ts: number; linha: string | null; linhas: number; pct: number | null; feitos: number | null; total: number | null } | null
+  saida: {
+    ts: number
+    linha: string | null
+    linhas: number
+    pct: number | null
+    feitos: number | null
+    total: number | null
+    passou: number | null
+    falhou: number | null
+  } | null
   /** Epoch em ms: início do processo do teste (sem a espera pelo teto); null se ainda não lançado. */
   filho_ts: number | null
 }

@@ -17,7 +17,16 @@ test('PHPUnit/paratest: feitos, total e pct do fim da linha', () => {
     '..........                                                        10 / 120 (  8%)\n',
     '...                 63 / 120 ( 52%)\n',
   )
-  assert.deepEqual(s, { ts: 1000, linha: '...                 63 / 120 ( 52%)', linhas: 2, pct: 52, feitos: 63, total: 120 })
+  assert.deepEqual(s, {
+    ts: 1000,
+    linha: '...                 63 / 120 ( 52%)',
+    linhas: 2,
+    pct: 52,
+    feitos: 63,
+    total: 120,
+    passou: 13,
+    falhou: 0,
+  })
 })
 
 test('pytest: só o pct', () => {
@@ -72,4 +81,65 @@ test('ts acompanha qualquer chunk, inclusive stderr e sem linha completa', () =>
   a.receber('err', Buffer.from('sem quebra'))
   const s = a.estado()
   assert.deepEqual([s?.ts, s?.linhas, s?.linha], [20, 1, 'a'])
+})
+
+test('compacto do PHPUnit/Pest: os símbolos de progresso de uma linha somam em feitos', () => {
+  const s = alimentar('....⨯..S.\n')
+  assert.deepEqual([s?.feitos, s?.total, s?.pct, s?.linhas], [9, null, null, 1])
+})
+
+test('compacto em pedaços e sem quebra: conta a linha ainda não terminada, sem contar duas vezes', () => {
+  const a = acompanharSaida(() => 1)
+  a.receber('out', Buffer.from('...'))
+  assert.equal(a.estado()?.feitos, 3)
+  a.receber('out', Buffer.from('..⨯.'))
+  assert.equal(a.estado()?.feitos, 7)
+  a.receber('out', Buffer.from('\n'))
+  assert.deepEqual([a.estado()?.feitos, a.estado()?.linhas], [7, 1])
+  a.receber('out', Buffer.from('..\n'))
+  assert.equal(a.estado()?.feitos, 9)
+})
+
+test('compacto misturado com o PHPUnit padrão: o total vence', () => {
+  const s = alimentar('....\n', '.....  63 / 120 ( 52%)\n', '..\n')
+  assert.deepEqual([s?.feitos, s?.total, s?.pct], [63, 120, 52])
+})
+
+test('linha comum com ponto final não conta como símbolo', () => {
+  assert.equal(alimentar('Done.\n', 'Tests: 3, Assertions: 3.\n')?.feitos, null)
+})
+
+test('pendente que não é só símbolos não conta', () => {
+  assert.equal(alimentar('Running tests...')?.feitos, null)
+})
+
+const contagem = (...partes: string[]) => {
+  const s = alimentar(...partes)
+  return [s?.passou, s?.falhou, s?.feitos, s?.total]
+}
+
+test('marcas mistas: ✓ e ✔ passaram, ⨯ × ✕ ✗ falharam', () => {
+  assert.deepEqual(contagem('  ✓ a\n  ✔ b\n  ⨯ c\n  × d\n  ✕ e\n  ✗ f\n'), [2, 4, 6, null])
+})
+
+test('compacto ..F..E.s em pedaços: passou 5, falhou 2, s não conta em nenhum', () => {
+  const a = acompanharSaida(() => 1)
+  a.receber('out', Buffer.from('..F'))
+  assert.deepEqual([a.estado()?.passou, a.estado()?.falhou], [2, 1])
+  a.receber('out', Buffer.from('..E.s'))
+  assert.deepEqual([a.estado()?.passou, a.estado()?.falhou, a.estado()?.feitos], [5, 2, 8])
+  a.receber('out', Buffer.from('\n'))
+  assert.deepEqual([a.estado()?.passou, a.estado()?.falhou, a.estado()?.feitos], [5, 2, 8])
+})
+
+test('PHPUnit padrão ..F.  4 / 10 ( 40%): passou 3, falhou 1, total 10', () => {
+  assert.deepEqual(contagem('..F.  4 / 10 ( 40%)\n'), [3, 1, 4, 10])
+})
+
+test('sem símbolos nem marcas (pytest ou nada) passou e falhou ficam null', () => {
+  assert.deepEqual(contagem('tests/test_a.py ....   [ 45%]\n'), [null, null, null, null])
+})
+
+test('só pulados: contou algo, então passou 0 e falhou 0', () => {
+  assert.deepEqual(contagem('ss\n'), [0, 0, 2, null])
 })

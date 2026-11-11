@@ -20,7 +20,7 @@ export const estadoExemplo: Estado = {
         fila: null,
         desde_ts: 1793650465000,
         filho_ts: 1793650466000,
-        saida: { ts: 1793650480000, linha: '... 63 / 120 ( 52%)', linhas: 12, pct: 52, feitos: 63, total: 120 },
+        saida: { ts: 1793650480000, linha: '... 63 / 120 ( 52%)', linhas: 12, pct: 52, feitos: 63, total: 120, passou: 61, falhou: 2 },
       },
       {
         pid: 4120,

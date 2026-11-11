@@ -10,7 +10,7 @@ import type { Estado } from '../protocol'
 import { AMBIENTE_VAZIO, montarEstado } from '../worker/estado.ts'
 import { criarRequisitos } from '../worker/requisitos.ts'
 import * as panel from './panel'
-import { abrir, celula, lista } from './tabela-teste'
+import { abrir, celula, lista, tem } from './tabela-teste'
 import { textosPara } from './textos'
 
 let view: TestPanel | undefined
@@ -165,8 +165,8 @@ test('en: recusa da config e erro de medida saem traduzidos, sem o código cru',
 test('cota acima do limite (81%) mostra o alerta no painel, pela regra do worker', async () => {
   const e = await estadoReal({ medidas: [medida('alfa', { estado: 'ok', curta: 81, longa: 10 })] })
   view = await mount(panel, { locale: 'pt-BR', host: hostCom(e) })
-  assert.ok(view.find({ ...lista('Contas do pool'), text: /⚠ 81%/ }))
-  assert.equal(view.find({ ...lista('Contas do pool'), text: /⚠ 10%/ }), null)
+  assert.ok(tem(view, lista('Contas do pool'), /⚠ 81%/))
+  assert.equal(tem(view, lista('Contas do pool'), /⚠ 10%/), null)
 })
 
 test('fila por banco: Postgres também aparece como banco', async () => {
@@ -187,7 +187,7 @@ test('fila por banco: Postgres também aparece como banco', async () => {
     },
   ]
   view = await mount(panel, { locale: 'pt-BR', host: hostCom(e) })
-  assert.ok(view.find({ ...lista('Testes na fila'), text: /Banco 127\.0\.0\.1:5432\/app/ }))
+  assert.ok(tem(view, lista('Testes na fila'), /Banco 127\.0\.0\.1:5432\/app/))
 })
 
 test('conta detectada pelo Orca só tem "Não utilizar"; a manual também pode ser removida', async () => {
@@ -219,7 +219,7 @@ test('conta ilimitada (vagas 0) com ocupação aparece como N/∞', async () => 
   const e = await estadoReal({ contas: [conta('livre', { vagas: 0 })] })
   e.pool.contas[0].usadas = 2
   view = await mount(panel, { locale: 'pt-BR', host: hostCom(e) })
-  assert.ok(view.find({ ...lista('Contas do pool'), text: /2\/∞/ }))
+  assert.ok(tem(view, lista('Contas do pool'), /2\/∞/))
 })
 
 for (const [locale, tabela] of [
@@ -246,7 +246,7 @@ for (const [locale, tabela] of [
     assert.equal(valorDe('Gemini 4 Argon'), `5h – · ${semanal} 53%`)
     await abrir(view, 'alfa')
     await abrir(view, 'beta')
-    assert.equal(view.find({ ...lista(tabela), text: /Gemini Models/ }), null)
+    assert.equal(tem(view, lista(tabela), /Gemini Models/), null)
   })
 }
 
@@ -282,11 +282,11 @@ for (const [locale, tabela, pasta, cli] of [
       ],
     )
     await abrir(view, 'alfa')
-    assert.ok(view.find({ ...lista(tabela), text: pasta }))
+    assert.ok(tem(view, lista(tabela), pasta))
     await abrir(view, 'alfa')
     await abrir(view, 'beta')
-    assert.ok(view.find({ ...lista(tabela), text: cli }))
-    assert.equal(view.find({ ...lista(tabela), text: /⚠/ }), null)
+    assert.ok(tem(view, lista(tabela), cli))
+    assert.equal(tem(view, lista(tabela), /⚠/), null)
   })
 }
 

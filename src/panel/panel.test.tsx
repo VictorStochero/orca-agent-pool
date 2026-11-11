@@ -2,7 +2,7 @@ import { afterEach, assert, mockHost as criarHost, hostError, mount as montar, t
 import type { Estado, EstadoHookAgente, Requisitos } from '../protocol'
 import { estadoComAlertas, estadoExemplo } from './fixtures'
 import * as panel from './panel'
-import { abrir as abrirLinha, cabecalho, celula, chaves, lista } from './tabela-teste'
+import { abrir as abrirLinha, cabecalho, celula, chaves, lista, nos, rotuloDe, semZwsp, tem, valorDe, ZWSP } from './tabela-teste'
 import { textosPara } from './textos'
 
 const mockHost = (opcoes: Parameters<typeof criarHost>[0] = {}) =>
@@ -123,22 +123,23 @@ for (const [locale, fila, pool, config, imposicao, remover, reinstalar, ausencia
     view = await mount(panel, { locale, host: hostCom([], estadoComAlertas) })
     assert.ok(view.find({ type: 'Callout', text: new RegExp(t.atencao) }))
     assert.ok(view.find({ type: 'Code', text: /claude auth login/ }))
-    assert.equal(view.find({ ...lista(pool), text: /84%/ }), null)
+    assert.equal(tem(view, lista(pool), /84%/), null)
   })
 
   test(`${locale}: fila expande o comando do teste`, async () => {
     view = await mount(panel, { locale, host: hostCom() })
     await abrir(view, 'p4242')
-    assert.ok(view.find({ ...lista(fila), text: new RegExp(t.fila.comando) }))
-    assert.ok(view.find({ ...lista(fila), text: /runner tests\/X.php/ }))
+    assert.ok(tem(view, lista(fila), new RegExp(t.fila.comando)))
+    assert.ok(tem(view, lista(fila), /runner tests\/X.php/))
   })
 
   test(`${locale}: fila expandida mostra progresso, última saída, última linha e linhas de saída em duas colunas`, async () => {
     view = await mount(panel, { locale, host: hostCom() })
     await abrir(view, 'p4242')
-    const rotulo = (i: number) => view!.find({ testId: `p4242#${i}:rotulo` })?.text
-    const valor = (i: number) => view!.find({ testId: `p4242#${i}:valor` })?.text
-    assert.deepEqual([rotulo(0), valor(0)], [t.fila.progresso, '▓▓▓▓▓░░░░░ 52% (63/120)']) // a barra inteira, sem corte
+    const rotulo = (i: number) => rotuloDe(view!, 'p4242', i)
+    const valor = (i: number) => valorDe(view!, 'p4242', i)
+    // a barra inteira, sem corte, com o total e as duas contagens
+    assert.deepEqual([rotulo(0), valor(0)], [t.fila.progresso, `▓▓▓▓▓░░░░░ 52% (63/120) · ${t.fila.passaramFalharam(61, 2)}`])
     assert.equal(rotulo(1), t.fila.ultimaSaida)
     assert.ok(view.find({ testId: 'p4242#1:valor' }) && view.find({ type: 'RelativeTime' }))
     assert.deepEqual([rotulo(2), valor(2)], [t.fila.ultimaLinha, '... 63 / 120 ( 52%)'])
@@ -147,20 +148,85 @@ for (const [locale, fila, pool, config, imposicao, remover, reinstalar, ausencia
     assert.equal(view.find({ testId: 'p4242#8:rotulo' }), null)
   })
 
-  test(`${locale}: sem pct, o progresso diz quantos testes já passaram`, async () => {
+  test(`${locale}: detalhes separados por divisória e com ZWSP só no valor exibido`, async () => {
+    view = await mount(panel, { locale, host: hostCom() })
+    await abrir(view, 'p4242')
+    // uma divisória entre cada par de itens (8 itens, 7 divisórias), nenhuma antes do primeiro
+    assert.deepEqual(
+      nos(view)
+        .filter(n => n.type === 'Separator' && /^p4242#\d+:divisoria$/.test(n.key ?? ''))
+        .map(n => n.key),
+      [1, 2, 3, 4, 5, 6, 7].map(i => `p4242#${i}:divisoria`),
+    )
+    const bruto = view.find({ testId: 'p4242#4:valor' })!.text
+    assert.ok(bruto.includes(ZWSP) && !bruto.includes(ZWSP.repeat(2)))
+    assert.equal(semZwsp(bruto), 'mysql 127.0.0.1:3308/app_test') // o texto à vista é o mesmo
+    assert.equal(view.find({ testId: 'p4242.projeto' })!.text.includes(ZWSP), false) // a célula da linha não leva ZWSP
+    assert.equal(view.find({ testId: 'p4242#4' })!.props.align, 'start') // rótulo no topo do valor
+  })
+
+  test(`${locale}: teste em execução sem nenhuma saída mostra "nenhuma ainda"`, async () => {
+    const e: Estado = {
+      ...estadoExemplo,
+      fila: { ...estadoExemplo.fila, testes: [{ ...estadoExemplo.fila.testes[0], saida: null }] },
+    }
+    view = await mount(panel, { locale, host: hostCom([], e) })
+    await abrir(view, 'p4242')
+    assert.deepEqual([rotuloDe(view, 'p4242', 0), valorDe(view, 'p4242', 0)], [t.fila.ultimaSaida, t.fila.nenhumaAinda])
+    assert.equal(tem(view, lista(fila), new RegExp(t.fila.progresso)), null)
+  })
+
+  test(`${locale}: campos da fila por modo: projeto só vagas por projeto; global e banco só vagas; o modo marcado vale antes de salvar`, async () => {
+    const gravados: unknown[] = []
+    view = await mount(panel, { locale, host: hostCom(gravados) }) // o estado de exemplo está no modo global
+    await view.toggle({ label: config })
+    await view.select({ label: t.configuracoes.assuntos }, 'fila')
+    const campo = (k: 'vagas' | 'vagas_projeto') => view!.find({ type: 'Input', label: t.fila.campos[k] })
+    const sempre = [t.fila.campos.teto, t.fila.campos.processos, t.fila.campos.sem_saida_min]
+    const temSempre = () => sempre.every(l => view!.find({ type: 'Input', label: l }))
+    assert.ok(campo('vagas') && !campo('vagas_projeto') && temSempre())
+    await view.select({ label: `${t.fila.campos.modo}: ${t.fila.modos.projeto}` }, 'projeto')
+    assert.ok(!campo('vagas') && campo('vagas_projeto') && temSempre())
+    await view.select({ label: `${t.fila.campos.modo}: ${t.fila.modos.banco}` }, 'banco')
+    assert.ok(campo('vagas') && !campo('vagas_projeto') && temSempre())
+    assert.ok(view.find({ type: 'Checkbox', label: /^(Apagar os bancos|Drop the)/ }))
+    await view.press({ type: 'Button', text: t.salvar })
+    assert.deepEqual(gravados, [{ 'fila.modo': 'banco' }]) // só o editado
+  })
+
+  test(`${locale}: sem pct, o progresso diz quantos passaram e quantos falharam`, async () => {
     const e: Estado = {
       ...estadoExemplo,
       fila: {
         ...estadoExemplo.fila,
         testes: [
-          { ...estadoExemplo.fila.testes[0], saida: { ts: 1793650470000, linha: null, linhas: 3, pct: null, feitos: 63, total: null } },
+          {
+            ...estadoExemplo.fila.testes[0],
+            saida: { ts: 1793650470000, linha: null, linhas: 3, pct: null, feitos: 88, total: null, passou: 86, falhou: 2 },
+          },
         ],
       },
     }
     view = await mount(panel, { locale, host: hostCom([], e) })
     await abrir(view, 'p4242')
-    assert.ok(view.find({ ...lista(fila), text: new RegExp(`${t.fila.progresso}.*${t.fila.feitosAteAgora(63)}`) }))
-    assert.equal(view.find({ ...lista(fila), text: new RegExp(t.fila.ultimaLinha) }), null)
+    assert.equal(valorDe(view, 'p4242', 0), t.fila.passaramFalharam(86, 2))
+    assert.equal(tem(view, lista(fila), new RegExp(t.fila.ultimaLinha)), null)
+    // sem falhas a parte "⨯ 0" continua à mostra; pytest (sem contagem) fica só com a barra
+    const sem = (passou: number | null, falhou: number | null, pct: number | null): Estado => ({
+      ...e,
+      fila: {
+        ...e.fila,
+        testes: [{ ...e.fila.testes[0], saida: { ts: 1, linha: null, linhas: 1, pct, feitos: null, total: null, passou, falhou } }],
+      },
+    })
+    await view.unmount()
+    view = await mount(panel, { locale, host: hostCom([], sem(5, 0, null)) })
+    await abrir(view, 'p4242')
+    assert.equal(valorDe(view, 'p4242', 0), t.fila.passaramFalharam(5, 0))
+    await view.unmount()
+    view = await mount(panel, { locale, host: hostCom([], sem(null, null, 45)) })
+    await abrir(view, 'p4242')
+    assert.equal(valorDe(view, 'p4242', 0), '▓▓▓▓░░░░░░ 45%')
   })
 
   test(`${locale}: configurações da fila têm o campo sem_saida_min e o texto do alerta teste_sem_saida`, async () => {
@@ -179,11 +245,11 @@ for (const [locale, fila, pool, config, imposicao, remover, reinstalar, ausencia
 
   test(`${locale}: pool identifica conta desativada`, async () => {
     view = await mount(panel, { locale, host: hostCom() })
-    assert.ok(view.find({ ...lista(pool), text: new RegExp(t.pool.naoUtilizada) }))
+    assert.ok(tem(view, lista(pool), new RegExp(t.pool.naoUtilizada)))
     await abrir(view, 'claude-abcdef12')
-    assert.ok(view.find({ ...lista(pool), text: new RegExp(t.pool.naoUtilizadaDetalhe) }))
+    assert.ok(tem(view, lista(pool), new RegExp(t.pool.naoUtilizadaDetalhe)))
     await abrir(view, 'main')
-    assert.ok(view.find({ ...lista(pool), text: locale === 'en' ? /Writer, Reviewer/ : /Escritor, Revisor/ }))
+    assert.ok(tem(view, lista(pool), locale === 'en' ? /Writer, Reviewer/ : /Escritor, Revisor/))
   })
 
   for (const aba of ['fila', 'pool', 'contas', 'painel'] as const) {
@@ -498,18 +564,31 @@ test('editar comando da conta manual preserva o campo da nova conta', async () =
 })
 
 // Painel estreito: a primeira coluna cresce e as demais dividem 60% em partes iguais, sem largura em pixels.
-test('colunas das tabelas: a primeira cresce, as demais têm percentual igual e alinham como o chamador pediu', async () => {
+test('colunas das tabelas: a primeira cresce com mínimo próprio, as demais têm largura fixa em px; abaixo da soma a tabela rola', async () => {
   view = await mount(panel, { host: hostCom() })
-  for (const [chavesCol, pct] of [
-    [['projeto', 'fila', 'estado', 'ha'], '20%'],
-    [['conta', 'vagas', 'sessoes', 'h5', 'semanal'], '15%'],
+  for (const [chavesCol, larguras] of [
+    [
+      ['projeto', 'fila', 'estado', 'ha'],
+      [140, 130, 130, 70],
+    ],
+    [
+      ['conta', 'vagas', 'sessoes', 'h5', 'semanal'],
+      [170, 60, 70, 55, 75],
+    ],
   ] as const) {
     const [primeira, ...demais] = chavesCol.map(c => view!.find({ testId: `cabecalho.${c}` })!.props)
-    assert.equal(primeira.grow, true)
-    assert.equal(primeira.width, undefined)
-    for (const p of demais) assert.deepEqual([p.width, p.shrink], [pct, false])
+    assert.deepEqual([primeira.grow, primeira.minWidth, primeira.width], [true, larguras[0], undefined])
+    for (const [i, p] of demais.entries()) assert.deepEqual([p.width, p.shrink, p.grow], [larguras[i + 1], false, false])
   }
   assert.equal(view.find({ testId: 'cabecalho.semanal' })!.props.justify, 'end')
+  // contêiner com rolagem horizontal e a largura mínima somando a seta e as colunas (nunca menos que a soma delas)
+  assert.equal(nos(view).filter(n => n.props.scroll === 'x').length, 2)
+  const minimas = nos(view).flatMap(n => (n.props.gap === 'none' && typeof n.props.minWidth === 'number' ? [n.props.minWidth] : []))
+  assert.equal(minimas.length, 2)
+  assert.ok(
+    minimas.every(m => m >= 28 + 140 + 130 + 130 + 70),
+    String(minimas),
+  )
 })
 
 test('erro de leitura dos hooks aparece sem ocultar fila e pool e recupera no refresh', async () => {
@@ -544,14 +623,15 @@ for (const locale of ['pt', 'pt-PT', 'PT-br', 'fr-FR', '']) {
 
 test('tabelas próprias: Testes na fila (Projeto · Fila · Estado · Há) e Contas do pool (Conta · Vagas · Sessões · 5h · Semanal), sem RAM, Workers nem origem', async () => {
   view = await mount(panel, { host: hostCom() })
-  assert.deepEqual(cabecalho(view, ['projeto', 'fila', 'estado', 'ha']), ['Projeto', 'Fila', 'Estado', 'Há'])
-  assert.deepEqual(cabecalho(view, ['conta', 'vagas', 'sessoes', 'h5', 'semanal']), ['Conta', 'Vagas', 'Sessões', '5h', 'Semanal'])
+  // cabeçalho em maiúsculas, nas regras do idioma do painel
+  assert.deepEqual(cabecalho(view, ['projeto', 'fila', 'estado', 'ha']), ['PROJETO', 'FILA', 'ESTADO', 'HÁ'])
+  assert.deepEqual(cabecalho(view, ['conta', 'vagas', 'sessoes', 'h5', 'semanal']), ['CONTA', 'VAGAS', 'SESSÕES', '5H', 'SEMANAL'])
   assert.deepEqual(linhasDe(FILA), ['p4242', 'p4120', 'p99']) // uma linha por teste, na ordem do backend; sem linha de teto
   assert.deepEqual(linhasDe(POOL), ['main', 'codex', 'claude-abcdef12'])
   assert.ok(view.find({ text: /1 em execução · 1 aguardando · teto 5 · Modo Global/ }))
   const fila = FILA
   for (const trecho of [/wt-um/, /wt-tres/, /Global/, /Em execução/, /Aguardando vaga/, /⚠ Parado/])
-    assert.ok(view.find({ ...fila, text: trecho }), String(trecho))
+    assert.ok(tem(view, fila, trecho), String(trecho))
   assert.equal(view.find({ text: /Viva|\bVaga\b|Fila teto|Rodando agora/ }), null)
   assert.ok(view.find({ type: 'IconButton', label: /^Os testes esperam a vez numa fila/ }))
   assert.equal(view.find({ text: /Workers|curta|longa|origem|Origem/ }), null)
@@ -560,6 +640,26 @@ test('tabelas próprias: Testes na fila (Projeto · Fila · Estado · Há) e Con
   assert.deepEqual(view.errors, [])
   assert.deepEqual(view.warnings, [])
   assert.deepEqual(view.refusals, [])
+})
+
+test('tabela com contorno, divisória entre todas as linhas, linhas mais altas e a rolagem dentro do contorno', async () => {
+  view = await mount(panel, { host: hostCom() })
+  const todos = nos(view)
+  assert.equal(todos.filter(n => n.props.border === true && n.props.radius === 'md').length, 2) // Fila e Pool
+  // a rolagem fica dentro do contorno, que não rola (a borda não é cortada)
+  const rolagens = todos.filter(n => n.props.scroll === 'x')
+  assert.ok(rolagens.every(n => n.ancestrais.some(a => a.props.border === true && a.props.radius === 'md')))
+  // uma divisória antes de cada linha: 3 na Fila e 3 no Pool (a primeira fecha o cabeçalho)
+  assert.equal(todos.filter(n => n.type === 'Separator' && n.key?.endsWith('#divisoria')).length, 6)
+  // cabeçalho e linhas com o mesmo respiro vertical: 2 cabeçalhos + 6 linhas
+  assert.equal(todos.filter(n => n.type === 'Box' && n.props.paddingY === 'sm' && n.props.align === 'center').length, 8)
+})
+
+test('cartão da seção: padding e espaço entre título e conteúdo médios', async () => {
+  view = await mount(panel, { host: hostCom() })
+  const cartoes = view.findAll({ type: 'Box' }).filter(b => b.props.border === true && b.props.radius === 'lg')
+  assert.ok(cartoes.length > 0)
+  assert.ok(cartoes.every(c => c.props.padding === 'md' && c.props.gap === 'md'))
 })
 
 test('sem os componentes de layout que quebraram o desenho: Grid, Callout, Skeleton e Toolbar', async () => {
@@ -584,13 +684,13 @@ test('fila: clicar abre os detalhes na própria tabela (onde roda, comando, pid,
     'Worktree',
   ])
   assert.equal(view.find({ testId: 'p4242#8:rotulo' }), null)
-  assert.equal(view.find({ testId: 'p4242#4:valor' })?.text, 'mysql 127.0.0.1:3308/app_test')
-  assert.equal(view.find({ testId: 'p4242#5:valor' })?.text, 'runner tests/X.php') // valor inteiro, sem truncar
+  assert.equal(valorDe(view, 'p4242', 4), 'mysql 127.0.0.1:3308/app_test')
+  assert.equal(valorDe(view, 'p4242', 5), 'runner tests/X.php') // valor inteiro, sem truncar
   // Cada clique alterna a linha e mantém as outras abertas.
   await abrir(view, 'p99')
   assert.deepEqual(linhasDe(FILA), ['p4242', 'p4242#detalhes', 'p4120', 'p99', 'p99#detalhes'])
   assert.deepEqual(rotulos('p99', 5), ['Situação', 'Onde roda', 'Comando', 'PID', 'Worktree']) // o parado traz a linha de Situação
-  assert.ok(view.find({ ...FILA, text: /O processo terminou e deixou a vaga presa/ }))
+  assert.ok(tem(view, FILA, /O processo terminou e deixou a vaga presa/))
   await abrir(view, 'p4242')
   assert.deepEqual(linhasDe(FILA), ['p4242', 'p4120', 'p99', 'p99#detalhes'])
   await abrir(view, 'p99')
@@ -608,12 +708,11 @@ test('fila: a coluna Fila segue o modo (Global · Banco · Container · Geral ·
   })
   const tabela = FILA
   view = await mount(panel, { host: hostCom([], com('banco', ['mysql 127.0.0.1:3307/app_test', 'container exec-1', 'geral'])) })
-  for (const trecho of [/Banco 127\.0\.0\.1:3307\/app_test/, /Container/, /Geral/])
-    assert.ok(view.find({ ...tabela, text: trecho }), String(trecho))
+  for (const trecho of [/Banco 127\.0\.0\.1:3307\/app_test/, /Container/, /Geral/]) assert.ok(tem(view, tabela, trecho), String(trecho))
   assert.ok(view.find({ text: /Modo Por banco/ }))
   await view.unmount()
   view = await mount(panel, { host: hostCom([], com('projeto', ['projeto meu-projeto'])) })
-  assert.ok(view.find({ ...tabela, text: /Projeto wt-um/ })) // o projeto da linha, não o recurso
+  assert.ok(tem(view, tabela, /Projeto wt-um/)) // o projeto da linha, não o recurso
   assert.ok(view.find({ text: /Modo Por projeto/ }))
   await view.unmount()
   view = await mount(panel, { host: hostCom([], com('global', [])) })
@@ -628,14 +727,14 @@ test('pool: coluna Sessões com o número (ou –), nomes nos detalhes e total n
   const sessoes = linhasDe(POOL).map(k => celula(view!, k, 'sessoes'))
   assert.deepEqual(sessoes, ['2', '–', '–'])
   await abrir(view, 'main')
-  assert.ok(view.find({ ...POOL, text: /orca-agent-pool-b6, gestaosmart/ }))
+  assert.ok(tem(view, POOL, /orca-agent-pool-b6, gestaosmart/))
 })
 
 test('pool em inglês: resumo com sessões e sem RAM', async () => {
   view = await mount(panel, { host: hostCom(), locale: 'en' })
   assert.ok(view.find({ text: /Agents 1\/4 · Sessions 2 · Writer by quota pace/ }))
   assert.equal(view.find({ text: /Minimum RAM/ }), null)
-  assert.deepEqual(cabecalho(view, ['conta', 'vagas', 'sessoes', 'h5', 'semanal']), ['Account', 'Slots', 'Sessions', '5h', 'Weekly'])
+  assert.deepEqual(cabecalho(view, ['conta', 'vagas', 'sessoes', 'h5', 'semanal']), ['ACCOUNT', 'SLOTS', 'SESSIONS', '5H', 'WEEKLY'])
 })
 
 test('pool: detalhes dentro da tabela, várias abertas, sem botão nem campo na linha', async () => {
@@ -652,10 +751,10 @@ test('pool: detalhes dentro da tabela, várias abertas, sem botão nem campo na 
 test('medida antiga: a conta manual com medida de mais de 30 min ganha aviso no detalhe; a cota nativa do Orca não', async () => {
   view = await mount(panel, { host: hostCom() })
   await abrir(view, 'main')
-  assert.ok(view.find({ ...POOL, text: /Medida antiga: há 45 min/ }))
+  assert.ok(tem(view, POOL, /Medida antiga: há 45 min/))
   await abrir(view, 'main')
   await abrir(view, 'codex')
-  assert.equal(view.find({ ...POOL, text: /Medida antiga/ }), null)
+  assert.equal(tem(view, POOL, /Medida antiga/), null)
 })
 
 test('Configurações: seção recolhida no fim, com abas Fila · Pool · Contas · Hooks · Instalação · Painel e a linha do que cada uma muda', async () => {
@@ -734,10 +833,10 @@ test('Configurações > Pool: escolher a conta na lista mostra o formulário del
 
 test('conta inativa: marcada na tabela, explicada no detalhe e com "Não utilizar" marcado; não existe mais Adicionar ao pool', async () => {
   view = await mount(panel, { host: hostCom() })
-  assert.ok(view.find({ ...POOL, text: /claude-abcdef12 \(não utilizada\)/ }))
-  assert.equal(view.find({ ...POOL, text: /main \(não utilizada\)/ }), null)
+  assert.ok(tem(view, POOL, /claude-abcdef12 \(não utilizada\)/))
+  assert.equal(tem(view, POOL, /main \(não utilizada\)/), null)
   await abrir(view, 'claude-abcdef12')
-  assert.ok(view.find({ ...POOL, text: /Não utilizada: continua listada e medida/ }))
+  assert.ok(tem(view, POOL, /Não utilizada: continua listada e medida/))
   await abrir(view, 'contas')
   assert.equal(view.find({ type: 'Checkbox', label: 'Não utilizar' })?.props.checked, false) // a primeira (main) está ativa
   await view.select({ label: 'Conta a configurar' }, 'claude-abcdef12')
@@ -862,7 +961,7 @@ test('modo da fila: cada opção é um rádio com o ícone de dica ao lado, sem 
     3,
   )
   assert.ok(view.find({ type: 'IconButton', label: /^Máximo de testes ao mesmo tempo na máquina/ }))
-  assert.ok(view.find({ type: 'IconButton', label: /Só vale no modo Por projeto/ }))
+  assert.equal(view.find({ type: 'IconButton', label: /Só vale no modo Por projeto/ }), null) // o campo de projeto só aparece no modo projeto
   await view.select({ label: 'Modo da fila: Por projeto' }, 'projeto')
   await view.press(view.findAll({ type: 'Button', text: 'Salvar' })[0])
   assert.deepEqual(enviados, [{ 'fila.modo': 'projeto' }])
@@ -1264,11 +1363,11 @@ test('alertas: o bloco Atenção lista um item por problema e o comando num Code
   }
   assert.ok(view.find({ type: 'Code', text: /claude auth login/ }))
   assert.equal(view.findAll({ type: 'Code' }).length, 1)
-  assert.ok(view.find({ ...POOL, text: /⚠ —/ }))
-  assert.equal(view.find({ ...POOL, text: /84%/ }), null) // o valor velho da conta sem login não aparece
+  assert.ok(tem(view, POOL, /⚠ —/))
+  assert.equal(tem(view, POOL, /84%/), null) // o valor velho da conta sem login não aparece
   await abrir(view, 'work')
-  assert.ok(view.find({ ...POOL, text: /Problema.*sem login/ }))
-  assert.ok(view.find({ ...POOL, text: /Para resolver.*claude auth login/ }))
+  assert.ok(tem(view, POOL, /Problema.*sem login/))
+  assert.ok(tem(view, POOL, /Para resolver.*claude auth login/))
   assert.deepEqual(view.errors, [])
 })
 
@@ -1280,7 +1379,7 @@ test('fila: comando longo (1500 caracteres) aparece inteiro no detalhe, sem recu
   }
   view = await mount(panel, { host: hostCom([], estado) })
   await abrir(view, 'p4242')
-  assert.equal(view.find({ testId: 'p4242#5:valor' })?.text, longo)
+  assert.equal(valorDe(view, 'p4242', 5), longo)
   assert.deepEqual([view.errors, view.warnings, view.refusals], [[], [], []])
 })
 
@@ -1344,15 +1443,15 @@ for (const [locale, rotulo, geral, pool] of [
   test(`${locale}: detalhe da conta mostra o modelo e o limite seguido (ou o geral); sem modelo, sem a linha`, async () => {
     view = await mount(panel, { locale, host: hostCom([], comModelo('claude-fable-5-1', 'Fable')) })
     await abrir(view, 'main')
-    assert.ok(view.find({ ...lista(pool), text: new RegExp(`${rotulo}.*claude-fable-5-1 · Fable`) }))
+    assert.ok(tem(view, lista(pool), new RegExp(`${rotulo}.*claude-fable-5-1 · Fable`)))
     view.unmount()
     view = await mount(panel, { locale, host: hostCom([], comModelo('qwen', null)) })
     await abrir(view, 'main')
-    assert.ok(view.find({ ...lista(pool), text: new RegExp(`qwen · ${geral}`) }))
+    assert.ok(tem(view, lista(pool), new RegExp(`qwen · ${geral}`)))
     view.unmount()
     view = await mount(panel, { locale, host: hostCom() })
     await abrir(view, 'main')
-    assert.equal(view.find({ ...lista(pool), text: new RegExp(`${rotulo}.*·`) }), null)
+    assert.equal(tem(view, lista(pool), new RegExp(`${rotulo}.*·`)), null)
   })
 }
 

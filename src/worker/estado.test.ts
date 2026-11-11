@@ -224,7 +224,10 @@ async function estadoComTeste(semSaidaMin: number | undefined, desdeTs: number, 
     const p = paths(home)
     const c = structuredClone(PADRAO)
     if (semSaidaMin !== undefined) c.fila.semSaidaMin = semSaidaMin
-    const saida = saidaTs === null ? undefined : { ts: saidaTs, linha: 'x', linhas: 1, pct: null, feitos: null, total: null }
+    const saida =
+      saidaTs === null
+        ? undefined
+        : { ts: saidaTs, linha: 'x', linhas: 1, pct: null, feitos: null, total: null, passou: null, falhou: null }
     publicar(join(p.fila, 'global', '1'), {
       pid: process.pid,
       inicio: desdeTs,

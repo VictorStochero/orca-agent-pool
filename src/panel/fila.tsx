@@ -23,18 +23,21 @@ function rotuloFila(modo: Estado['fila']['modo'], x: TesteFila): string {
   return banco ? t.fila.filaBanco(banco[1]) : r || '-'
 }
 
-/** Barra de 10 posições: `▓▓▓▓▓░░░░░ 52% (63/120)`; sem pct, só a contagem de testes feitos. */
+/** Barra de 10 posições com o total (`▓▓▓▓▓░░░░░ 52% (63/120)`) e, havendo contagem, `· ✓ N passaram · ⨯ M falharam`; pytest traz só a barra. */
 function textoProgresso(s: NonNullable<TesteFila['saida']>): string | null {
-  if (s.pct === null) return s.feitos === null ? null : t.fila.feitosAteAgora(s.feitos)
+  const contagem = s.passou == null || s.falhou == null ? null : t.fila.passaramFalharam(s.passou, s.falhou)
+  if (s.pct === null) return contagem
   const cheias = Math.min(10, Math.floor(s.pct / 10))
-  const contagem = s.feitos !== null && s.total !== null ? ` (${s.feitos}/${s.total})` : ''
-  return `${'▓'.repeat(cheias)}${'░'.repeat(10 - cheias)} ${s.pct}%${contagem}`
+  const total = s.feitos !== null && s.total !== null ? ` (${s.feitos}/${s.total})` : ''
+  return `${'▓'.repeat(cheias)}${'░'.repeat(10 - cheias)} ${s.pct}%${total}${contagem ? ` · ${contagem}` : ''}`
 }
 
 /** Progresso e última saída do teste em execução; a coluna "Fila" leva o relativo (mesma célula da coluna Há). */
 function detalhesSaida(x: TesteFila): Detalhe[] {
   const s = x.saida
-  if (x.estado !== 'execucao' || !s) return []
+  if (x.estado !== 'execucao') return []
+  // Sem saída ainda: o teste é acompanhado e só está calado (ex.: migrando o banco).
+  if (!s) return [[t.fila.ultimaSaida, t.fila.nenhumaAinda]]
   return [
     ...se(t.fila.progresso, textoProgresso(s)),
     [t.fila.ultimaSaida, { type: 'relative', at: s.ts, format: 'duration' }],
@@ -78,10 +81,10 @@ export function SecaoFila({ e }: { e: Estado }) {
         <TabelaExpansivel
           label={t.fila.tabela}
           colunas={[
-            { key: 'projeto', label: t.fila.colProjeto },
-            { key: 'fila', label: t.fila.colFila },
-            { key: 'estado', label: t.fila.colEstado },
-            { key: 'ha', label: t.fila.colHa },
+            { key: 'projeto', label: t.fila.colProjeto, largura: 140 },
+            { key: 'fila', label: t.fila.colFila, largura: 130 },
+            { key: 'estado', label: t.fila.colEstado, largura: 130 },
+            { key: 'ha', label: t.fila.colHa, largura: 70 },
           ]}
           linhas={linhas}
           abertas={read(abertasTrava)}
@@ -129,7 +132,14 @@ function CampoFila({ item, e }: { item: Exclude<ItemFila, 'modo'>; e: Estado }) 
   )
 }
 
+/** Campos que valem no modo: por projeto usa só vagas_projeto; global e por banco (testes sem banco) usam vagas. */
+export function camposDoModo(modo: string): Exclude<ItemFila, 'modo' | 'limpar_bancos'>[] {
+  return [modo === 'projeto' ? 'vagas_projeto' : 'vagas', 'teto', 'processos', 'sem_saida_min']
+}
+
 export function ConfigFila({ e }: { e: Estado }) {
+  // O modo marcado, mesmo antes de salvar, decide quais campos aparecem.
+  const modo = read(edicoes)['fila.modo'] ?? String(e.fila.config.modo)
   return (
     <Stack gap="sm">
       <Text muted size="xs">
@@ -139,7 +149,7 @@ export function ConfigFila({ e }: { e: Estado }) {
         {t.fila.configurarDescricao}
       </Text>
       <CampoModo e={e} />
-      {(['vagas', 'vagas_projeto', 'teto', 'processos', 'sem_saida_min'] as const).map(i => (
+      {camposDoModo(modo).map(i => (
         <CampoFila key={i} item={i} e={e} />
       ))}
       <Row gap="xs" align="center">
