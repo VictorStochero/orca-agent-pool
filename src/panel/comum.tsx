@@ -63,7 +63,7 @@ export function ComDica({ texto, children }: { texto: string; children: OrcaNode
 /** Cartão das seções: borda, cantos e fundo do tema, com menos espaço interno que o Card nativo (que não aceita padding). */
 export function Secao({ titulo, descricao, children }: { titulo?: string; descricao?: string; children?: OrcaNode }) {
   return (
-    <Box border radius="lg" background="card" padding="md" gap="md">
+    <Box border radius="lg" background="card" padding="lg" gap="md">
       {titulo ? (
         <Stack gap="none">
           <Text weight="semibold">{titulo}</Text>
@@ -165,7 +165,7 @@ export function TabelaExpansivel(props: {
   )
   // Seta e colunas num só array: as chaves das células ficam visíveis (e testáveis).
   const linhaDe = (prefixo: string, seta: OrcaNode, celulas: (c: Coluna, i: number) => OrcaNode) => (
-    <Box direction="row" gap="sm" align="center" paddingY="sm">
+    <Box direction="row" gap="sm" align="center">
       {[
         <Box key={`${prefixo}.seta`} width={LARGURA_SETA} shrink={false}>
           {seta}
