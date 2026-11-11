@@ -6,7 +6,7 @@ import type { Paths } from '../paths.ts'
 import type { ConfigFila } from '../tipos.ts'
 import { anotar, esperar, type InfoTrava, publicar, removerMelhorEsforco, vivoPadrao } from '../trava.ts'
 import { detectarExecutor, type Executor } from './executores.ts'
-import { contarListagem, type PlanoListagem, planoDeListagem } from './listagem.ts'
+import { contarListagem, planoDeListagem } from './listagem.ts'
 import { aquecerOrfaos } from './orfao.ts'
 import { comLimpezaDeBancos, limitarProcessos } from './processos.ts'
 import { chaveFila, detectarRecurso, nomeProjeto } from './recurso.ts'
@@ -42,7 +42,7 @@ export type OpcoesRodar = {
   /** Relê vagas e teto a cada volta da espera (a chave e o modo do início ficam); padrão: `config`, sem reler. */
   lerConfig?: () => ConfigFila
   /** Comando que lista os testes (total da barra de progresso); padrão: `planoDeListagem`. Os testes trocam para não chamar php de verdade. */
-  listagem?: (comando: string[]) => PlanoListagem | null
+  listagem?: (comando: string[]) => string[] | null
 }
 
 /** `VAR=x cmd` vira env do filho (o spawn não interpreta atribuição); `FOO=bar` sozinho segue sendo o comando. */
@@ -238,7 +238,7 @@ export async function rodarNaFila(o: OpcoesRodar): Promise<number> {
       if (plano) {
         const partes: Buffer[] = []
         let bytes = 0
-        const l = lancar(plano.comando, o.dir, { CI: '1', ...envTeste }, ['ignore', 'pipe', 'pipe'])
+        const l = lancar(plano, o.dir, { CI: '1', ...envTeste }, ['ignore', 'pipe', 'pipe'])
         listando = l
         const limiteListagem = setTimeout(() => l.kill(), LISTAGEM_MAX_MS)
         l.stdout?.on('data', (c: Buffer) => {
@@ -251,7 +251,7 @@ export async function rodarNaFila(o: OpcoesRodar): Promise<number> {
           clearTimeout(limiteListagem)
           if (listando === l) listando = null
           if (code !== 0 || bytes > LISTAGEM_MAX_BYTES || terminou) return
-          const n = contarListagem(plano.tipo, Buffer.concat(partes).toString('utf8'))
+          const n = contarListagem(Buffer.concat(partes).toString('utf8'))
           if (n === null) return
           acomp.definirTotal(n)
           if (pendente) clearTimeout(pendente)

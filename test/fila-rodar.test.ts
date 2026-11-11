@@ -579,7 +579,7 @@ test('terminal lento (contrapressão): a folga do exit espera o drain e o resumo
 })
 
 const scriptListagem = (corpo: string) => [process.execPath, '-e', corpo]
-const plano = (corpo: string) => () => ({ tipo: 'phpunit' as const, comando: scriptListagem(corpo) })
+const plano = (corpo: string) => () => scriptListagem(corpo)
 const calado = [process.execPath, '-e', "console.log('x'); setTimeout(() => {}, 1500)"]
 
 test('listagem em paralelo grava o total na saida das duas travas', async () => {
