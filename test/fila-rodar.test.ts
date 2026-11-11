@@ -493,3 +493,23 @@ test('a trava da fila e a do teto recebem saida; no máximo uma gravação por s
   // 'b' chega 300 ms depois, dentro da janela de 1 s: não é gravada
   assert.ok(vistos.every(v => v.saida.linhas === 1))
 })
+
+test('leitor que fecha o pipe cedo (| head) não derruba a fila: sai com o código do teste e solta as vagas', async () => {
+  const home = tmp()
+  const filho = spawn(process.execPath, ['--experimental-strip-types', join(import.meta.dirname, 'fila-pipe-fechado.ts'), home, tmp()], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let err = ''
+  filho.stderr.on('data', d => {
+    err += d
+  })
+  await new Promise<void>(r => filho.stdout.once('data', () => r()))
+  filho.stdout.destroy()
+  const code = await new Promise<number | null>(r => filho.on('close', r))
+  assert.equal(code, 3, err)
+  assert.doesNotMatch(err, /Unhandled 'error' event|EPIPE/)
+  const vagas = (existsSync(paths(home).fila) ? (readdirSync(paths(home).fila, { recursive: true }) as string[]) : []).filter(f =>
+    /(^|[/])\d+$/.test(f),
+  )
+  assert.deepEqual(vagas, [])
+})

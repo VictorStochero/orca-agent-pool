@@ -146,6 +146,7 @@ export async function rodarNaFila(o: OpcoesRodar): Promise<number> {
     }
   }
 
+  const limpezas: (() => void)[] = []
   let vagaFila: number | null = null
   let vagaTeto: number | null = null
   try {
@@ -176,14 +177,36 @@ export async function rodarNaFila(o: OpcoesRodar): Promise<number> {
         const saida = acomp.estado()
         if (saida) for (const d of dirs) anotar(d, { saida })
       }
-      const aoChunk = (fonte: 'out' | 'err') => (chunk: Buffer) => {
-        // Bytes crus ao terminal: o filho pode escrever em codepage e recodificar corromperia.
+      const aoChunk = (fonte: 'out' | 'err') => {
         const destino = fonte === 'out' ? process.stdout : process.stderr
-        try {
-          destino.write(chunk, () => {})
-        } catch {
-          // EPIPE no pai não derruba o teste
+        const origem = fonte === 'out' ? filho!.stdout : filho!.stderr
+        let aberto = true
+        const retomar = () => origem?.resume()
+        // Erro de escrita (EPIPE: leitor fechou o pipe) só para o repasse; a fila segue lendo o filho.
+        const aoErro = () => {
+          aberto = false
+          retomar()
         }
+        destino.on('error', aoErro)
+        destino.on('drain', retomar)
+        limpezas.push(() => {
+          destino.off('error', aoErro)
+          destino.off('drain', retomar)
+        })
+        return (chunk: Buffer) => {
+          // Bytes crus ao terminal: o filho pode escrever em codepage e recodificar corromperia.
+          if (aberto) {
+            try {
+              // Contrapressão: o filho fica parado no pipe até o terminal drenar.
+              if (!destino.write(chunk)) origem?.pause()
+            } catch {
+              aberto = false
+            }
+          }
+          visto(fonte, chunk)
+        }
+      }
+      const visto = (fonte: 'out' | 'err', chunk: Buffer) => {
         acomp.receber(fonte, chunk)
         if (pendente) return
         const espera = ultima + GRAVAR_SAIDA_MS - agora()
@@ -205,6 +228,7 @@ export async function rodarNaFila(o: OpcoesRodar): Promise<number> {
 
     return code
   } finally {
+    for (const l of limpezas) l()
     if (vagaTeto !== null) soltarVaga(baseTeto, vagaTeto)
     if (vagaFila !== null) soltarVaga(base, vagaFila)
     process.off('SIGINT', aoSinal)
