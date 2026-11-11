@@ -68,7 +68,7 @@ A reservation that is never swapped expires after 10 minutes, and a slot whose d
 
 - **Tests in the queue**: what is running and waiting, per queue, with the process and how long it has waited.
 - **Agent pool**: slots in use per account (`2/∞` for an account without its own limit), open Claude sessions per account (including the ones you open yourself; a session without `--agent` is display only, while an agent session opened with `--agent <role>` takes a slot for as long as it stays open), 5-hour and weekly quota, and the details of each account on click.
-- **Settings**: tabs for the queue, the pool, the accounts (**Configure** an account or **Add** a custom one), **Hooks** (install, reinstall or remove the hook per agent; removing one locks the panel on Requirements again), **Installation** (the requirement rows, always visible, **Check now** to read them again on demand, and **Uninstall everything**) and the panel itself.
+- **Settings**: a section selector for the queue, the pool, the accounts (**Configure** an account or **Add** a custom one), **Hooks** (install, reinstall or remove the hook per agent; removing one locks the panel on Requirements again), **Installation** (the requirement rows, always visible, **Check now** to read them again on demand, and **Uninstall everything**) and the panel itself.
 
 ## The test queue
 Run tests with `agent-pool test` (detects the runner) or `agent-pool test -- <command>`.

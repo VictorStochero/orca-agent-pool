@@ -31,7 +31,7 @@ const codexManual: Estado = {
 
 const ABAS = ['fila', 'pool', 'contas', 'imposicao', 'instalacao', 'painel']
 /**
- * Configurações começa recolhida e é dividida em abas: abre e escolhe o assunto.
+ * Configurações começa recolhida e tem um seletor de assunto: abre e escolhe o assunto.
  * Com a chave de uma linha das tabelas (não é nome de aba), clica a linha.
  */
 async function abrir(v: TestPanel, alvo?: string) {
@@ -784,7 +784,7 @@ test('medida antiga: a conta manual com medida de mais de 30 min ganha aviso no 
   assert.equal(tem(view, POOL, /Medida antiga/), null)
 })
 
-test('Configurações: seção recolhida no fim, com abas Fila · Pool · Contas · Hooks · Instalação · Painel e a linha do que cada uma muda', async () => {
+test('Configurações: seção recolhida no fim, com o seletor Fila · Pool · Contas · Hooks · Instalação · Painel e a linha do que cada uma muda', async () => {
   view = await mount(panel, { host: hostCom() })
   assert.ok(view.find({ type: 'Collapsible', label: 'Configurações', text: /Fila, pool, contas, hooks, instalação e painel/ }))
   assert.equal(view.find({ label: 'Modo da fila: Global' }), null) // recolhida: nada de formulário à mostra
