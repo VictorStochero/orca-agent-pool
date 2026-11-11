@@ -19,6 +19,7 @@ export const estadoExemplo: Estado = {
         comando: 'runner tests/X.php',
         fila: null,
         desde_ts: 1793650465000,
+        saida: { ts: 1793650480000, linha: '... 63 / 120 ( 52%)', linhas: 12, pct: 52, feitos: 63, total: 120 },
       },
       {
         pid: 4120,
@@ -29,6 +30,7 @@ export const estadoExemplo: Estado = {
         comando: 'php artisan test',
         fila: null,
         desde_ts: 1793650500000,
+        saida: null,
       },
       {
         pid: 99,
@@ -39,6 +41,7 @@ export const estadoExemplo: Estado = {
         comando: null,
         fila: null,
         desde_ts: 1793640000000,
+        saida: null,
       },
     ],
     config: {
@@ -47,6 +50,7 @@ export const estadoExemplo: Estado = {
       vagas_projeto: 1,
       teto: 5,
       processos: 8,
+      sem_saida_min: 5,
       limpar_bancos: 'nao',
     },
   },

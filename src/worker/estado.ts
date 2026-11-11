@@ -1,5 +1,6 @@
 // Monta o Estado do painel a partir do núcleo. Lê disco, nunca mede: a cota e o ambiente vêm da última passada do ciclo.
 import { resolve } from 'node:path'
+import { PADRAO } from '../core/config.ts'
 import type { Detectada } from '../core/deteccao.ts'
 import { listarTestesAsync } from '../core/fila/travas.ts'
 import { versao } from '../core/index.ts'
@@ -102,12 +103,24 @@ export async function montarEstado(p: Paths, c: Config, erroConfig: string | nul
       alertas.push({ codigo: 'teste_parado', nivel: 'aviso', params: { pid: t.pid, onde: t.projeto ?? t.worktree ?? '–' } })
 
   const f = c.fila
+  const semSaidaMin = f.semSaidaMin ?? PADRAO.fila.semSaidaMin
+  const limiteMs = (semSaidaMin ?? 0) * 60_000
+  for (const t of testes) {
+    const sem = agoraMs - (t.saida?.ts ?? t.desde_ts ?? agoraMs)
+    if (t.estado === 'execucao' && limiteMs > 0 && sem > limiteMs)
+      alertas.push({
+        codigo: 'teste_sem_saida',
+        nivel: 'aviso',
+        params: { pid: t.pid, onde: t.projeto ?? t.worktree ?? '–', min: Math.floor(sem / 60_000) },
+      })
+  }
   const config: Record<ItemFila, string | number> = {
     modo: f.modo,
     vagas: f.vagas,
     vagas_projeto: f.vagasPorProjeto,
     teto: f.teto,
     processos: f.processos,
+    sem_saida_min: semSaidaMin ?? 0,
     limpar_bancos: f.limparBancos ? 'sim' : 'nao',
   }
   return {

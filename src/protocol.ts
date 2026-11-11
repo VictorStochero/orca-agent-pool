@@ -14,6 +14,8 @@ export type TesteFila = {
   fila: string | null
   /** Epoch em ms: início da trava (execução, parado) ou da espera (aguardando). */
   desde_ts: number | null
+  /** Última saída do teste em execução (null sem ela); `ts` em epoch ms. */
+  saida: { ts: number; linha: string | null; linhas: number; pct: number | null; feitos: number | null; total: number | null } | null
 }
 
 /** Cota da conta: 5h = janela curta, Semanal = janela longa (percentuais de 0 a 100). */
@@ -68,14 +70,14 @@ export type Conta = {
   ativo: boolean
 }
 
-export type ItemFila = 'modo' | 'vagas' | 'vagas_projeto' | 'teto' | 'processos' | 'limpar_bancos'
+export type ItemFila = 'modo' | 'vagas' | 'vagas_projeto' | 'teto' | 'processos' | 'sem_saida_min' | 'limpar_bancos'
 
 /** Problema que o usuário precisa resolver: o worker manda código e dados, o painel monta a frase no idioma; `acao` é o comando para copiar. */
 export type Alerta = {
-  codigo: 'config_ilegivel' | 'orca_indisponivel' | 'sem_login' | 'erro_medida' | 'teste_parado'
+  codigo: 'config_ilegivel' | 'orca_indisponivel' | 'sem_login' | 'erro_medida' | 'teste_parado' | 'teste_sem_saida'
   nivel: 'erro' | 'aviso'
-  /** `config_ilegivel`: detalhe; `sem_login`/`erro_medida`: conta (+ detalhe); `teste_parado`: pid e onde. */
-  params?: { conta?: string; detalhe?: string; pid?: number | null; onde?: string }
+  /** `config_ilegivel`: detalhe; `sem_login`/`erro_medida`: conta (+ detalhe); `teste_parado`: pid e onde; `teste_sem_saida`: pid, onde e min. */
+  params?: { conta?: string; detalhe?: string; pid?: number | null; onde?: string; min?: number }
   acao?: string
 }
 

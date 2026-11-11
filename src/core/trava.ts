@@ -15,6 +15,8 @@ export type InfoTrava = {
   comando: string | null
   fila: string
   filho?: Filho
+  /** Última saída do teste (ver `acompanharSaida`); gravada no máximo uma vez por segundo. */
+  saida?: { ts: number; linha: string | null; linhas: number; pct: number | null; feitos: number | null; total: number | null }
 }
 
 export function vivoPadrao(pid: number): boolean {

@@ -34,6 +34,7 @@ const pt = {
     sem_login: (conta: string) => `${conta}: sem login`,
     erro_medida: (conta: string, detalhe?: string) => `${conta}: ${pt.pool.erroMedida(detalhe)}`,
     teste_parado: (pid: number | null, onde: string) => `Teste parado (pid ${pid ?? '?'}) em ${onde}`,
+    teste_sem_saida: (pid: number | null, onde: string, min: number) => `Teste sem saída há ${min} min (pid ${pid ?? '?'}) em ${onde}`,
   },
   atualizadoEm: 'Atualizado',
   plugin: 'Plugin',
@@ -156,6 +157,11 @@ const pt = {
     filaTeto: 'Teto da máquina',
     estados: { execucao: 'Em execução', aguardando: 'Aguardando vaga', parado: '⚠ Parado' } as Record<string, string>,
     dicaParado: 'O processo terminou e deixou a vaga presa.',
+    progresso: 'Progresso',
+    feitosAteAgora: (n: number) => `${n} ✓/⨯ até agora`,
+    ultimaSaida: 'Última saída',
+    ultimaLinha: 'Última linha',
+    linhasSaida: 'Linhas de saída',
     ondeRoda: 'Onde roda',
     comando: 'Comando',
     pid: 'PID',
@@ -168,6 +174,7 @@ const pt = {
       vagas_projeto: 'Vagas por projeto',
       teto: 'Teto da máquina',
       processos: 'Processos (--parallel)',
+      sem_saida_min: 'Aviso de teste sem saída (min)',
       limpar_bancos: 'Apagar os bancos <banco>_test_N depois do teste paralelo do Laravel',
     },
     dicas: {
@@ -182,6 +189,7 @@ const pt = {
       teto: 'Máximo de testes ao mesmo tempo na máquina, somando todas as filas.',
       processos:
         'Processos em paralelo do teste. Também é o teto das flags de paralelismo que o agente passa (--processes, -n, --maxWorkers): pedido maior é reduzido a este valor.',
+      sem_saida_min: 'Minutos sem o teste imprimir nada até o aviso na tela. 0 desliga o aviso.',
       limpar_bancos:
         'Desligado por padrão. Ligado, a fila acrescenta --drop-databases ao artisan test paralelo (--parallel ou -p; Laravel 9 ou mais novo) e o Laravel apaga as cópias <banco>_test_1, _test_2… que criou, em qualquer banco, para não acumular bancos. O banco principal nunca é tocado.',
     },
@@ -324,6 +332,7 @@ const en: typeof pt = {
     sem_login: conta => `${conta}: not signed in`,
     erro_medida: (conta, detalhe) => `${conta}: ${en.pool.erroMedida(detalhe)}`,
     teste_parado: (pid, onde) => `Stopped test (pid ${pid ?? '?'}) in ${onde}`,
+    teste_sem_saida: (pid, onde, min) => `Test with no output for ${min} min (pid ${pid ?? '?'}) in ${onde}`,
   },
   atualizadoEm: 'Updated',
   plugin: 'Plugin',
@@ -444,6 +453,11 @@ const en: typeof pt = {
     filaTeto: 'Machine cap',
     estados: { execucao: 'Running', aguardando: 'Waiting for a slot', parado: '⚠ Stopped' },
     dicaParado: 'The process ended and left a slot locked.',
+    progresso: 'Progress',
+    feitosAteAgora: n => `${n} ✓/⨯ so far`,
+    ultimaSaida: 'Last output',
+    ultimaLinha: 'Last line',
+    linhasSaida: 'Output lines',
     ondeRoda: 'Runs on',
     comando: 'Command',
     pid: 'PID',
@@ -456,6 +470,7 @@ const en: typeof pt = {
       vagas_projeto: 'Slots per project',
       teto: 'Machine cap',
       processos: 'Processes (--parallel)',
+      sem_saida_min: 'No-output warning (min)',
       limpar_bancos: 'Drop the <database>_test_N databases after a parallel Laravel test',
     },
     dicas: {
@@ -470,6 +485,7 @@ const en: typeof pt = {
       teto: 'Maximum concurrent tests on the machine across all queues.',
       processos:
         'Parallel processes of the test. Also a cap on the parallelism flags an agent passes (--processes, -n, --maxWorkers): a larger request is lowered to this value.',
+      sem_saida_min: 'Minutes without the test printing anything before the warning shows. 0 turns the warning off.',
       limpar_bancos:
         'Off by default. When on, the queue adds --drop-databases to a parallel artisan test (--parallel or -p; Laravel 9 or newer) and Laravel drops the <database>_test_1, _test_2… copies it created, on any database, so they do not pile up. The main database is never touched.',
     },

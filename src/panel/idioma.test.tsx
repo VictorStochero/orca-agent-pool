@@ -181,6 +181,7 @@ test('fila por banco: Postgres também aparece como banco', async () => {
       comando: 'x',
       fila: null,
       desde_ts: 1,
+      saida: null,
     },
   ]
   view = await mount(panel, { locale: 'pt-BR', host: hostCom(e) })

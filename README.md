@@ -93,6 +93,8 @@ The machine-wide cap (`fila.teto`) applies in every mode. A new mode applies to 
 
 With an explicit command (`agent-pool test -- <command>`) `fila.processos` is a cap on the parallelism flags the agent passed: `--processes=N` (only with `--parallel` or `-p` on `artisan test` or Pest; either one alone gets `--processes=<cap>`; ParaTest's own `--processes` and `-p` are not capped), pytest-xdist `-n N` / `--numprocesses N` and `--maxWorkers=N` are lowered to the cap and the queue says so on stderr. A symbolic value (`auto`, `logical`, `25%`) becomes the number of cores it stands for, limited by the cap. A smaller request is left as it came. `go -p`, `cargo --test-threads` and `dotnet -m:` are not capped.
 
+The test's output is passed through to the terminal unchanged and followed by the panel: an expanded row shows the progress (PHPUnit/ParaTest `63 / 120`, pytest `[ 45%]`, or the count of `✓`/`⨯` lines), the last output, the last line and the number of lines. A running test that prints nothing for longer than `fila.sem_saida_min` minutes raises a "no output" warning in the panel.
+
 With `fila.limpar_bancos=sim` (off by default), the queue adds `--drop-databases` to a parallel `artisan test` (`--parallel` or `-p`; Laravel 9 or newer) and Laravel drops the `<database>_test_1…N` copies it created, on any database; the main database is never touched.
 
 ## Configuration
@@ -106,6 +108,7 @@ Everything is editable in the panel, except `fila.espera_max_s`, which is set on
 | `fila.teto` | 1–99 (3) | tests at once on the machine |
 | `fila.processos` | 1–64 (8) | parallel processes passed to the runner; also a cap on the parallelism flags an agent passes itself |
 | `fila.espera_max_s` | 1–86400 (300) | seconds a test waits for a slot before giving up with exit code 75 (`config set` only, no panel field) |
+| `fila.sem_saida_min` | 0–1440 (5) | minutes a running test may print nothing before the panel warns; 0 turns the warning off |
 | `fila.limpar_bancos` | `sim` · `nao` (`nao`) | add `--drop-databases` to a parallel `artisan test` (`--parallel` or `-p`), so Laravel drops the `<database>_test_N` copies |
 | `pool.teto` | 0–99 (0 = no cap) | workers at once on the machine |
 | `pool.ram_min` | GB (0 = off) | free memory needed to reserve a new slot |

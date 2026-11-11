@@ -24,6 +24,7 @@ export type TesteNaFila = {
   fila: string | null
   vaga: number | null
   desde_ts: number | null
+  saida: NonNullable<InfoTrava['saida']> | null
 }
 
 /** Pasta do teto global dentro de state/fila; fica de fora da listagem (o mesmo teste já aparece na fila dele). */
@@ -102,6 +103,7 @@ const linha = (info: Partial<InfoTrava>, estado: TesteNaFila['estado'], vaga: nu
   fila: info.fila ?? null,
   vaga,
   desde_ts: desde,
+  saida: info.saida ?? null,
 })
 
 /** Testes na fila: execucao, aguardando, parado (dono morto e sem órfão vivo); cada grupo do mais antigo. */

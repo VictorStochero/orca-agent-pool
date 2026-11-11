@@ -126,6 +126,46 @@ for (const [locale, fila, pool, config, imposicao, remover, reinstalar, ausencia
     assert.ok(view.find({ type: 'Table', label: fila, text: /runner tests\/X.php/ }))
   })
 
+  test(`${locale}: fila expandida mostra progresso, última saída, última linha e linhas de saída`, async () => {
+    view = await mount(panel, { locale, host: hostCom() })
+    await view.selectRows({ label: fila }, ['p4242'])
+    const tabela = { type: 'Table', label: fila }
+    assert.ok(view.find({ ...tabela, text: new RegExp(`${t.fila.progresso}.*▓▓▓▓▓░░░░░ 52% \\(63/120\\)`) }))
+    assert.ok(view.find({ ...tabela, text: new RegExp(t.fila.ultimaSaida) }))
+    assert.ok(view.find({ ...tabela, text: new RegExp(`${t.fila.ultimaLinha}.*63 / 120 \\( 52%\\)`) }))
+    assert.ok(view.find({ ...tabela, text: new RegExp(`${t.fila.linhasSaida}.*\\b12\\b`) }))
+  })
+
+  test(`${locale}: sem pct, o progresso diz quantos testes já passaram`, async () => {
+    const e: Estado = {
+      ...estadoExemplo,
+      fila: {
+        ...estadoExemplo.fila,
+        testes: [
+          { ...estadoExemplo.fila.testes[0], saida: { ts: 1793650470000, linha: null, linhas: 3, pct: null, feitos: 63, total: null } },
+        ],
+      },
+    }
+    view = await mount(panel, { locale, host: hostCom([], e) })
+    await view.selectRows({ label: fila }, ['p4242'])
+    assert.ok(view.find({ type: 'Table', label: fila, text: new RegExp(`${t.fila.progresso}.*${t.fila.feitosAteAgora(63)}`) }))
+    assert.equal(view.find({ type: 'Table', label: fila, text: new RegExp(t.fila.ultimaLinha) }), null)
+  })
+
+  test(`${locale}: configurações da fila têm o campo sem_saida_min e o texto do alerta teste_sem_saida`, async () => {
+    const gravados: unknown[] = []
+    view = await mount(panel, { locale, host: hostCom(gravados) })
+    await view.toggle({ label: config })
+    await view.select({ label: t.configuracoes.assuntos }, 'fila')
+    await view.type({ label: t.fila.campos.sem_saida_min }, '9', { replace: true })
+    await view.press({ type: 'Button', text: t.salvar })
+    assert.deepEqual(gravados, [{ 'fila.sem_saida_min': '9' }])
+    assert.match(
+      t.alertas.teste_sem_saida(123, 'marco1', 7),
+      locale === 'en' ? /no output for 7 min \(pid 123\) in marco1/ : /sem saída há 7 min \(pid 123\) em marco1/,
+    )
+  })
+
   test(`${locale}: pool identifica conta desativada`, async () => {
     view = await mount(panel, { locale, host: hostCom() })
     assert.ok(view.find({ type: 'Table', label: pool, text: new RegExp(t.pool.naoUtilizada) }))
@@ -521,12 +561,17 @@ test('sem os componentes de layout que quebraram o desenho: Grid, Callout, Skele
 test('fila: clicar abre os detalhes na própria tabela (onde roda, comando, pid, worktree), várias ficam abertas e o segundo clique recolhe', async () => {
   view = await mount(panel, { host: hostCom() })
   await view.selectRows(FILA, ['p4242'])
-  assert.deepEqual(view.rowsOf(FILA), ['p4242', 'p4242#0', 'p4242#1', 'p4242#2', 'p4242#3', 'p4120', 'p99'])
+  assert.deepEqual(view.rowsOf(FILA), [
+    'p4242',
+    ...[0, 1, 2, 3, 4, 5, 6, 7].map(i => `p4242#${i}`), // progresso, última saída, última linha, linhas, onde, comando, pid, worktree
+    'p4120',
+    'p99',
+  ])
   assert.ok(view.find({ type: 'Table', label: 'Testes na fila', text: /Onde roda.*mysql 127\.0\.0\.1:3308\/app_test/ }))
   assert.ok(view.find({ type: 'Table', label: 'Testes na fila', text: /runner tests\/X\.php/ }))
   // Cada selectRows é um clique numa linha: alterna aquela linha e mantém as outras.
   await view.selectRows(FILA, ['p99'])
-  assert.equal(view.rowsOf(FILA).length, 3 + 4 + 5) // o parado traz a linha extra de Situação
+  assert.equal(view.rowsOf(FILA).length, 3 + 8 + 5) // o parado traz a linha extra de Situação
   assert.ok(view.find({ type: 'Table', text: /O processo terminou e deixou a vaga presa/ }))
   await view.selectRows(FILA, ['p4242'])
   assert.deepEqual(view.rowsOf(FILA), ['p4242', 'p4120', 'p99', 'p99#0', 'p99#1', 'p99#2', 'p99#3', 'p99#4'])

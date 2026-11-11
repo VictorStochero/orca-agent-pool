@@ -20,7 +20,7 @@ export class ErroConfig extends Error {
 export const PADRAO: Config = {
   versao: 1,
   pool: { teto: 0, ramMinGb: 0, escolha: 'ritmo', contas: [] },
-  fila: { modo: 'banco', vagas: 2, vagasPorProjeto: 1, teto: 3, processos: 8, esperaMaxS: 300, limparBancos: false },
+  fila: { modo: 'banco', vagas: 2, vagasPorProjeto: 1, teto: 3, processos: 8, esperaMaxS: 300, semSaidaMin: 5, limparBancos: false },
 }
 
 export const NOME = /^[a-z0-9_-]{1,32}$/
@@ -32,6 +32,7 @@ export const FILA_INT: Record<string, [keyof Config['fila'], number, number]> = 
   'fila.teto': ['teto', 1, 99],
   'fila.processos': ['processos', 1, 64],
   'fila.espera_max_s': ['esperaMaxS', 1, 86400],
+  'fila.sem_saida_min': ['semSaidaMin', 0, 1440],
 }
 const CARACTERES_CONTA = {
   config: /^[~A-Za-z0-9_./:\\@+-]+$/,
@@ -59,7 +60,11 @@ export function validar(c: Config): ErroValidacao[] {
   if (!naFaixa(c.pool.ramMinGb, 0, 1024, false)) ruim('pool.ram_min')
   if (c.pool.escolha !== 'ritmo' && c.pool.escolha !== 'ordem') ruim('pool.escolha')
   if (!['global', 'banco', 'projeto'].includes(c.fila.modo)) ruim('fila.modo')
-  for (const [chave, [campo, min, max]] of Object.entries(FILA_INT)) if (!naFaixa(c.fila[campo], min, max)) ruim(chave)
+  for (const [chave, [campo, min, max]] of Object.entries(FILA_INT)) {
+    // Opcional (config escrita antes do campo): ausente vale o padrão.
+    if (campo === 'semSaidaMin' && c.fila[campo] === undefined) continue
+    if (!naFaixa(c.fila[campo], min, max)) ruim(chave)
+  }
   if (c.fila.limparBancos !== undefined && typeof c.fila.limparBancos !== 'boolean') ruim('fila.limpar_bancos')
   if (c.pool.ignoradas !== undefined && (!Array.isArray(c.pool.ignoradas) || c.pool.ignoradas.some(n => typeof n !== 'string')))
     ruim('pool.ignoradas')

@@ -41,7 +41,16 @@ test('importarLegado do agentes.conf (fixture) reproduz contas, ordem, comando, 
   assert.deepEqual([por.review.agente, por.review.papeis, por.review.ativo], ['antigravity', ['segunda-opiniao'], true])
   assert.deepEqual([por.opencode.ativo, por.opencode.vagas], [false, 2])
   assert.ok(c.pool.contas.every(x => x.origem === 'manual'))
-  assert.deepEqual(c.fila, { modo: 'banco', vagas: 3, vagasPorProjeto: 2, teto: 4, processos: 6, esperaMaxS: 300, limparBancos: false })
+  assert.deepEqual(c.fila, {
+    modo: 'banco',
+    vagas: 3,
+    vagasPorProjeto: 2,
+    teto: 4,
+    processos: 6,
+    esperaMaxS: 300,
+    semSaidaMin: 5,
+    limparBancos: false,
+  })
   assert.deepEqual(validar(c), [])
   assert.deepEqual(
     [readFileSync(join(home, '.claude', 'agentes.conf'), 'utf8'), readFileSync(join(home, '.claude', 'fila.conf'), 'utf8')],

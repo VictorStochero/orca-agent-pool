@@ -9,9 +9,11 @@ import { detectarExecutor, type Executor } from './executores.ts'
 import { aquecerOrfaos } from './orfao.ts'
 import { comLimpezaDeBancos, limitarProcessos } from './processos.ts'
 import { chaveFila, detectarRecurso, nomeProjeto } from './recurso.ts'
+import { acompanharSaida } from './saida.ts'
 import { limparTravasMortas, soltarVaga, TETO, tomarVaga } from './travas.ts'
 
 const POLL_MS = 250
+const GRAVAR_SAIDA_MS = 1000
 
 /** Avisos da fila como código + dados; quem exibe (CLI) traduz. */
 export type EventoFila =
@@ -158,17 +160,47 @@ export async function rodarNaFila(o: OpcoesRodar): Promise<number> {
     const { comando: lancado, ajustes } = ajustado()
     for (const a of ajustes) avisar({ codigo: 'processos_ajustados', ...a })
     const code = await new Promise<number>(resolve => {
-      filho = lancar(lancado, o.dir, { CI: '1', ...envTeste })
+      filho = lancar(lancado, o.dir, { CI: '1', ...envTeste }, ['inherit', 'pipe', 'pipe'])
+      const dirs = [join(base, String(vagaFila)), join(baseTeto, String(vagaTeto))]
       if (filho.pid) {
         const f = { pid: filho.pid, inicio: agora() }
-        anotar(join(base, String(vagaFila)), { filho: f, comando: lancado.join(' ') })
-        anotar(join(baseTeto, String(vagaTeto)), { filho: f, comando: lancado.join(' ') })
+        for (const d of dirs) anotar(d, { filho: f, comando: lancado.join(' ') })
       }
+      // Grava a primeira saída na hora e depois no máximo 1x/s; a última fica pendente num timer.
+      const acomp = acompanharSaida(agora)
+      let ultima = 0
+      let pendente: NodeJS.Timeout | null = null
+      const gravar = () => {
+        pendente = null
+        ultima = agora()
+        const saida = acomp.estado()
+        if (saida) for (const d of dirs) anotar(d, { saida })
+      }
+      const aoChunk = (fonte: 'out' | 'err') => (chunk: Buffer) => {
+        // Bytes crus ao terminal: o filho pode escrever em codepage e recodificar corromperia.
+        const destino = fonte === 'out' ? process.stdout : process.stderr
+        try {
+          destino.write(chunk, () => {})
+        } catch {
+          // EPIPE no pai não derruba o teste
+        }
+        acomp.receber(fonte, chunk)
+        if (pendente) return
+        const espera = ultima + GRAVAR_SAIDA_MS - agora()
+        if (espera <= 0) gravar()
+        else pendente = setTimeout(gravar, espera)
+      }
+      filho.stdout?.on('data', aoChunk('out'))
+      filho.stderr?.on('data', aoChunk('err'))
       filho.on('error', e => {
+        if (pendente) clearTimeout(pendente)
         avisar({ codigo: 'falha_inicio', comando: lancado[0], erro: e.message })
         resolve(127)
       })
-      filho.on('close', (c, s) => resolve(c ?? 128 + (constants.signals[s as NodeJS.Signals] ?? 0)))
+      filho.on('close', (c, s) => {
+        if (pendente) clearTimeout(pendente)
+        resolve(c ?? 128 + (constants.signals[s as NodeJS.Signals] ?? 0))
+      })
     })
 
     return code

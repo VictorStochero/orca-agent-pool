@@ -442,3 +442,54 @@ test('sem orfao injetado, o aquecimento real recupera a vaga de dono e filho mor
   const r = relogio()
   assert.equal(await rodarNaFila({ dir, comando: sai(0), config: cfg({ vagas: 1, esperaMaxS: 2 }), p, env: {}, ...r }), 0)
 })
+
+/** Lê `saida` das travas da vaga 1 de cada fila (a do teste e o teto) enquanto o filho roda. */
+function espiarSaida(p: ReturnType<typeof paths>, vistos: { fila: string; saida: { linha: string; linhas: number; ts: number } }[]) {
+  return setInterval(() => {
+    if (!existsSync(p.fila)) return
+    for (const fila of readdirSync(p.fila)) {
+      try {
+        const i = JSON.parse(readFileSync(join(p.fila, fila, '1', 'info.json'), 'utf8'))
+        if (i.saida) vistos.push({ fila, saida: i.saida })
+      } catch {
+        // trava ainda não publicada ou em troca
+      }
+    }
+  }, 20)
+}
+
+test('a saída do filho chega ao stdout do pai e o código é o do filho', async () => {
+  const p = paths(tmp())
+  const cmd = [process.execPath, '-e', "console.log('  3 / 10 ( 30%)'); setTimeout(() => process.exit(4), 50)"]
+  const escritos: Buffer[] = []
+  const original = process.stdout.write
+  process.stdout.write = ((c: Buffer | string) => {
+    escritos.push(Buffer.from(c))
+    return true
+  }) as typeof process.stdout.write
+  let code: number
+  try {
+    code = await rodarNaFila({ dir: tmp(), comando: cmd, config: cfg(), p, env: {} })
+  } finally {
+    process.stdout.write = original
+  }
+  assert.equal(code, 4)
+  assert.match(Buffer.concat(escritos).toString(), /3 \/ 10 \( 30%\)/)
+})
+
+test('a trava da fila e a do teto recebem saida; no máximo uma gravação por segundo', async () => {
+  const p = paths(tmp())
+  const vistos: { fila: string; saida: { linha: string; linhas: number; ts: number } }[] = []
+  const espia = espiarSaida(p, vistos)
+  const cmd = [process.execPath, '-e', "console.log('a'); setTimeout(() => { console.log('b'); setTimeout(() => {}, 500) }, 300)"]
+  try {
+    await rodarNaFila({ dir: tmp(), comando: cmd, config: cfg(), p, env: {} })
+  } finally {
+    clearInterval(espia)
+  }
+  assert.ok(new Set(vistos.map(v => v.fila)).has('_teto'))
+  assert.ok(new Set(vistos.map(v => v.fila)).size >= 2)
+  assert.deepEqual([vistos[0].saida.linha, vistos[0].saida.linhas, typeof vistos[0].saida.ts], ['a', 1, 'number'])
+  // 'b' chega 300 ms depois, dentro da janela de 1 s: não é gravada
+  assert.ok(vistos.every(v => v.saida.linhas === 1))
+})
