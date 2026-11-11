@@ -59,7 +59,6 @@ export function ComDica({ texto, children }: { texto: string; children: OrcaNode
   )
 }
 
-/** Lista de arquivos que um clique vai gravar, um por linha. */
 /** Cartão das seções: borda, cantos e fundo do tema, com menos espaço interno que o Card nativo (que não aceita padding). */
 export function Secao({ titulo, descricao, children }: { titulo?: string; descricao?: string; children?: OrcaNode }) {
   return (
@@ -79,6 +78,7 @@ export function Secao({ titulo, descricao, children }: { titulo?: string; descri
   )
 }
 
+/** Lista de arquivos que um clique vai gravar, um por linha. */
 export function Arquivos({ titulo, lista }: { titulo: string; lista: readonly string[] }) {
   return (
     <Stack gap="xs">
@@ -92,8 +92,8 @@ export function Arquivos({ titulo, lista }: { titulo: string; lista: readonly st
   )
 }
 
-/** Detalhe: [rótulo, valor]; o valor pode ser um tempo relativo, que o Orca mantém atualizado. */
-export type Detalhe = [string, string | number | RelativeTimeCell]
+/** Detalhe: [rótulo, valor, íntegro?]; o valor pode ser um tempo relativo, que o Orca mantém atualizado. `íntegro` = sem quebra opcional (valor para copiar e colar no terminal). */
+export type Detalhe = [string, string | number | RelativeTimeCell, boolean?]
 /** Linha de detalhe condicional: some quando o valor é vazio ou falso. */
 export const se = (rotulo: string, valor: string | false | null | undefined): Detalhe[] => (valor ? [[rotulo, valor]] : [])
 export type Linha = { key: string; cells: Record<string, TableCell>; detalhes: Detalhe[] }
@@ -205,7 +205,7 @@ export function TabelaExpansivel(props: {
                 ...(aberta
                   ? [
                       <Box key={`${l.key}#detalhes`} background="muted" radius="md" padding="sm" gap="sm" margin="xs">
-                        {l.detalhes.flatMap(([rotulo, valor], i) => [
+                        {l.detalhes.flatMap(([rotulo, valor, integro], i) => [
                           ...(i > 0 ? [<Separator key={`${l.key}#${i}:divisoria`} />] : []),
                           <Box key={`${l.key}#${i}`} direction="row" gap="sm" align="start">
                             <Box key={`${l.key}#${i}:rotulo`} width={LARGURA_ROTULO} shrink={false}>
@@ -214,7 +214,7 @@ export function TabelaExpansivel(props: {
                               </Text>
                             </Box>
                             <Box key={`${l.key}#${i}:valor`} grow>
-                              <Valor v={valor} size="sm" quebrar />
+                              <Valor v={valor} size="sm" quebrar={!integro} />
                             </Box>
                           </Box>,
                         ])}

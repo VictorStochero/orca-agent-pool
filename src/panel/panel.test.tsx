@@ -162,6 +162,9 @@ for (const [locale, fila, pool, config, imposicao, remover, reinstalar, ausencia
     assert.ok(bruto.includes(ZWSP) && !bruto.includes(ZWSP.repeat(2)))
     assert.equal(semZwsp(bruto), 'mysql 127.0.0.1:3308/app_test') // o texto à vista é o mesmo
     assert.equal(view.find({ testId: 'p4242.projeto' })!.text.includes(ZWSP), false) // a célula da linha não leva ZWSP
+    // Comando e Worktree são copiados para o terminal: sem ZWSP (7 = worktree, 5 = comando)
+    assert.equal(view.find({ testId: 'p4242#5:valor' })!.text, 'runner tests/X.php')
+    assert.equal(view.find({ testId: 'p4242#7:valor' })!.text, '/work/wt-um')
     assert.equal(view.find({ testId: 'p4242#4' })!.props.align, 'start') // rótulo no topo do valor
   })
 
