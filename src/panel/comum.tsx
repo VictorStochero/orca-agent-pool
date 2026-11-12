@@ -117,7 +117,7 @@ const RESPIRO_COLUNA = 8
 const RECUO_LINHA = 16
 /** O host não mede linhas: acima disto (~2 linhas no painel estreito) o valor do detalhe recolhe numa linha com "ver mais". */
 const LIMITE_RECOLHIDO = 60
-/** Valores de detalhe abertos com "ver mais", por `<linha>#<rótulo>`. */
+/** Valores de detalhe abertos com "ver mais", por `<linha>#<rótulo>#<ocorrência do rótulo>`. */
 const inteiros = atom<string[]>([])
 const alternado = (lista: string[], k: string) => (lista.includes(k) ? lista.filter(x => x !== k) : [...lista, k])
 /** Largura do rótulo na linha de detalhe; o valor ocupa o resto e quebra linha. */
@@ -229,7 +229,8 @@ export function TabelaExpansivel(props: {
                         {l.detalhes.flatMap(([rotulo, valor, integro], i) => {
                           // Com `\n` as linhas já são as do valor (progresso): recolher só somaria o "ver mais".
                           const recolhivel = typeof valor === 'string' && valor.length > LIMITE_RECOLHIDO && !valor.includes('\n')
-                          const chave = `${l.key}#${rotulo}`
+                          // Rótulo repetido (duas "Situação" no pool) ganha o número da ocorrência: cada um abre sozinho.
+                          const chave = `${l.key}#${rotulo}#${l.detalhes.slice(0, i).filter(d => d[0] === rotulo).length}`
                           const inteiro = read(inteiros).includes(chave)
                           return [
                             ...(i > 0 ? [<Separator key={`${l.key}#${i}:divisoria`} />] : []),

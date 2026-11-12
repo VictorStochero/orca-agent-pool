@@ -286,6 +286,22 @@ for (const [locale, fila, pool, config, imposicao, remover, reinstalar, ausencia
     assert.ok(tem(view, lista(pool), locale === 'en' ? /Writer, Reviewer/ : /Escritor, Revisor/))
   })
 
+  test(`${locale}: conta desativada sem pasta tem duas Situação longas, e cada "ver mais" abre só a sua`, async () => {
+    const [main, codex, desativada] = estadoExemplo.pool.contas
+    const motivo = { tipo: 'pasta_ausente' as const, valor: 'C:\\Users\\alguem\\.claude-conta-que-nao-existe' }
+    const cota = { ...main!.cota!, curta: null, longa: null, estado: 'nao_configurada' as const, motivo }
+    const e: Estado = { ...estadoExemplo, pool: { ...estadoExemplo.pool, contas: [main!, codex!, { ...desativada!, cota }] } }
+    view = await mount(panel, { locale, host: hostCom([], e) })
+    await abrir(view, 'claude-abcdef12')
+    const situacoes = [0, 1].map(i => rotuloDe(view!, 'claude-abcdef12', i))
+    assert.deepEqual(situacoes, [t.pool.situacao, t.pool.situacao])
+    const link = (i: number) =>
+      view!.findAll({ type: 'Link' }).find(x => x.path.startsWith(`${view!.find({ testId: `claude-abcdef12#${i}:valor` })!.path}/`))
+    assert.deepEqual([link(0)?.text, link(1)?.text], [t.verMais, t.verMais])
+    await view.press(link(0)!)
+    assert.deepEqual([link(0)?.text, link(1)?.text], [t.verMenos, t.verMais])
+  })
+
   for (const aba of ['fila', 'pool', 'contas', 'painel'] as const) {
     test(`${locale}: configuração ${aba} editável`, async () => {
       const gravados: unknown[] = []
@@ -1494,8 +1510,8 @@ test('modo da fila: o valor dos rádios é sempre controlado, só o do modo atua
 })
 
 for (const [locale, projeto, teto] of [
-  ['pt-BR', 'Projeto', 'Teto da máquina'],
-  ['en', 'Project', 'Machine cap'],
+  ['pt-BR', 'Projeto', 'Teto'],
+  ['en', 'Project', 'Cap'],
 ] as const) {
   test(`${locale}: coluna Fila vem da fila real de cada linha, não do modo atual`, async () => {
     const base = estadoExemplo.fila.testes[0]
