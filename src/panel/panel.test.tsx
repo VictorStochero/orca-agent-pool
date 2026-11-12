@@ -1453,23 +1453,31 @@ test('alertas: o bloco Atenção lista um item por problema e o comando num Code
   assert.deepEqual(view.errors, [])
 })
 
-test('fila: comando longo (1500 caracteres) aparece numa linha cortada com "ver mais", inteiro no clique e recolhe em "ver menos", sem recusa do Orca', async () => {
+test('fila: detalhe longo (comando de 1500 caracteres, última linha de 80) aparece numa linha cortada com "ver mais", inteiro no clique e recolhe em "ver menos", sem recusa do Orca', async () => {
   const longo = 'x'.repeat(1500)
+  const base = estadoExemplo.fila.testes[0]
   const estado: Estado = {
     ...estadoExemplo,
-    fila: { ...estadoExemplo.fila, testes: [{ ...estadoExemplo.fila.testes[0], comando: longo }] },
+    fila: { ...estadoExemplo.fila, testes: [{ ...base, comando: longo, saida: { ...base.saida!, linha: 'y'.repeat(80) } }] },
   }
   view = await mount(panel, { host: hostCom([], estado) })
   await abrir(view, 'p4242')
   // o texto vai inteiro (copiável); o corte é o truncate do Text, na largura real
   const cortado = () => view!.find({ type: 'Text', text: longo })?.props.truncate
+  const link = (i: number) =>
+    view!.findAll({ type: 'Link' }).find(x => x.path.startsWith(`${view!.find({ testId: `p4242#${i}:valor` })!.path}/`))
   assert.deepEqual([valorDe(view, 'p4242', 5), cortado()], [`${longo} ver mais`, true])
-  await view.press({ type: 'Link', text: 'ver mais' })
+  await view.press(link(5)!)
   assert.deepEqual([valorDe(view, 'p4242', 5), cortado()], [`${longo} ver menos`, false])
-  await view.press({ type: 'Link', text: 'ver menos' })
+  assert.equal(valorDe(view, 'p4242', 2), `${'y'.repeat(80)} ver mais`) // cada detalhe abre por conta própria
+  await view.press(link(5)!)
   assert.deepEqual([valorDe(view, 'p4242', 5), cortado()], [`${longo} ver mais`, true])
-  // o comando curto e o worktree (também íntegros) seguem sem "ver mais"
-  assert.equal(view.findAll({ type: 'Link', text: /^ver m/ }).length, 1)
+  // comando e última linha recolhem; o progresso (duas linhas próprias) e os curtos seguem sem "ver mais"
+  assert.deepEqual(
+    [0, 2, 5].map(i => Boolean(link(i))),
+    [false, true, true],
+  )
+  assert.equal(view.findAll({ type: 'Link', text: /^ver m/ }).length, 2)
   assert.deepEqual([view.errors, view.warnings, view.refusals], [[], [], []])
 })
 

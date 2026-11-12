@@ -97,7 +97,7 @@ export function Arquivos({ titulo, lista }: { titulo: string; lista: readonly st
 
 /**
  * Detalhe: [rótulo, valor, íntegro?]; o valor pode ser um tempo relativo, que o Orca mantém atualizado. `íntegro` = sem quebra
- * opcional (valor para copiar e colar no terminal); longo, aparece recolhido com "ver mais".
+ * opcional (valor para copiar e colar no terminal). Texto longo aparece numa linha cortada, com "ver mais".
  */
 export type Detalhe = [string, string | number | RelativeTimeCell, boolean?]
 /** Linha de detalhe condicional: some quando o valor é vazio ou falso. */
@@ -115,9 +115,9 @@ type Coluna = {
 const LARGURA_SETA = 10
 const RESPIRO_COLUNA = 8
 const RECUO_LINHA = 16
-/** O host não mede linhas: acima disto (~2 linhas no painel estreito) o valor íntegro recolhe numa linha com "ver mais". */
+/** O host não mede linhas: acima disto (~2 linhas no painel estreito) o valor do detalhe recolhe numa linha com "ver mais". */
 const LIMITE_RECOLHIDO = 60
-/** Valores íntegros abertos com "ver mais", por `<linha>#<rótulo>`. */
+/** Valores de detalhe abertos com "ver mais", por `<linha>#<rótulo>`. */
 const inteiros = atom<string[]>([])
 const alternado = (lista: string[], k: string) => (lista.includes(k) ? lista.filter(x => x !== k) : [...lista, k])
 /** Largura do rótulo na linha de detalhe; o valor ocupa o resto e quebra linha. */
@@ -227,7 +227,8 @@ export function TabelaExpansivel(props: {
                   ? [
                       <Box key={`${l.key}#detalhes`} background="muted" radius="md" padding="sm" gap="sm" margin="xs">
                         {l.detalhes.flatMap(([rotulo, valor, integro], i) => {
-                          const recolhivel = integro && typeof valor === 'string' && valor.length > LIMITE_RECOLHIDO
+                          // Com `\n` as linhas já são as do valor (progresso): recolher só somaria o "ver mais".
+                          const recolhivel = typeof valor === 'string' && valor.length > LIMITE_RECOLHIDO && !valor.includes('\n')
                           const chave = `${l.key}#${rotulo}`
                           const inteiro = read(inteiros).includes(chave)
                           return [
