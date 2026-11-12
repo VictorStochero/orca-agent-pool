@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "agent-pool",
   "name": "Agent Pool & Test Queue",
-  "version": "1.0.13",
+  "version": "1.0.14",
   "description": "Spread agent work across your Claude, Codex and other accounts by the quota each one has left, and run every test through one machine-wide queue so parallel worktrees don't overload the machine or share a test database.",
   "author": { "name": "Victor Stochero", "url": "https://github.com/VictorStochero" },
   "repository": "https://github.com/VictorStochero/orca-agent-pool",

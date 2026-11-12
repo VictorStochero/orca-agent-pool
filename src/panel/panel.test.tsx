@@ -138,8 +138,14 @@ for (const [locale, fila, pool, config, imposicao, remover, reinstalar, ausencia
     await abrir(view, 'p4242')
     const rotulo = (i: number) => rotuloDe(view!, 'p4242', i)
     const valor = (i: number) => valorDe(view!, 'p4242', i)
-    // a barra inteira, sem corte, com o total e as duas contagens
-    assert.deepEqual([rotulo(0), valor(0)], [t.fila.progresso, `▓▓▓▓▓░░░░░ 52% (63/120) · ${t.fila.passaramFalharam(61, 2)}`])
+    // a barra inteira, sem corte, com o total; as duas contagens num Text próprio, na linha de baixo
+    assert.deepEqual([rotulo(0), valor(0)], [t.fila.progresso, `▓▓▓▓▓░░░░░ 52% (63/120) ${t.fila.passaramFalharam(61, 2)}`])
+    assert.deepEqual(
+      view
+        .findAll({ type: 'Text' })
+        .flatMap(x => (x.path.startsWith(`${view!.find({ testId: 'p4242#0:valor' })!.path}/`) ? [semZwsp(x.text)] : [])),
+      ['▓▓▓▓▓░░░░░ 52% (63/120)', t.fila.passaramFalharam(61, 2)],
+    )
     assert.equal(rotulo(1), t.fila.ultimaSaida)
     assert.ok(view.find({ testId: 'p4242#1:valor' }) && view.find({ type: 'RelativeTime' }))
     assert.deepEqual([rotulo(2), valor(2)], [t.fila.ultimaLinha, '... 63 / 120 ( 52%)'])
@@ -208,7 +214,7 @@ for (const [locale, fila, pool, config, imposicao, remover, reinstalar, ausencia
       host: hostCom([], com({ ts: 1793650480000, linha: 'x', linhas: 9, pct: 99, feitos: 130, total: 120, passou: 128, falhou: 2 })),
     })
     await abrir(view, 'p4242')
-    assert.equal(valorDe(view, 'p4242', 0), `▓▓▓▓▓▓▓▓▓░ 99% (130/120) · ${t.fila.passaramFalharam(128, 2)}`)
+    assert.equal(valorDe(view, 'p4242', 0), `▓▓▓▓▓▓▓▓▓░ 99% (130/120) ${t.fila.passaramFalharam(128, 2)}`)
     await view.unmount()
     // total listado antes de qualquer saída (ts 0): 0% (0/N) e "nenhuma ainda"
     view = await mount(panel, {
@@ -278,6 +284,22 @@ for (const [locale, fila, pool, config, imposicao, remover, reinstalar, ausencia
     assert.ok(tem(view, lista(pool), new RegExp(t.pool.naoUtilizadaDetalhe)))
     await abrir(view, 'main')
     assert.ok(tem(view, lista(pool), locale === 'en' ? /Writer, Reviewer/ : /Escritor, Revisor/))
+  })
+
+  test(`${locale}: conta desativada sem pasta tem duas Situação longas, e cada "ver mais" abre só a sua`, async () => {
+    const [main, codex, desativada] = estadoExemplo.pool.contas
+    const motivo = { tipo: 'pasta_ausente' as const, valor: 'C:\\Users\\alguem\\.claude-conta-que-nao-existe' }
+    const cota = { ...main!.cota!, curta: null, longa: null, estado: 'nao_configurada' as const, motivo }
+    const e: Estado = { ...estadoExemplo, pool: { ...estadoExemplo.pool, contas: [main!, codex!, { ...desativada!, cota }] } }
+    view = await mount(panel, { locale, host: hostCom([], e) })
+    await abrir(view, 'claude-abcdef12')
+    const situacoes = [0, 1].map(i => rotuloDe(view!, 'claude-abcdef12', i))
+    assert.deepEqual(situacoes, [t.pool.situacao, t.pool.situacao])
+    const link = (i: number) =>
+      view!.findAll({ type: 'Link' }).find(x => x.path.startsWith(`${view!.find({ testId: `claude-abcdef12#${i}:valor` })!.path}/`))
+    assert.deepEqual([link(0)?.text, link(1)?.text], [t.verMais, t.verMais])
+    await view.press(link(0)!)
+    assert.deepEqual([link(0)?.text, link(1)?.text], [t.verMenos, t.verMais])
   })
 
   for (const aba of ['fila', 'pool', 'contas', 'painel'] as const) {
@@ -591,17 +613,16 @@ test('editar comando da conta manual preserva o campo da nova conta', async () =
   assert.deepEqual(gravados, [{ 'conta.main.comando': 'claude -p' }])
 })
 
-// Painel estreito: a primeira coluna cresce e as demais dividem 60% em partes iguais, sem largura em pixels.
 test('colunas das tabelas: a primeira cresce com mínimo próprio, as demais têm largura fixa em px; abaixo da soma a tabela rola', async () => {
   view = await mount(panel, { host: hostCom() })
   for (const [chavesCol, larguras] of [
     [
       ['projeto', 'fila', 'estado', 'ha'],
-      [140, 130, 130, 70],
+      [85, 76, 115, 44],
     ],
     [
       ['conta', 'vagas', 'sessoes', 'h5', 'semanal'],
-      [170, 60, 70, 55, 75],
+      [80, 46, 62, 48, 64],
     ],
   ] as const) {
     const [primeira, ...demais] = chavesCol.map(c => view!.find({ testId: `cabecalho.${c}` })!.props)
@@ -609,12 +630,13 @@ test('colunas das tabelas: a primeira cresce com mínimo próprio, as demais tê
     for (const [i, p] of demais.entries()) assert.deepEqual([p.width, p.shrink, p.grow], [larguras[i + 1], false, false])
   }
   assert.equal(view.find({ testId: 'cabecalho.semanal' })!.props.justify, 'end')
-  // contêiner com rolagem horizontal e a largura mínima somando a seta e as colunas (nunca menos que a soma delas)
+  // contêiner com rolagem horizontal; a largura mínima soma o recuo do ListItem (16), a seta (10), as colunas e 8 entre cada uma:
+  // sem o recuo a última coluna vaza a borda. As duas tabelas cabem num painel de 380px.
   assert.equal(nos(view).filter(n => n.props.scroll === 'x').length, 2)
   const minimas = nos(view).flatMap(n => (n.props.gap === 'none' && typeof n.props.minWidth === 'number' ? [n.props.minWidth] : []))
-  assert.equal(minimas.length, 2)
+  assert.deepEqual(minimas, [16 + 10 + 85 + 76 + 115 + 44 + 4 * 8, 16 + 10 + 80 + 46 + 62 + 48 + 64 + 5 * 8])
   assert.ok(
-    minimas.every(m => m >= 28 + 140 + 130 + 130 + 70),
+    minimas.every(m => m <= 380),
     String(minimas),
   )
 })
@@ -727,7 +749,7 @@ test('fila: clicar abre os detalhes na própria tabela (onde roda, comando, pid,
   assert.deepEqual(linhasDe(FILA), ['p4242', 'p4120', 'p99'])
 })
 
-test('fila: a coluna Fila segue o modo (Global · Banco · Container · Geral · Projeto <nome>) e sem testes diz "Nenhum teste na fila"', async () => {
+test('fila: a coluna Fila segue o modo (Global · Banco · Container · Geral · Projeto) e sem testes diz "Nenhum teste na fila"', async () => {
   const com = (modo: Estado['fila']['modo'], recursos: string[]): Estado => ({
     ...estadoExemplo,
     fila: {
@@ -742,7 +764,7 @@ test('fila: a coluna Fila segue o modo (Global · Banco · Container · Geral ·
   assert.ok(view.find({ text: /Modo Por banco/ }))
   await view.unmount()
   view = await mount(panel, { host: hostCom([], com('projeto', ['projeto meu-projeto'])) })
-  assert.ok(tem(view, tabela, /Projeto wt-um/)) // o projeto da linha, não o recurso
+  assert.equal(celula(view, 'p10', 'fila'), 'Projeto') // o nome já está na coluna Projeto
   assert.ok(view.find({ text: /Modo Por projeto/ }))
   await view.unmount()
   view = await mount(panel, { host: hostCom([], com('global', [])) })
@@ -1447,15 +1469,31 @@ test('alertas: o bloco Atenção lista um item por problema e o comando num Code
   assert.deepEqual(view.errors, [])
 })
 
-test('fila: comando longo (1500 caracteres) aparece inteiro no detalhe, sem recusa do Orca', async () => {
+test('fila: detalhe longo (comando de 1500 caracteres, última linha de 80) aparece numa linha cortada com "ver mais", inteiro no clique e recolhe em "ver menos", sem recusa do Orca', async () => {
   const longo = 'x'.repeat(1500)
+  const base = estadoExemplo.fila.testes[0]
   const estado: Estado = {
     ...estadoExemplo,
-    fila: { ...estadoExemplo.fila, testes: [{ ...estadoExemplo.fila.testes[0], comando: longo }] },
+    fila: { ...estadoExemplo.fila, testes: [{ ...base, comando: longo, saida: { ...base.saida!, linha: 'y'.repeat(80) } }] },
   }
   view = await mount(panel, { host: hostCom([], estado) })
   await abrir(view, 'p4242')
-  assert.equal(valorDe(view, 'p4242', 5), longo)
+  // o texto vai inteiro (copiável); o corte é o truncate do Text, na largura real
+  const cortado = () => view!.find({ type: 'Text', text: longo })?.props.truncate
+  const link = (i: number) =>
+    view!.findAll({ type: 'Link' }).find(x => x.path.startsWith(`${view!.find({ testId: `p4242#${i}:valor` })!.path}/`))
+  assert.deepEqual([valorDe(view, 'p4242', 5), cortado()], [`${longo} ver mais`, true])
+  await view.press(link(5)!)
+  assert.deepEqual([valorDe(view, 'p4242', 5), cortado()], [`${longo} ver menos`, false])
+  assert.equal(valorDe(view, 'p4242', 2), `${'y'.repeat(80)} ver mais`) // cada detalhe abre por conta própria
+  await view.press(link(5)!)
+  assert.deepEqual([valorDe(view, 'p4242', 5), cortado()], [`${longo} ver mais`, true])
+  // comando e última linha recolhem; o progresso (duas linhas próprias) e os curtos seguem sem "ver mais"
+  assert.deepEqual(
+    [0, 2, 5].map(i => Boolean(link(i))),
+    [false, true, true],
+  )
+  assert.equal(view.findAll({ type: 'Link', text: /^ver m/ }).length, 2)
   assert.deepEqual([view.errors, view.warnings, view.refusals], [[], [], []])
 })
 
@@ -1472,8 +1510,8 @@ test('modo da fila: o valor dos rádios é sempre controlado, só o do modo atua
 })
 
 for (const [locale, projeto, teto] of [
-  ['pt-BR', 'Projeto gestaosmart', 'Teto da máquina'],
-  ['en', 'Project gestaosmart', 'Machine cap'],
+  ['pt-BR', 'Projeto', 'Teto'],
+  ['en', 'Project', 'Cap'],
 ] as const) {
   test(`${locale}: coluna Fila vem da fila real de cada linha, não do modo atual`, async () => {
     const base = estadoExemplo.fila.testes[0]

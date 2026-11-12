@@ -1,10 +1,12 @@
 // Componentes usados por mais de uma seção.
 import {
+  atom,
   Box,
   Button,
   Code,
   env,
   IconButton,
+  Link,
   List,
   ListItem,
   type OrcaNode,
@@ -14,6 +16,7 @@ import {
   read,
   Separator,
   Stack,
+  set,
   type TableCell,
   Text,
   type TextProps,
@@ -92,7 +95,10 @@ export function Arquivos({ titulo, lista }: { titulo: string; lista: readonly st
   )
 }
 
-/** Detalhe: [rótulo, valor, íntegro?]; o valor pode ser um tempo relativo, que o Orca mantém atualizado. `íntegro` = sem quebra opcional (valor para copiar e colar no terminal). */
+/**
+ * Detalhe: [rótulo, valor, íntegro?]; o valor pode ser um tempo relativo, que o Orca mantém atualizado. `íntegro` = sem quebra
+ * opcional (valor para copiar e colar no terminal). Texto longo aparece numa linha cortada, com "ver mais".
+ */
 export type Detalhe = [string, string | number | RelativeTimeCell, boolean?]
 /** Linha de detalhe condicional: some quando o valor é vazio ou falso. */
 export const se = (rotulo: string, valor: string | false | null | undefined): Detalhe[] => (valor ? [[rotulo, valor]] : [])
@@ -105,9 +111,15 @@ type Coluna = {
   largura: number
 }
 
-/** Largura (px) da coluna da seta e do respiro entre as colunas, para a soma da largura mínima da tabela. */
-const LARGURA_SETA = 28
+/** Largura (px) da coluna da seta, do respiro entre as colunas e do recuo do ListItem (8 de cada lado), para a soma da largura mínima da tabela. */
+const LARGURA_SETA = 10
 const RESPIRO_COLUNA = 8
+const RECUO_LINHA = 16
+/** O host não mede linhas: acima disto (~2 linhas no painel estreito) o valor do detalhe recolhe numa linha com "ver mais". */
+const LIMITE_RECOLHIDO = 60
+/** Valores de detalhe abertos com "ver mais", por `<linha>#<rótulo>#<ocorrência do rótulo>`. */
+const inteiros = atom<string[]>([])
+const alternado = (lista: string[], k: string) => (lista.includes(k) ? lista.filter(x => x !== k) : [...lista, k])
 /** Largura do rótulo na linha de detalhe; o valor ocupa o resto e quebra linha. */
 const LARGURA_ROTULO = '35%'
 /** Pontos onde o navegador pode quebrar um valor longo (caminho, comando, endereço). */
@@ -124,6 +136,15 @@ function maiusculas(s: string): string {
 }
 
 function Valor({ v, truncar, quebrar, ...props }: { v: TableCell | RelativeTimeCell; truncar?: boolean; quebrar?: boolean } & TextProps) {
+  // `\n` no valor: um Text por linha.
+  if (typeof v === 'string' && v.includes('\n'))
+    return (
+      <Box gap="none">
+        {v.split('\n').map(linha => (
+          <Valor key={linha} v={linha} truncar={truncar} quebrar={quebrar} {...props} />
+        ))}
+      </Box>
+    )
   return (
     <Text {...props} truncate={truncar}>
       {typeof v === 'object' && v !== null ? (
@@ -149,7 +170,7 @@ export function TabelaExpansivel(props: {
   abertas: string[]
   onAbrir: (keys: string[]) => void
 }) {
-  const larguraMinima = LARGURA_SETA + props.colunas.reduce((n, c) => n + c.largura + RESPIRO_COLUNA, 0)
+  const larguraMinima = RECUO_LINHA + LARGURA_SETA + props.colunas.reduce((n, c) => n + c.largura + RESPIRO_COLUNA, 0)
   const celula = (prefixo: string, c: Coluna, i: number, conteudo: OrcaNode) => (
     <Box
       key={`${prefixo}.${c.key}`}
@@ -174,7 +195,7 @@ export function TabelaExpansivel(props: {
       ]}
     </Box>
   )
-  const alternar = (k: string) => props.onAbrir(props.abertas.includes(k) ? props.abertas.filter(x => x !== k) : [...props.abertas, k])
+  const alternar = (k: string) => props.onAbrir(alternado(props.abertas, k))
   return (
     <Box key={`tabela:${props.label}`} border radius="md">
       <Box scroll="x">
@@ -205,19 +226,34 @@ export function TabelaExpansivel(props: {
                 ...(aberta
                   ? [
                       <Box key={`${l.key}#detalhes`} background="muted" radius="md" padding="sm" gap="sm" margin="xs">
-                        {l.detalhes.flatMap(([rotulo, valor, integro], i) => [
-                          ...(i > 0 ? [<Separator key={`${l.key}#${i}:divisoria`} />] : []),
-                          <Box key={`${l.key}#${i}`} direction="row" gap="sm" align="start">
-                            <Box key={`${l.key}#${i}:rotulo`} width={LARGURA_ROTULO} shrink={false}>
-                              <Text size="sm" muted>
-                                {rotulo}
-                              </Text>
-                            </Box>
-                            <Box key={`${l.key}#${i}:valor`} grow>
-                              <Valor v={valor} size="sm" quebrar={!integro} />
-                            </Box>
-                          </Box>,
-                        ])}
+                        {l.detalhes.flatMap(([rotulo, valor, integro], i) => {
+                          // Com `\n` as linhas já são as do valor (progresso): recolher só somaria o "ver mais".
+                          const recolhivel = typeof valor === 'string' && valor.length > LIMITE_RECOLHIDO && !valor.includes('\n')
+                          // Rótulo repetido (duas "Situação" no pool) ganha o número da ocorrência: cada um abre sozinho.
+                          const chave = `${l.key}#${rotulo}#${l.detalhes.slice(0, i).filter(d => d[0] === rotulo).length}`
+                          const inteiro = read(inteiros).includes(chave)
+                          return [
+                            ...(i > 0 ? [<Separator key={`${l.key}#${i}:divisoria`} />] : []),
+                            <Box key={`${l.key}#${i}`} direction="row" gap="sm" align="start">
+                              <Box key={`${l.key}#${i}:rotulo`} width={LARGURA_ROTULO} shrink={false}>
+                                <Text size="sm" muted>
+                                  {rotulo}
+                                </Text>
+                              </Box>
+                              <Box key={`${l.key}#${i}:valor`} grow gap="xs">
+                                {/* Recolhido: uma linha cortada na largura real, e o "ver mais" na segunda. */}
+                                <Valor v={valor} size="sm" quebrar={!integro} truncar={recolhivel && !inteiro} />
+                                {recolhivel ? (
+                                  <Text size="sm">
+                                    <Link onPress={() => set(inteiros, alternado(read(inteiros), chave))}>
+                                      {inteiro ? t.verMenos : t.verMais}
+                                    </Link>
+                                  </Text>
+                                ) : null}
+                              </Box>
+                            </Box>,
+                          ]
+                        })}
                       </Box>,
                     ]
                   : []),

@@ -10,11 +10,14 @@ const abertasTrava = atom<string[]>([])
 
 const ITENS_FILA: ItemFila[] = ['modo', 'vagas', 'vagas_projeto', 'teto', 'processos', 'sem_saida_min', 'limpar_bancos']
 
-/** Rótulo da coluna Fila: vem da fila real da linha (quem começou antes da troca de modo segue na fila antiga); sem ela, do modo atual. */
+/**
+ * Rótulo da coluna Fila: vem da fila real da linha (quem começou antes da troca de modo segue na fila antiga); sem ela, do modo
+ * atual. A fila por projeto é a do projeto da própria linha, que já está na coluna Projeto: só "Projeto".
+ */
 function rotuloFila(modo: Estado['fila']['modo'], x: TesteFila): string {
   const fila = x.fila ?? (modo === 'global' ? 'global' : modo === 'projeto' ? 'proj-' : null)
   if (fila === 'global') return t.fila.filaGlobal
-  if (fila?.startsWith('proj-')) return t.fila.filaProjeto(x.projeto || '-')
+  if (fila?.startsWith('proj-')) return t.fila.filaProjeto
   if (fila === '_teto') return t.fila.filaTeto
   const r = x.recurso ?? ''
   if (r.startsWith('container')) return t.fila.filaContainer
@@ -23,13 +26,13 @@ function rotuloFila(modo: Estado['fila']['modo'], x: TesteFila): string {
   return banco ? t.fila.filaBanco(banco[1]) : r || '-'
 }
 
-/** Barra de 10 posições com o total (`▓▓▓▓▓░░░░░ 52% (63/120)`) e, havendo contagem, `· ✓ N passaram · ⨯ M falharam`; pytest traz só a barra. */
+/** Barra de 10 posições com o total (`▓▓▓▓▓░░░░░ 52% (63/120)`) e, havendo contagem, `✓ N passaram · ⨯ M falharam` na linha de baixo; pytest traz só a barra. */
 function textoProgresso(s: NonNullable<TesteFila['saida']>): string | null {
   const contagem = s.passou == null || s.falhou == null ? null : t.fila.passaramFalharam(s.passou, s.falhou)
   if (s.pct === null) return contagem
   const cheias = Math.min(10, Math.floor(s.pct / 10))
   const total = s.feitos !== null && s.total !== null ? ` (${s.feitos}/${s.total})` : ''
-  return `${'▓'.repeat(cheias)}${'░'.repeat(10 - cheias)} ${s.pct}%${total}${contagem ? ` · ${contagem}` : ''}`
+  return `${'▓'.repeat(cheias)}${'░'.repeat(10 - cheias)} ${s.pct}%${total}${contagem ? `\n${contagem}` : ''}`
 }
 
 /** Progresso e última saída do teste em execução; a coluna "Fila" leva o relativo (mesma célula da coluna Há). */
@@ -81,10 +84,10 @@ export function SecaoFila({ e }: { e: Estado }) {
         <TabelaExpansivel
           label={t.fila.tabela}
           colunas={[
-            { key: 'projeto', label: t.fila.colProjeto, largura: 140 },
-            { key: 'fila', label: t.fila.colFila, largura: 130 },
-            { key: 'estado', label: t.fila.colEstado, largura: 130 },
-            { key: 'ha', label: t.fila.colHa, largura: 70 },
+            { key: 'projeto', label: t.fila.colProjeto, largura: 85 },
+            { key: 'fila', label: t.fila.colFila, largura: 76 },
+            { key: 'estado', label: t.fila.colEstado, largura: 115 },
+            { key: 'ha', label: t.fila.colHa, largura: 44 },
           ]}
           linhas={linhas}
           abertas={read(abertasTrava)}
