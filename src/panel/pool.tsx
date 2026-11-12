@@ -70,11 +70,11 @@ export function SecaoPool({ e }: { e: Estado }) {
         <TabelaExpansivel
           label={t.pool.tabela}
           colunas={[
-            { key: 'conta', label: t.pool.colConta, largura: 170 },
-            { key: 'vagas', label: t.pool.colVagas, largura: 60 },
-            { key: 'sessoes', label: t.pool.colSessoes, align: 'end', largura: 70 },
-            { key: 'h5', label: t.pool.col5h, align: 'end', largura: 55 },
-            { key: 'semanal', label: t.pool.colSemanal, align: 'end', largura: 75 },
+            { key: 'conta', label: t.pool.colConta, largura: 80 },
+            { key: 'vagas', label: t.pool.colVagas, largura: 46 },
+            { key: 'sessoes', label: t.pool.colSessoes, align: 'end', largura: 62 },
+            { key: 'h5', label: t.pool.col5h, align: 'end', largura: 48 },
+            { key: 'semanal', label: t.pool.colSemanal, align: 'end', largura: 64 },
           ]}
           linhas={linhas}
           abertas={read(abertasConta)}
