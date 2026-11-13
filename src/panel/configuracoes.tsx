@@ -1,12 +1,12 @@
 // Seção Configurações: um seletor de assunto (cabe em painel estreito); a edição das contas, da fila, do pool etc. fica no módulo de cada uma.
-import { atom, Button, Collapsible, Input, read, Select, Stack, set, storage, Text, update } from 'orca'
+import { atom, Collapsible, Input, read, Select, Stack, set, storage, Text, update } from 'orca'
 import { CHAVE_INTERVALO, type Estado, INTERVALO_S } from '../protocol'
-import { ComDica, Mensagem, Secao } from './comum'
-import { ConfigContas } from './contas'
+import { type Campo, ComDica, Mensagem, pendentes, Salvar, Secao } from './comum'
+import { ConfigContas, camposContas } from './contas'
 import { avisar, edicoes, mudar } from './estado'
-import { ConfigFila } from './fila'
+import { ConfigFila, camposFila } from './fila'
 import { ConfigImposicao } from './hooks'
-import { ConfigPool } from './pool'
+import { ConfigPool, camposPool } from './pool'
 import { ConfigInstalacao } from './requisitos'
 import { t } from './textos'
 
@@ -33,6 +33,8 @@ async function salvarIntervalo(): Promise<void> {
   }
 }
 
+const camposPainel = (): Campo[] => [{ chave: 'painel.intervalo', rotulo: t.painel.intervalo, salvo: String(read(intervalo)) }]
+
 function ConfigPainel() {
   return (
     <Stack gap="sm">
@@ -47,9 +49,7 @@ function ConfigPainel() {
         />
       </ComDica>
       <Mensagem secao="painel" />
-      <Button size="sm" icon="check" onPress={() => void salvarIntervalo()}>
-        {t.salvar}
-      </Button>
+      <Salvar secao="painel" campos={camposPainel()} acao={salvarIntervalo} />
     </Stack>
   )
 }
@@ -58,22 +58,28 @@ const assuntoAtual = atom('fila')
 
 export function SecaoConfiguracoes({ e }: { e: Estado }) {
   const assunto = read(assuntoAtual)
+  const ed = read(edicoes)
+  // Contagem de pendentes por assunto: o seletor e o título recolhido mostram o que ficou sem salvar fora da vista.
   const abas = [
-    { id: 'fila', corpo: <ConfigFila e={e} /> },
-    { id: 'pool', corpo: <ConfigPool e={e} /> },
-    { id: 'contas', corpo: <ConfigContas e={e} /> },
-    { id: 'imposicao', corpo: <ConfigImposicao /> },
-    { id: 'instalacao', corpo: <ConfigInstalacao /> },
-    { id: 'painel', corpo: <ConfigPainel /> },
+    { id: 'fila', n: pendentes(camposFila(e), ed).length, corpo: <ConfigFila e={e} /> },
+    { id: 'pool', n: pendentes(camposPool(e), ed).length, corpo: <ConfigPool e={e} /> },
+    { id: 'contas', n: pendentes(camposContas(e), ed).length, corpo: <ConfigContas e={e} /> },
+    { id: 'imposicao', n: 0, corpo: <ConfigImposicao /> },
+    { id: 'instalacao', n: 0, corpo: <ConfigInstalacao /> },
+    { id: 'painel', n: pendentes(camposPainel(), ed).length, corpo: <ConfigPainel /> },
   ] as const
+  const total = abas.reduce((s, a) => s + a.n, 0)
   return (
     <Secao>
-      <Collapsible title={t.configuracoes.titulo} description={t.configuracoes.descricao}>
+      <Collapsible title={t.configuracoes.titulo} description={total ? t.configuracoes.pendentes(total) : t.configuracoes.descricao}>
         <Stack gap="sm">
           <Select
             label={t.configuracoes.assuntos}
             value={assunto}
-            options={abas.map(a => ({ value: a.id, label: t.configuracoes.abas[a.id] }))}
+            options={abas.map(a => ({
+              value: a.id,
+              label: a.n ? `${t.configuracoes.abas[a.id]} · ${t.configuracoes.naoSalvas(a.n)}` : t.configuracoes.abas[a.id],
+            }))}
             onChange={v => set(assuntoAtual, v)}
           />
           {abas.find(a => a.id === assunto)?.corpo}

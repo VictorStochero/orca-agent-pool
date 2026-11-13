@@ -782,6 +782,97 @@ test('pool: coluna Sessões com o número (ou –), nomes nos detalhes e total n
   assert.ok(tem(view, POOL, /orca-agent-pool-b6, gestaosmart/))
 })
 
+test('pool: Verificar cotas pede a medição sem cache e mostra a cota nova; a falha aparece como a do coletor', async () => {
+  const medido: Estado = {
+    ...estadoExemplo,
+    pool: {
+      ...estadoExemplo.pool,
+      contas: estadoExemplo.pool.contas.map(c => (c.nome === 'codex' && c.cota ? { ...c, cota: { ...c.cota, curta: 77 } } : c)),
+    },
+  }
+  let falhar = false
+  let soltar = () => {}
+  view = await mount(panel, {
+    host: mockHost({
+      requests: {
+        'estado.ler': () => estadoExemplo,
+        'cotas.medir': () => {
+          if (falhar) throw hostError('timeout', 'demorou')
+          return new Promise<Estado>(r => (soltar = () => r(medido)))
+        },
+      },
+    }),
+  })
+  assert.equal(celula(view, 'codex', 'h5'), '24%')
+  // Sem await: a medição presa segura o press; enquanto isso o Spinner fica no lugar do botão.
+  const medindo = view.press({ type: 'Button', text: 'Verificar cotas' })
+  await new Promise(r => setTimeout(r, 0))
+  assert.ok(view.find({ type: 'Spinner', label: 'Verificando…' }))
+  assert.equal(view.find({ type: 'Button', text: 'Verificar cotas' }), null)
+  soltar()
+  await medindo
+  assert.equal(celula(view, 'codex', 'h5'), '77%')
+  falhar = true
+  await view.press({ type: 'Button', text: 'Verificar cotas' })
+  assert.ok(view.find({ text: 'demorou' }))
+  assert.equal(celula(view, 'codex', 'h5'), '77%')
+})
+
+test('Atualizar dá lugar ao Spinner enquanto relê o estado', async () => {
+  let soltar = () => {}
+  let presa = false
+  view = await mount(panel, {
+    host: mockHost({
+      requests: {
+        'estado.ler': () => (presa ? new Promise<Estado>(r => (soltar = () => r(estadoExemplo))) : estadoExemplo),
+      },
+    }),
+  })
+  presa = true
+  const atualizando = view.press({ type: 'Button', text: 'Atualizar' })
+  await new Promise(r => setTimeout(r, 0))
+  assert.ok(view.find({ type: 'Spinner', label: 'Atualizando…' }))
+  assert.equal(view.find({ type: 'Button', text: 'Atualizar' }), null)
+  soltar()
+  await atualizando
+  assert.ok(view.find({ type: 'Button', text: 'Atualizar' }))
+})
+
+test('configurações: pendente vira aviso "de → para" com contagem no assunto e no título; voltar ao salvo ou Descartar limpa', async () => {
+  const gravados: unknown[] = []
+  view = await mount(panel, { host: hostCom(gravados) })
+  await abrir(view, 'pool')
+  const salvar = () => view!.find({ type: 'Button', text: 'Salvar' })
+  const teto = { type: 'Input', label: 'Teto da máquina (0 = sem teto)' }
+  const rotuloPool = () =>
+    (view!.find({ type: 'Select', label: 'Assuntos das configurações' })!.props.options as { value: string; label: string }[]).find(
+      o => o.value === 'pool',
+    )?.label
+  assert.equal(salvar()?.disabled, true)
+  assert.ok(view.find({ text: 'Nada alterado.' }))
+
+  await view.type(teto, '6', { replace: true })
+  assert.equal(view.find({ type: 'Callout' })?.props.title, '1 alteração não salva')
+  assert.ok(view.find({ text: 'Teto da máquina (0 = sem teto): 4 → 6' }))
+  assert.equal(rotuloPool(), 'Pool · 1 não salva')
+  assert.equal(view.find({ type: 'Collapsible', label: 'Configurações' })?.props.description, '1 alteração não salva')
+
+  await view.select({ label: 'Escolha do escritor' }, 'ordem')
+  assert.ok(view.find({ text: 'Escolha do escritor: Ritmo da cota → Ordem da tabela' }))
+  await view.select({ label: 'Escolha do escritor' }, 'ritmo') // de volta ao salvo: deixa de ser pendente
+  assert.equal(view.find({ type: 'Callout' })?.props.title, '1 alteração não salva')
+
+  await view.press({ type: 'Button', text: 'Descartar' })
+  assert.equal(view.find({ type: 'Callout' }), null)
+  assert.equal(view.find(teto)?.props.value, '4')
+  assert.equal(rotuloPool(), 'Pool')
+  assert.equal(salvar()?.disabled, true)
+
+  await view.type(teto, '6', { replace: true })
+  await view.press({ type: 'Button', text: 'Salvar' })
+  assert.deepEqual(gravados, [{ 'pool.teto': '6' }]) // o Descartar levou a escolha que voltou ao salvo
+})
+
 test('pool em inglês: resumo com sessões e sem RAM', async () => {
   view = await mount(panel, { host: hostCom(), locale: 'en' })
   assert.ok(view.find({ text: /Agents 1\/4 · Sessions 2 · Writer by quota pace/ }))
@@ -1259,13 +1350,14 @@ for (const [locale, versao, instalada, lancador] of [
 test('Instalação: Verificar agora chama requisitos.ler com forcar; leitura forçada com pendência leva à tela de pendências', async () => {
   const entradas: unknown[] = []
   let leiturasHooks = 0
+  let soltar = () => {}
   const t = textosPara('pt-BR')
   view = await mount(panel, {
     host: mockHost({
       requests: {
         'requisitos.ler': entrada => {
           entradas.push(entrada)
-          return entradas.length === 1 ? tudoOk : faltando
+          return entradas.length === 1 ? tudoOk : new Promise<Requisitos>(r => (soltar = () => r(faltando)))
         },
         'hooks.estado': () => {
           leiturasHooks++
@@ -1277,7 +1369,13 @@ test('Instalação: Verificar agora chama requisitos.ler com forcar; leitura for
   })
   await abrir(view, 'instalacao')
   const antes = leiturasHooks
-  await view.press({ type: 'Button', text: t.requisitos.verificar })
+  // Sem await: a leitura presa segura o press; enquanto isso o Spinner fica no lugar do botão.
+  const verificando = view.press({ type: 'Button', text: t.requisitos.verificar })
+  await new Promise(r => setTimeout(r, 0))
+  assert.ok(view.find({ type: 'Spinner', label: t.requisitos.verificando }))
+  assert.equal(view.find({ type: 'Button', text: t.requisitos.verificar }), null)
+  soltar()
+  await verificando
   assert.deepEqual(entradas.at(1), { forcar: true })
   assert.ok(leiturasHooks > antes, 'Verificar agora relê os hooks')
   assert.deepEqual(idsReq(view), ['orca', 'orchestration', 'lancador'])

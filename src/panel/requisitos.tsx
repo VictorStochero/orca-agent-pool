@@ -1,5 +1,5 @@
 // Requisitos de instalação (tela de pendências e Configurações > Instalação) e a desinstalação.
-import { atom, Button, Collapsible, plugin, Row, read, Stack, set, Text, update } from 'orca'
+import { atom, Button, Collapsible, plugin, Row, read, Spinner, Stack, set, Text, update } from 'orca'
 import type { DetalheRequisito, IdInstalavel, RequisitoItem, Requisitos } from '../protocol'
 import { Arquivos, Mensagem, Secao } from './comum'
 import { textoErro, traduzirCodigos } from './erros'
@@ -190,9 +190,13 @@ export function ConfigInstalacao() {
             <Mensagem secao="requisitos" />
           </>
         )}
-        <Button size="sm" icon="refresh" disabled={read(gravando) !== null} onPress={() => void verificarAgora()}>
-          {read(gravando) === 'req:verificar' ? t.requisitos.verificando : t.requisitos.verificar}
-        </Button>
+        {read(gravando) === 'req:verificar' ? (
+          <Spinner label={t.requisitos.verificando} />
+        ) : (
+          <Button size="sm" icon="refresh" disabled={read(gravando) !== null} onPress={() => void verificarAgora()}>
+            {t.requisitos.verificar}
+          </Button>
+        )}
       </Stack>
       <CorpoDesinstalar />
     </Stack>

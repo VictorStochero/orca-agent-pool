@@ -144,6 +144,32 @@ test('worker religado: antes da primeira coleta mostra as medidas gravadas e o O
   }
 })
 
+test('cotas.medir mede de novo mesmo com a medida da ativação ainda no cache', async () => {
+  novaCasa()
+  gravarConfig(config([conta('alfa')]))
+  mkdirSync(join(casa, '.claude'))
+  writeFileSync(
+    join(casa, '.claude', '.credentials.json'),
+    JSON.stringify({ claudeAiOauth: { accessToken: 'falso', expiresAt: 9_999_999_999_999 } }),
+  )
+  let uso = 0
+  const api = mock.method(globalThis, 'fetch', async () => {
+    uso++
+    return Response.json({ five_hour: { utilization: uso }, seven_day: { utilization: 50 } })
+  })
+  try {
+    const w = await mountWorker(main)
+    assert.equal(api.mock.callCount(), 1)
+    assert.equal((await w.request('estado.ler')).pool.contas[0].cota?.curta, 1)
+    const e = await w.request('cotas.medir')
+    assert.equal(api.mock.callCount(), 2)
+    assert.equal(e.pool.contas[0].cota?.curta, 2)
+    await w.deactivate()
+  } finally {
+    api.mock.restore()
+  }
+})
+
 test('config.gravar grava e devolve o estado; valor inválido e config corrompida são config_recusada sem tocar no arquivo', async () => {
   novaCasa()
   gravarConfig(config())

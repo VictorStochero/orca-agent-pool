@@ -175,6 +175,8 @@ declare module 'orca' {
     'requisitos.instalar': { input: { id: IdInstalavel }; output: Requisitos }
     /** Estado da máquina lido do núcleo (a cota vem da última medição do ciclo; ler nunca mede). */
     'estado.ler': { output: Estado }
+    /** Mede as cotas de todas as contas agora, sem o cache de 5 min, e devolve o estado novo. */
+    'cotas.medir': { output: Estado }
     /**
      * Grava no config.json pelas chaves de `agent-pool config set` (tudo ou nada) e devolve o estado novo.
      * Recusa do validador ou config ilegível: erro `config_recusada`.

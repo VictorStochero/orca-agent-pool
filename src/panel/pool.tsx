@@ -1,8 +1,8 @@
 // Seção Pool (só leitura) e os campos de configuração do pool.
-import { atom, Input, read, Select, Stack, set, Text } from 'orca'
+import { atom, Button, Input, read, Select, Spinner, Stack, set, Text } from 'orca'
 import type { Conta, Estado } from '../protocol'
-import { ComDica, type Detalhe, type Linha, Mensagem, Salvar, Secao, se, TabelaExpansivel } from './comum'
-import { edicoes, mudar } from './estado'
+import { type Campo, ComDica, type Detalhe, type Linha, Mensagem, Salvar, Secao, se, TabelaExpansivel } from './comum'
+import { edicoes, medindo, medirCotas, mudar } from './estado'
 import { t } from './textos'
 
 /** Linhas abertas da tabela (várias ao mesmo tempo; clicar de novo recolhe). */
@@ -63,7 +63,19 @@ export function SecaoPool({ e }: { e: Estado }) {
     }
   })
   return (
-    <Secao titulo={t.pool.titulo} descricao={t.pool.resumo(pool.maquina.usadas, pool.maquina.teto, pool.sessoes, pool.escolha)}>
+    <Secao
+      titulo={t.pool.titulo}
+      descricao={t.pool.resumo(pool.maquina.usadas, pool.maquina.teto, pool.sessoes, pool.escolha)}
+      acao={
+        pool.contas.length === 0 ? null : read(medindo) ? (
+          <Spinner label={t.pool.medindo} />
+        ) : (
+          <Button icon="refresh" size="sm" variant="outline" onPress={() => void medirCotas()}>
+            {t.pool.medirCotas}
+          </Button>
+        )
+      }
+    >
       {pool.contas.length === 0 ? (
         <Text muted>{t.pool.semContas}</Text>
       ) : (
@@ -84,6 +96,12 @@ export function SecaoPool({ e }: { e: Estado }) {
     </Secao>
   )
 }
+
+export const camposPool = ({ pool }: Estado): Campo[] => [
+  { chave: 'pool.teto', rotulo: t.pool.teto, salvo: String(pool.teto) },
+  { chave: 'pool.ram_min', rotulo: t.pool.ramMin, salvo: String(pool.ram_min) },
+  { chave: 'pool.escolha', rotulo: t.pool.escolha, salvo: pool.escolha, mostrar: v => t.pool.escolhaOpcoes[v] ?? v },
+]
 
 export function ConfigPool({ e }: { e: Estado }) {
   const { pool } = e
@@ -111,7 +129,7 @@ export function ConfigPool({ e }: { e: Estado }) {
         />
       </ComDica>
       <Mensagem secao="pool" />
-      <Salvar secao="pool" chaves={['pool.teto', 'pool.ram_min', 'pool.escolha']} />
+      <Salvar secao="pool" campos={camposPool(e)} />
     </Stack>
   )
 }

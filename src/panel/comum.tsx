@@ -3,6 +3,7 @@ import {
   atom,
   Box,
   Button,
+  Callout,
   Code,
   env,
   IconButton,
@@ -15,13 +16,14 @@ import {
   Row,
   read,
   Separator,
+  Spinner,
   Stack,
   set,
   type TableCell,
   Text,
   type TextProps,
 } from 'orca'
-import { avisos, gravando, releituraFalhou, salvar } from './estado'
+import { avisos, descartar, edicoes, gravando, releituraFalhou, salvar } from './estado'
 import { t } from './textos'
 
 export function Mensagem({ secao }: { secao: string }) {
@@ -31,19 +33,59 @@ export function Mensagem({ secao }: { secao: string }) {
   return a ? <Text tone={a.tom === 'danger' ? 'danger' : 'success'}>{a.texto}</Text> : null
 }
 
-export function Salvar({ secao, chaves }: { secao: string; chaves: string[] }) {
+/** Campo editável: a chave em `edicoes`, o rótulo e o valor salvo no mesmo formato que o campo grava. */
+export type Campo = { chave: string; rotulo: string; salvo: string; mostrar?: (valor: string) => string }
+
+/** Campos cuja edição difere do valor salvo. */
+export const pendentes = (campos: Campo[], ed: Record<string, string>) => campos.filter(c => c.chave in ed && ed[c.chave] !== c.salvo)
+
+/** `mostrar` de caixa de seleção: `sim` é o valor gravado quando ela está marcada. */
+export const marcado = (sim: string) => (v: string) => (v === sim ? t.marcado : t.desmarcado)
+
+/** Sem alteração, Salvar desabilitado; com alteração, aviso com cada campo "de → para", Salvar e Descartar. */
+export function Salvar({ secao, campos, acao }: { secao: string; campos: Campo[]; acao?: () => unknown }) {
+  const ed = read(edicoes)
+  const mudados = pendentes(campos, ed)
   const ocupado = read(gravando) !== null
-  return (
-    <Row gap="sm" align="center">
-      <Button size="sm" icon="check" disabled={ocupado} onPress={() => void salvar(secao, chaves)}>
-        {t.salvar}
-      </Button>
-      {read(gravando) === secao ? (
+  if (read(gravando) === secao) return <Spinner label={t.gravando} />
+  const chaves = campos.map(c => c.chave)
+  if (mudados.length === 0)
+    return (
+      <Row gap="sm" align="center">
+        <Button size="sm" icon="check" disabled>
+          {t.salvar}
+        </Button>
         <Text muted size="xs">
-          {t.gravando}
+          {t.nadaAlterado}
         </Text>
-      ) : null}
-    </Row>
+      </Row>
+    )
+  const ver = (c: Campo, v: string) => (c.mostrar ? c.mostrar(v) : v) || '–'
+  return (
+    <Callout tone="warning" icon="edit" title={t.configuracoes.pendentes(mudados.length)}>
+      <Stack gap="sm">
+        <Stack gap="none">
+          {mudados.map(c => (
+            <Text key={c.chave} size="sm">{`${c.rotulo}: ${ver(c, c.salvo)} → ${ver(c, ed[c.chave])}`}</Text>
+          ))}
+        </Stack>
+        <Row gap="sm">
+          <Button
+            size="sm"
+            icon="check"
+            variant="solid"
+            tone="accent"
+            disabled={ocupado}
+            onPress={() => void (acao ? acao() : salvar(secao, chaves))}
+          >
+            {t.salvar}
+          </Button>
+          <Button size="sm" variant="ghost" disabled={ocupado} onPress={() => descartar(secao, chaves)}>
+            {t.descartar}
+          </Button>
+        </Row>
+      </Stack>
+    </Callout>
   )
 }
 
@@ -63,19 +105,38 @@ export function ComDica({ texto, children }: { texto: string; children: OrcaNode
 }
 
 /** Cartão das seções: borda, cantos e fundo do tema, com menos espaço interno que o Card nativo (que não aceita padding). */
-export function Secao({ titulo, descricao, children }: { titulo?: string; descricao?: string; children?: OrcaNode }) {
+/** `acao`: botão no canto do cabeçalho (só com `titulo`). */
+export function Secao({
+  titulo,
+  descricao,
+  acao,
+  children,
+}: {
+  titulo?: string
+  descricao?: string
+  acao?: OrcaNode
+  children?: OrcaNode
+}) {
+  const cabecalho = titulo ? (
+    <Stack gap="none">
+      <Text weight="semibold">{titulo}</Text>
+      {descricao ? (
+        <Text size="sm" muted>
+          {descricao}
+        </Text>
+      ) : null}
+    </Stack>
+  ) : null
   return (
     <Box border radius="lg" background="card" padding="lg" gap="md">
-      {titulo ? (
-        <Stack gap="none">
-          <Text weight="semibold">{titulo}</Text>
-          {descricao ? (
-            <Text size="sm" muted>
-              {descricao}
-            </Text>
-          ) : null}
-        </Stack>
-      ) : null}
+      {cabecalho && acao ? (
+        <Row justify="between" align="start" gap="sm">
+          {cabecalho}
+          {acao}
+        </Row>
+      ) : (
+        cabecalho
+      )}
       {children}
     </Box>
   )
