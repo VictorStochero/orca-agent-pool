@@ -782,7 +782,7 @@ test('pool: coluna Sessões com o número (ou –), nomes nos detalhes e total n
   assert.ok(tem(view, POOL, /orca-agent-pool-b6, gestaosmart/))
 })
 
-test('pool: Verificar cotas pede a medição sem cache e mostra a cota nova; a falha aparece como a do coletor', async () => {
+test('pool: Verificar cotas pede a medição sem cache e mostra a cota nova; timeout não vira aviso, outra falha aparece como a do coletor', async () => {
   const medido: Estado = {
     ...estadoExemplo,
     pool: {
@@ -790,14 +790,14 @@ test('pool: Verificar cotas pede a medição sem cache e mostra a cota nova; a f
       contas: estadoExemplo.pool.contas.map(c => (c.nome === 'codex' && c.cota ? { ...c, cota: { ...c.cota, curta: 77 } } : c)),
     },
   }
-  let falhar = false
+  let falha: string | null = null
   let soltar = () => {}
   view = await mount(panel, {
     host: mockHost({
       requests: {
         'estado.ler': () => estadoExemplo,
         'cotas.medir': () => {
-          if (falhar) throw hostError('timeout', 'demorou')
+          if (falha) throw hostError(falha, `falhou: ${falha}`)
           return new Promise<Estado>(r => (soltar = () => r(medido)))
         },
       },
@@ -812,9 +812,14 @@ test('pool: Verificar cotas pede a medição sem cache e mostra a cota nova; a f
   soltar()
   await medindo
   assert.equal(celula(view, 'codex', 'h5'), '77%')
-  falhar = true
+  // Timeout: o worker segue medindo e o resultado chega pelo estado.mudou; nada de "Coletor falhou".
+  falha = 'timeout'
   await view.press({ type: 'Button', text: 'Verificar cotas' })
-  assert.ok(view.find({ text: 'demorou' }))
+  assert.equal(view.find({ text: /Coletor falhou/ }), null)
+  assert.ok(view.find({ type: 'Button', text: 'Verificar cotas' }))
+  falha = 'coletor_falhou'
+  await view.press({ type: 'Button', text: 'Verificar cotas' })
+  assert.ok(view.find({ text: 'falhou: coletor_falhou' }))
   assert.equal(celula(view, 'codex', 'h5'), '77%')
 })
 

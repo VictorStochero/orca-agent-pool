@@ -122,12 +122,18 @@ export default function activate(orca: OrcaWorkerApi): void {
 
   // --- handlers ---
   orca.panels.handle('estado.ler', () => estado())
-  // A coleta em curso pode ter usado o cache: espera ela e mede de novo, sem cache.
+  // A coleta em curso pode ter usado o cache: espera ela e mede de novo, sem cache; um pedido repetido entra na medição forçada em curso.
   // O aviso alcança os outros painéis e o que já desistiu pelo teto de 120 s do pedido.
+  let forcada: Promise<void> | undefined
   orca.panels.handle('cotas.medir', async () => {
-    await coleta?.catch(() => undefined)
-    await atualizar(0)
-    avisar()
+    forcada ??= (async () => {
+      await coleta?.catch(() => undefined)
+      await atualizar(0)
+      avisar()
+    })().finally(() => {
+      forcada = undefined
+    })
+    await forcada
     return estado()
   })
   orca.panels.handle('config.gravar', async ({ valores }) => {

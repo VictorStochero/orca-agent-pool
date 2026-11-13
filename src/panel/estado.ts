@@ -123,14 +123,15 @@ function falhou(e: unknown) {
   set(erro, { code: x.code ?? 'erro', message: x.message ?? String(e) })
 }
 
-/** Mede as cotas agora, sem o cache do worker; cada conta Claude pode levar até 10 s. */
+/** Mede as cotas agora, sem o cache do worker. */
+// shortcut: as contas são medidas uma por vez, até ~110 s cada pelo `claude /usage`; passando do teto de 120 s do pedido, o worker segue e o resultado chega pelo `estado.mudou`. Se isso virar regra, o pedido só dispara a medição.
 export async function medirCotas(): Promise<void> {
   set(medindo, true)
   try {
     set(estado, await plugin.request('cotas.medir', undefined, { timeoutMs: 120_000 }))
     set(erro, null)
   } catch (e) {
-    falhou(e)
+    if ((e as { code?: string }).code !== 'timeout') falhou(e)
   } finally {
     set(medindo, false)
   }
@@ -141,10 +142,6 @@ export async function salvar(secao: string, chaves: string[], extras: Record<str
   const todas = read(edicoes)
   const valores: Record<string, string> = { ...extras }
   for (const c of chaves) if (c in todas) valores[c] = todas[c]
-  if (Object.keys(valores).length === 0) {
-    avisar(secao, { tom: 'success', texto: t.nadaAlterado })
-    return false
-  }
   set(gravando, secao)
   try {
     set(estado, await plugin.request('config.gravar', { valores }))
