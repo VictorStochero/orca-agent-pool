@@ -1,7 +1,7 @@
 // Configurações > Contas: editar, ordenar, remover e cadastrar contas do pool.
 import { atom, Button, Checkbox, IconButton, Input, Row, read, Select, Stack, set, Tab, Tabs, Text, update } from 'orca'
 import type { Conta, Estado } from '../protocol'
-import { ComDica, Dica, Mensagem, Salvar } from './comum'
+import { type Campo, ComDica, Dica, Mensagem, marcado, pendentes, Salvar } from './comum'
 import { avisar, edicoes, gravando, mudar, salvar } from './estado'
 import { t } from './textos'
 
@@ -26,6 +26,32 @@ function mover(contas: Conta[], nome: string, delta: -1 | 1): Promise<boolean> {
   ;[nomes[i], nomes[j]] = [nomes[j], nomes[i]]
   return salvar(`conta.${nome}`, [], { 'pool.ordem': nomes.join(',') })
 }
+
+/** Papéis no formato que `alterna` grava: na ordem de `papeis_validos`. */
+const camposConta = (c: Conta, e: Estado): Campo[] => {
+  const k = (x: string) => `conta.${c.nome}.${x}`
+  return [
+    { chave: k('vagas'), rotulo: t.pool.vagas, salvo: String(c.vagas) },
+    { chave: k('peso'), rotulo: t.pool.pesoDaConta, salvo: String(c.peso) },
+    {
+      chave: k('papeis'),
+      rotulo: t.pool.papeis,
+      salvo: e.pool.papeis_validos.filter(p => c.papeis.includes(p)).join(','),
+      mostrar: v =>
+        v
+          .split(',')
+          .filter(Boolean)
+          .map(p => t.pool.nomesPapel[p] ?? p)
+          .join(', '),
+    },
+    { chave: k('config'), rotulo: t.pool.config, salvo: c.config ?? '' },
+    { chave: k('comando'), rotulo: t.pool.comandoDaConta, salvo: c.comando ?? '' },
+    { chave: k('modelo'), rotulo: t.pool.modelo, salvo: c.modelo ?? '' },
+    { chave: k('ativo'), rotulo: t.pool.naoUtilizar, salvo: c.ativo ? 'sim' : 'nao', mostrar: marcado('nao') },
+  ]
+}
+
+export const camposContas = (e: Estado) => e.pool.contas.flatMap(c => camposConta(c, e))
 
 /** Edição da conta escolhida: vagas, peso, config, papéis, ordem, "Não utilizar" e remover. */
 function EdicaoConta({ c, e }: { c: Conta; e: Estado }) {
@@ -98,7 +124,7 @@ function EdicaoConta({ c, e }: { c: Conta; e: Estado }) {
           ))}
       </Stack>
       <Mensagem secao={secao} />
-      <Salvar secao={secao} chaves={[chaveVagas, chavePeso, chavePapeis, chaveConfig, chaveComando, chaveModelo, chaveAtivo]} />
+      <Salvar secao={secao} campos={camposConta(c, e)} />
       {read(removendo) === c.nome ? (
         <Stack gap="xs">
           <Text tone="warning">{t.pool.confirmarRemocao(c.nome)}</Text>
@@ -165,6 +191,12 @@ export function ConfigContas({ e }: { e: Estado }) {
   const { pool } = e
   const escolhida = read(contaEscolhida)
   const conta = pool.contas.find(c => c.nome === escolhida) ?? pool.contas[0]
+  const ed = read(edicoes)
+  const rotuloConta = (c: Conta) => {
+    const nome = c.ativo ? c.nome : `${c.nome} (${t.pool.naoUtilizada})`
+    const n = pendentes(camposConta(c, e), ed).length
+    return n ? `${nome} · ${t.configuracoes.naoSalvas(n)}` : nome
+  }
   return (
     <Stack gap="sm">
       <Text muted size="xs">
@@ -177,7 +209,7 @@ export function ConfigContas({ e }: { e: Estado }) {
               <Select
                 label={t.pool.escolherConta}
                 value={conta.nome}
-                options={pool.contas.map(c => ({ value: c.nome, label: c.ativo ? c.nome : `${c.nome} (${t.pool.naoUtilizada})` }))}
+                options={pool.contas.map(c => ({ value: c.nome, label: rotuloConta(c) }))}
                 onChange={x => {
                   set(removendo, null)
                   set(contaEscolhida, x)

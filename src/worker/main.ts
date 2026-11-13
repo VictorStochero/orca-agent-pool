@@ -85,7 +85,7 @@ export default function activate(orca: OrcaWorkerApi): void {
   })
 
   // --- ciclo: detecção, medição e recuperação de vagas (único lugar que mede) ---
-  const coletar = async () => {
+  const coletar = async (cacheMin?: number) => {
     if (desinstalado) return
     await limparTravasMortasAsync(p)
     const c = configOuNull(p)
@@ -100,7 +100,7 @@ export default function activate(orca: OrcaWorkerApi): void {
         atual => sincronizarDetectadas(atual, detectadas),
         () => importarLegado(home),
       )
-    const medidas = await medirTodas(novo, p, cli, { home, fetch, agora: Date.now(), path })
+    const medidas = await medirTodas(novo, p, cli, { home, fetch, agora: Date.now(), path }, cacheMin)
     await recuperar(p, encerradoNoOrca(cli))
     const ramGb = await ramLivreGb(cli)
     const v = await cli.run(['--version'])
@@ -114,14 +114,28 @@ export default function activate(orca: OrcaWorkerApi): void {
   }
   // Uma coleta por vez, guardada para o Desinstalar esperar o fim dela antes de apagar a pasta de dados.
   let coleta: Promise<void> | undefined
-  const atualizar = () =>
-    (coleta ??= coletar().finally(() => {
+  const atualizar = (cacheMin?: number) =>
+    (coleta ??= coletar(cacheMin).finally(() => {
       coleta = undefined
     }))
   vigia = criarCiclo({ coletar: atualizar, avisar, erro: orca.log })
 
   // --- handlers ---
   orca.panels.handle('estado.ler', () => estado())
+  // A coleta em curso pode ter usado o cache: espera ela e mede de novo, sem cache; um pedido repetido entra na medição forçada em curso.
+  // O aviso alcança os outros painéis e o que já desistiu pelo teto de 120 s do pedido.
+  let forcada: Promise<void> | undefined
+  orca.panels.handle('cotas.medir', async () => {
+    forcada ??= (async () => {
+      await coleta?.catch(() => undefined)
+      await atualizar(0)
+      avisar()
+    })().finally(() => {
+      forcada = undefined
+    })
+    await forcada
+    return estado()
+  })
   orca.panels.handle('config.gravar', async ({ valores }) => {
     const pares = Object.entries(valores ?? {})
     if (pares.length === 0 || pares.some(([k, v]) => typeof k !== 'string' || typeof v !== 'string')) throw falha('config_vazia', '')

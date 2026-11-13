@@ -144,6 +144,91 @@ test('worker religado: antes da primeira coleta mostra as medidas gravadas e o O
   }
 })
 
+test('cotas.medir mede de novo mesmo com a medida da ativação ainda no cache', async () => {
+  casaComCredencial()
+  let uso = 0
+  const api = mock.method(globalThis, 'fetch', async () => {
+    uso++
+    return Response.json({ five_hour: { utilization: uso }, seven_day: { utilization: 50 } })
+  })
+  try {
+    const w = await mountWorker(main)
+    assert.equal(api.mock.callCount(), 1)
+    assert.equal((await w.request('estado.ler')).pool.contas[0].cota?.curta, 1)
+    const e = await w.request('cotas.medir')
+    assert.equal(api.mock.callCount(), 2)
+    assert.equal(e.pool.contas[0].cota?.curta, 2)
+    await w.deactivate()
+  } finally {
+    api.mock.restore()
+  }
+})
+
+/** Conta `alfa` com credencial: a medição passa pelo fetch da API de uso (sem lançar o claude real). */
+function casaComCredencial() {
+  novaCasa()
+  gravarConfig(config([conta('alfa')]))
+  mkdirSync(join(casa, '.claude'))
+  writeFileSync(
+    join(casa, '.claude', '.credentials.json'),
+    JSON.stringify({ claudeAiOauth: { accessToken: 'falso', expiresAt: 9_999_999_999_999 } }),
+  )
+}
+
+test('cotas.medir durante a coleta da ativação espera ela e mede de novo, sem o cache', async () => {
+  casaComCredencial()
+  let soltar = () => {}
+  const liberado = new Promise<void>(r => (soltar = r))
+  let uso = 0
+  const api = mock.method(globalThis, 'fetch', async () => {
+    const n = ++uso
+    if (n === 1) await liberado // a coleta da ativação fica presa até o pedido chegar
+    return Response.json({ five_hour: { utilization: n }, seven_day: { utilization: 50 } })
+  })
+  try {
+    const w = await montarWorker(main)
+    await ate(() => api.mock.callCount() > 0)
+    const pedido = w.request('cotas.medir')
+    await new Promise(r => setTimeout(r, 50))
+    soltar()
+    const e = await pedido
+    assert.equal(api.mock.callCount(), 2)
+    assert.equal(e.pool.contas[0].cota?.curta, 2)
+    await w.deactivate()
+  } finally {
+    soltar()
+    api.mock.restore()
+  }
+})
+
+test('cotas.medir repetido com uma medição forçada em curso espera a mesma, sem medir de novo', async () => {
+  casaComCredencial()
+  let soltar = () => {}
+  const liberado = new Promise<void>(r => (soltar = r))
+  let uso = 0
+  const api = mock.method(globalThis, 'fetch', async () => {
+    const n = ++uso
+    if (n === 2) await liberado // a primeira medição forçada fica presa
+    return Response.json({ five_hour: { utilization: n }, seven_day: { utilization: 50 } })
+  })
+  try {
+    const w = await mountWorker(main)
+    const primeiro = w.request('cotas.medir')
+    await ate(() => api.mock.callCount() >= 2)
+    const segundo = w.request('cotas.medir')
+    await new Promise(r => setTimeout(r, 50))
+    soltar()
+    const [a, b] = await Promise.all([primeiro, segundo])
+    assert.equal(api.mock.callCount(), 2)
+    assert.equal(a.pool.contas[0].cota?.curta, 2)
+    assert.equal(b.pool.contas[0].cota?.curta, 2)
+    await w.deactivate()
+  } finally {
+    soltar()
+    api.mock.restore()
+  }
+})
+
 test('config.gravar grava e devolve o estado; valor inválido e config corrompida são config_recusada sem tocar no arquivo', async () => {
   novaCasa()
   gravarConfig(config())

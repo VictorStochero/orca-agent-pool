@@ -16,6 +16,7 @@ export const concluido = atom(false)
 export const releituraFalhou = atom(false)
 export const erro = atom<Erro | null>(null)
 export const carregando = atom(false)
+export const medindo = atom(false)
 /** Edições pendentes por chave de configuração (ex.: `conta.main.vagas`). */
 export const edicoes = atom<Record<string, string>>({})
 export const avisos = atom<Record<string, Aviso>>({})
@@ -30,6 +31,12 @@ let repeticao: { forcar: boolean } | null = null
 export const mudar = (chave: string, valor: string) => update(edicoes, p => ({ ...p, [chave]: valor }))
 
 export const avisar = (secao: string, a: Aviso) => update(avisos, p => ({ ...p, [secao]: a }))
+
+/** Tira as edições das `chaves` e o aviso da seção (o erro de uma gravação recusada não vale mais). */
+export function descartar(secao: string, chaves: string[]): void {
+  update(edicoes, p => Object.fromEntries(Object.entries(p).filter(([c]) => !chaves.includes(c))))
+  update(avisos, p => Object.fromEntries(Object.entries(p).filter(([s]) => s !== secao)))
+}
 
 export const ehRequisitos = (x: unknown): x is Requisitos =>
   typeof (x as Requisitos | null)?.ok === 'boolean' && Array.isArray((x as Requisitos).itens)
@@ -105,10 +112,28 @@ async function coletar(forcar: boolean): Promise<void> {
     set(estado, await plugin.request('estado.ler'))
     set(erro, null)
   } catch (e) {
-    const x = e as { code?: string; message?: string }
-    set(erro, { code: x.code ?? 'erro', message: x.message ?? String(e) })
+    falhou(e)
   } finally {
     set(carregando, false)
+  }
+}
+
+function falhou(e: unknown) {
+  const x = e as { code?: string; message?: string }
+  set(erro, { code: x.code ?? 'erro', message: x.message ?? String(e) })
+}
+
+/** Mede as cotas agora, sem o cache do worker. */
+// shortcut: as contas são medidas uma por vez, até ~110 s cada pelo `claude /usage`; passando do teto de 120 s do pedido, o worker segue e o resultado chega pelo `estado.mudou`. Se isso virar regra, o pedido só dispara a medição.
+export async function medirCotas(): Promise<void> {
+  set(medindo, true)
+  try {
+    set(estado, await plugin.request('cotas.medir', undefined, { timeoutMs: 120_000 }))
+    set(erro, null)
+  } catch (e) {
+    if ((e as { code?: string }).code !== 'timeout') falhou(e)
+  } finally {
+    set(medindo, false)
   }
 }
 
@@ -117,10 +142,6 @@ export async function salvar(secao: string, chaves: string[], extras: Record<str
   const todas = read(edicoes)
   const valores: Record<string, string> = { ...extras }
   for (const c of chaves) if (c in todas) valores[c] = todas[c]
-  if (Object.keys(valores).length === 0) {
-    avisar(secao, { tom: 'success', texto: t.nadaAlterado })
-    return false
-  }
   set(gravando, secao)
   try {
     set(estado, await plugin.request('config.gravar', { valores }))

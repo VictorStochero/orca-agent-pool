@@ -1,7 +1,7 @@
 // Seção Fila (só leitura) e os campos de configuração da fila.
 import { atom, Checkbox, Input, RadioGroup, Row, read, Stack, set, Text } from 'orca'
 import type { Estado, ItemFila, TesteFila } from '../protocol'
-import { ComDica, type Detalhe, Dica, type Linha, Mensagem, Salvar, Secao, se, TabelaExpansivel } from './comum'
+import { type Campo, ComDica, type Detalhe, Dica, type Linha, Mensagem, marcado, Salvar, Secao, se, TabelaExpansivel } from './comum'
 import { edicoes, mudar } from './estado'
 import { t } from './textos'
 
@@ -9,6 +9,14 @@ import { t } from './textos'
 const abertasTrava = atom<string[]>([])
 
 const ITENS_FILA: ItemFila[] = ['modo', 'vagas', 'vagas_projeto', 'teto', 'processos', 'sem_saida_min', 'limpar_bancos']
+
+export const camposFila = (e: Estado): Campo[] =>
+  ITENS_FILA.map(i => ({
+    chave: `fila.${i}`,
+    rotulo: t.fila.campos[i],
+    salvo: String(e.fila.config[i]),
+    mostrar: i === 'modo' ? v => t.fila.modos[v] ?? v : i === 'limpar_bancos' ? marcado('sim') : undefined,
+  }))
 
 /**
  * Rótulo da coluna Fila: vem da fila real da linha (quem começou antes da troca de modo segue na fila antiga); sem ela, do modo
@@ -164,7 +172,7 @@ export function ConfigFila({ e }: { e: Estado }) {
         <Dica texto={t.fila.dicas.limpar_bancos} />
       </Row>
       <Mensagem secao="fila" />
-      <Salvar secao="fila" chaves={ITENS_FILA.map(i => `fila.${i}`)} />
+      <Salvar secao="fila" campos={camposFila(e)} />
     </Stack>
   )
 }

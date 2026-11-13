@@ -33,9 +33,13 @@ export default function Painel() {
     <Stack gap="md">
       <Row justify="between" align="center">
         <Heading>{t.titulo}</Heading>
-        <Button icon="refresh" size="sm" disabled={read(carregando)} onPress={() => void atualizar()}>
-          {t.atualizar}
-        </Button>
+        {read(carregando) ? (
+          <Spinner label={t.atualizando} />
+        ) : (
+          <Button icon="refresh" size="sm" onPress={() => void atualizar()}>
+            {t.atualizar}
+          </Button>
+        )}
       </Row>
       {x ? (
         <Stack gap="xs">
