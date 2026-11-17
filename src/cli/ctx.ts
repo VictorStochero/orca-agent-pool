@@ -8,6 +8,8 @@ export type Ctx = {
   env: NodeJS.ProcessEnv
   orca: OrcaCli
   fetch: typeof fetch
+  /** Caminho onde procurar os CLIs dos agentes (injetado para o teste não depender do que a máquina tem instalado). */
+  busca: () => Promise<string>
   cwd: string
   agora: () => number
   stdin: () => Promise<string>

@@ -1,7 +1,6 @@
 import { carregar } from '../../core/config.ts'
 import { listarTestesAsync } from '../../core/fila/travas.ts'
 import { medirTodas } from '../../core/medidas/cache.ts'
-import { caminhoDeBusca } from '../../core/orca.ts'
 import { medidaEfetiva } from '../../core/pool/modelo.ts'
 import { livres } from '../../core/pool/vagas.ts'
 import { type Ctx, caminhos, comJson, emitir } from '../ctx.ts'
@@ -15,7 +14,7 @@ export async function status(ctx: Ctx, args: string[]): Promise<number> {
   const c = carregar(p)
   const agora = ctx.agora()
   const testes = await listarTestesAsync(p)
-  const medidas = await medirTodas(c, p, ctx.orca, { home: ctx.home, fetch: ctx.fetch, agora, path: await caminhoDeBusca(ctx.env) })
+  const medidas = await medirTodas(c, p, ctx.orca, { home: ctx.home, fetch: ctx.fetch, agora, path: await ctx.busca() })
   const contas = (await livres(p, c, agora)).map(l => {
     const ct = c.pool.contas.find(x => x.nome === l.conta)! // `livres` sai de c.pool.contas
     const m = medidas.find(x => x.conta === l.conta)

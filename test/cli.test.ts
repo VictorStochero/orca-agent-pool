@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { after, describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { executar } from '../src/cli/executar.ts'
@@ -56,6 +56,7 @@ async function rodar(home: string, args: string[], extra: { stdin?: string; cwd?
     env: envCasa(home, { ...process.env, LANG: 'pt_BR', LC_ALL: '', ...extra.env }),
     orca: extra.orca ?? orcaFalso,
     fetch: fetchFalso,
+    busca: async () => dirname(process.execPath), // sem o registro nem os CLIs de agente da máquina, como no CI
     cwd: extra.cwd ?? home,
     agora: () => 1_700_000_000_000,
     stdin: async () => extra.stdin ?? '',

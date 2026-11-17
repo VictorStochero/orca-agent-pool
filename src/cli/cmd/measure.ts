@@ -1,7 +1,6 @@
 import { carregar } from '../../core/config.ts'
 import { medirTodas } from '../../core/medidas/cache.ts'
 import { motivoNaoConfigurada } from '../../core/motivo.ts'
-import { caminhoDeBusca } from '../../core/orca.ts'
 import { type Ctx, caminhos, comJson, emitir, Uso } from '../ctx.ts'
 import { textosPara } from '../textos.ts'
 
@@ -16,7 +15,7 @@ export async function measure(ctx: Ctx, args: string[]): Promise<number> {
     c,
     p,
     ctx.orca,
-    { home: ctx.home, fetch: ctx.fetch, agora: ctx.agora(), path: await caminhoDeBusca(ctx.env) },
+    { home: ctx.home, fetch: ctx.fetch, agora: ctx.agora(), path: await ctx.busca() },
     0,
     resto[0],
   )
