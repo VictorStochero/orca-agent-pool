@@ -40,8 +40,12 @@ async function ate(condicao: () => boolean | Promise<boolean>): Promise<void> {
   for (let i = 0; i < 100 && !(await condicao()); i++) await new Promise(r => setTimeout(r, 50))
 }
 
-// A ativação termina com um estado.mudou, depois da config e da primeira coleta.
-const ativado = (w: { posts: readonly unknown[] }) => ate(() => w.posts.length >= 1)
+// O observador de disco posta durante a coleta; só `orca.rodando` sair de null prova que a ativação gravou o ambiente.
+const ativado = (w: Awaited<ReturnType<typeof montarWorker>>) =>
+  ate(async () => (await w.request('estado.ler')).saude.orca.rodando !== null)
+
+// Só promessas encadeadas separam o pedido do handler: um turno do laço de eventos garante que ele já entrou.
+const turno = () => new Promise<void>(r => setImmediate(r))
 
 async function mountWorker(modulo: typeof main) {
   const w = await montarWorker(modulo)
@@ -154,10 +158,7 @@ test('cotas.medir mede de novo mesmo com a medida da ativação ainda no cache',
   try {
     const w = await mountWorker(main)
     assert.equal(api.mock.callCount(), 1)
-    // O estado.mudou do observador (gravação do cache de medidas) pode chegar antes de a ativação pôr a medida no estado.
-    const curta = async () => (await w.request('estado.ler')).pool.contas[0].cota?.curta
-    await ate(async () => (await curta()) !== undefined)
-    assert.equal(await curta(), 1)
+    assert.equal((await w.request('estado.ler')).pool.contas[0].cota?.curta, 1)
     const e = await w.request('cotas.medir')
     assert.equal(api.mock.callCount(), 2)
     assert.equal(e.pool.contas[0].cota?.curta, 2)
@@ -192,7 +193,7 @@ test('cotas.medir durante a coleta da ativação espera ela e mede de novo, sem 
     const w = await montarWorker(main)
     await ate(() => api.mock.callCount() > 0)
     const pedido = w.request('cotas.medir')
-    await new Promise(r => setTimeout(r, 50))
+    await turno()
     soltar()
     const e = await pedido
     assert.equal(api.mock.callCount(), 2)
@@ -219,7 +220,7 @@ test('cotas.medir repetido com uma medição forçada em curso espera a mesma, s
     const primeiro = w.request('cotas.medir')
     await ate(() => api.mock.callCount() >= 2)
     const segundo = w.request('cotas.medir')
-    await new Promise(r => setTimeout(r, 50))
+    await turno()
     soltar()
     const [a, b] = await Promise.all([primeiro, segundo])
     assert.equal(api.mock.callCount(), 2)
