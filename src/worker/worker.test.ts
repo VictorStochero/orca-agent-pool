@@ -154,7 +154,13 @@ test('cotas.medir mede de novo mesmo com a medida da ativação ainda no cache',
   try {
     const w = await mountWorker(main)
     assert.equal(api.mock.callCount(), 1)
-    assert.equal((await w.request('estado.ler')).pool.contas[0].cota?.curta, 1)
+    // O 1º post pode sair antes de a medida da ativação ser gravada: espera a cota aparecer.
+    let lido = await w.request('estado.ler')
+    for (let i = 0; i < 100 && lido.pool.contas[0].cota?.curta === undefined; i++) {
+      await new Promise(r => setTimeout(r, 50))
+      lido = await w.request('estado.ler')
+    }
+    assert.equal(lido.pool.contas[0].cota?.curta, 1)
     const e = await w.request('cotas.medir')
     assert.equal(api.mock.callCount(), 2)
     assert.equal(e.pool.contas[0].cota?.curta, 2)
