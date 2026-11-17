@@ -10,6 +10,36 @@ import type { Config } from '../src/core/tipos.ts'
 import { envCasa } from './helpers/casa.ts'
 import { cfg, conta } from './helpers/pool.ts'
 
+test('conta antigravity congelada pelo Orca: erro e acao vêm na medida e sobrevivem ao cache', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'cache-congelada-'))
+  try {
+    const c = cfg([conta('agy', { agente: 'antigravity' })])
+    let chamadas = 0
+    const orca = {
+      run: async () => {
+        chamadas++
+        const entrada = {
+          provider: 'antigravity',
+          session: null,
+          weekly: null,
+          status: 'unavailable',
+          usageMetadata: { failureKind: 'missing-credentials', retryAtMs: Number.MAX_SAFE_INTEGER },
+        }
+        return { code: 0, stderr: '', stdout: JSON.stringify({ ok: true, result: { rateLimits: { antigravity: entrada } } }) }
+      },
+    }
+    const d = { home, agora: 1_000_000, fetch: fetch }
+    const p = paths(home)
+    const primeira = await medirTodas(c, p, orca, d)
+    assert.deepEqual([primeira[0].estado, primeira[0].erro, primeira[0].acao], ['sem_login', 'orca_congelada', 'agy models'])
+    const cache = await medirTodas(c, p, orca, { ...d, agora: 1_060_000 })
+    assert.equal(chamadas, 1)
+    assert.deepEqual([cache[0].estado, cache[0].erro, cache[0].acao], ['sem_login', 'orca_congelada', 'agy models'])
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
 test('cache por conta dura cinco minutos, renova sem cota velha e nunca contém token', async () => {
   const home = mkdtempSync(join(tmpdir(), 'cache-medidas-'))
   try {

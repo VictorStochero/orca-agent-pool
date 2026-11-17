@@ -49,6 +49,41 @@ test('conta Claude deslogada: medidor -> cache sem_login com acao -> estado com 
   }
 })
 
+test('conta congelada pelo Orca: alerta sem_login com detalhe orca_congelada e o comando; sem_login comum sem detalhe', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'sem-login-'))
+  try {
+    const p = paths(home)
+    mkdirSync(join(home, '.claude-work'))
+    const c = cfg([conta('agy', { agente: 'antigravity' }), conta('work', { config: '~/.claude-work' })])
+    const entrada = {
+      provider: 'antigravity',
+      session: null,
+      weekly: null,
+      status: 'unavailable',
+      usageMetadata: { failureKind: 'missing-credentials', retryAtMs: Number.MAX_SAFE_INTEGER },
+    }
+    const orca = {
+      run: async () => ({ code: 0, stderr: '', stdout: JSON.stringify({ ok: true, result: { rateLimits: { antigravity: entrada } } }) }),
+    }
+    const d = { home, agora: 1_700_000_000_000, executarUsage: async () => 'Not logged in', fetch: fetch }
+    const medidas = await medirTodas(c, p, orca, d)
+    const e = await montarEstado(p, c, null, { medidas, detectadas: [], ramGb: null, orca: { rodando: true, versao: null } }, d.agora)
+    const alertas = e.alertas.filter(a => a.codigo === 'sem_login')
+    assert.deepEqual(
+      alertas.find(a => a.params?.conta === 'agy'),
+      {
+        codigo: 'sem_login',
+        nivel: 'erro',
+        params: { conta: 'agy', detalhe: 'orca_congelada' },
+        acao: 'agy models',
+      },
+    )
+    assert.equal(alertas.find(a => a.params?.conta === 'work')?.params?.detalhe, undefined)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
 test('medição só das contas da config: conta removida no cache não dispara medição nem volta', async () => {
   const home = mkdtempSync(join(tmpdir(), 'sem-login-'))
   try {

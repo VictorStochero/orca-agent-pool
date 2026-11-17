@@ -44,7 +44,7 @@ export type Cota = {
   estado: 'ok' | 'sem_login' | 'erro' | 'antiga' | 'sem_medida' | 'nao_configurada'
   /** Comando que resolve (`sem_login`), quando houver. */
   acao?: string | null
-  /** Detalhe técnico do medidor quando `estado` é `erro`; o painel monta a frase. */
+  /** Detalhe técnico do medidor quando `estado` é `erro`; com `sem_login`, `orca_congelada` = o Orca parou de medir a conta. O painel monta a frase. */
   erro?: string | null
   /** Por que a conta está `nao_configurada` (pasta ou CLI ausente), já separado; o painel monta a frase. */
   motivo?: { tipo: 'pasta_ausente' | 'cli_ausente'; valor: string } | null

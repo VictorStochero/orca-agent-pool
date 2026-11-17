@@ -167,6 +167,7 @@ Exit codes: `0` ok, `2` invalid usage, `75` no slot or the wait ran out (try aga
 | An agent says `agent-pool: command not found` | agents must call `~/.agents/bin/agent-pool` by its full path (the skill and the hook already do) |
 | `exit 75` / "queue busy" | another test holds the slot of that resource, or the pool is full: wait and run again |
 | An account shows **not signed in** | log in with that account's CLI (the panel shows the command) |
+| An account shows **not signed in**, but its CLI is logged in | Orca stopped measuring the account after a failed check. Run the command the panel shows to confirm the login, then refresh usage in Orca (or restart Orca). **Refresh** and **Check quotas** in the panel only reread Orca's cache |
 | An account shows **not set up on this machine** | its CLI is not installed (e.g. `codex` not in the PATH) or its own folder (e.g. `~/.claude-team`) does not exist. It raises no alert and is left out of the writer and second-opinion choice; it comes back by itself once the CLI or the folder appears. If you will not use it, turn it off with **Do not use** in **Settings → Accounts**; a custom account can also be removed there |
 | The panel is stuck on **Requirements** | open each item marked ✗, read what it writes and press **Install** |
 | A test was refused by the hook | run the command the hook printed: `"…/agent-pool" test -- <your command>` |

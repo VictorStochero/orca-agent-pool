@@ -94,7 +94,12 @@ export async function montarEstado(p: Paths, c: Config, erroConfig: string | nul
   for (const ct of contas) {
     if (!ct.ativo) continue
     if (ct.cota?.estado === 'sem_login')
-      alertas.push({ codigo: 'sem_login', nivel: 'erro', params: { conta: ct.nome }, ...(ct.cota.acao && { acao: ct.cota.acao }) })
+      alertas.push({
+        codigo: 'sem_login',
+        nivel: 'erro',
+        params: { conta: ct.nome, ...(ct.cota.erro && { detalhe: ct.cota.erro }) },
+        ...(ct.cota.acao && { acao: ct.cota.acao }),
+      })
     else if (ct.cota?.estado === 'erro')
       alertas.push({ codigo: 'erro_medida', nivel: 'aviso', params: { conta: ct.nome, ...(ct.cota.erro && { detalhe: ct.cota.erro }) } })
   }

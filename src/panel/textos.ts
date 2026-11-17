@@ -37,7 +37,10 @@ const pt = {
   alertas: {
     config_ilegivel: (detalhe: string) => `config.json ilegível: ${detalhe}`,
     orca_indisponivel: 'Orca indisponível: cota nativa e vagas recuperadas não são atualizadas',
-    sem_login: (conta: string) => `${conta}: sem login`,
+    sem_login: (conta: string, detalhe?: string) =>
+      detalhe === 'orca_congelada'
+        ? `${conta}: sem login, e o Orca parou de medir esta conta. Confira o login no CLI da conta e depois atualize a cota no Orca (ou reinicie o Orca).`
+        : `${conta}: sem login`,
     erro_medida: (conta: string, detalhe?: string) => `${conta}: ${pt.pool.erroMedida(detalhe)}`,
     teste_parado: (pid: number | null, onde: string) => `Teste parado (pid ${pid ?? '?'}) em ${onde}`,
     teste_sem_saida: (pid: number | null, onde: string, min: number) => `Teste sem saída há ${min} min (pid ${pid ?? '?'}) em ${onde}`,
@@ -227,6 +230,7 @@ const pt = {
     percentual: (v: number | null, alerta: boolean) => `${alerta ? '⚠ ' : ''}${pct(v)}`,
     janelasValor: (curta: number | null, longa: number | null) => `5h ${pct(curta)} · semana ${pct(longa)}`,
     semLogin: 'sem login',
+    semLoginCongelada: 'sem login · o Orca parou de medir: confira o login e atualize a cota no Orca',
     naoConfigurada: 'não configurada nesta máquina',
     motivosNaoConfigurada: textosComuns.pt.motivosNaoConfigurada,
     erroMedida: (detalhe?: string | null) => erroMedida(textosComuns.pt, detalhe),
@@ -351,7 +355,10 @@ const en: typeof pt = {
   alertas: {
     config_ilegivel: detalhe => `config.json unreadable: ${detalhe}`,
     orca_indisponivel: 'Orca unavailable: native quota and slot recovery are not updated',
-    sem_login: conta => `${conta}: not signed in`,
+    sem_login: (conta, detalhe) =>
+      detalhe === 'orca_congelada'
+        ? `${conta}: not signed in, and Orca stopped measuring this account. Check the sign-in in the account's CLI, then refresh usage in Orca (or restart Orca).`
+        : `${conta}: not signed in`,
     erro_medida: (conta, detalhe) => `${conta}: ${en.pool.erroMedida(detalhe)}`,
     teste_parado: (pid, onde) => `Stopped test (pid ${pid ?? '?'}) in ${onde}`,
     teste_sem_saida: (pid, onde, min) => `Test with no output for ${min} min (pid ${pid ?? '?'}) in ${onde}`,
@@ -538,6 +545,7 @@ const en: typeof pt = {
     percentual: (v, alerta) => `${alerta ? '⚠ ' : ''}${pct(v)}`,
     janelasValor: (curta, longa) => `5h ${pct(curta)} · week ${pct(longa)}`,
     semLogin: 'not signed in',
+    semLoginCongelada: 'not signed in · Orca stopped measuring: check the sign-in, then refresh usage in Orca',
     naoConfigurada: 'not set up on this machine',
     motivosNaoConfigurada: textosComuns.en.motivosNaoConfigurada,
     erroMedida: detalhe => erroMedida(textosComuns.en, detalhe),
