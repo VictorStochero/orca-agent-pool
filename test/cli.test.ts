@@ -56,6 +56,7 @@ async function rodar(home: string, args: string[], extra: { stdin?: string; cwd?
     env: envCasa(home, { ...process.env, LANG: 'pt_BR', LC_ALL: '', ...extra.env }),
     orca: extra.orca ?? orcaFalso,
     fetch: fetchFalso,
+    busca: async () => '', // nenhum CLI de agente encontrado, como no CI: o resultado não depende do que a máquina tem
     cwd: extra.cwd ?? home,
     agora: () => 1_700_000_000_000,
     stdin: async () => extra.stdin ?? '',

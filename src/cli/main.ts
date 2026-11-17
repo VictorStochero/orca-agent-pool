@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
 import { createInterface } from 'node:readline'
-import { criarOrcaCli } from '../core/orca.ts'
+import { caminhoDeBusca, criarOrcaCli } from '../core/orca.ts'
 import { executar } from './executar.ts'
 
 // O lançador liga isto só para o Electron rodar como Node; os testes que o CLI dispara não devem herdar.
@@ -11,6 +11,7 @@ process.exitCode = await executar(process.argv.slice(2), {
   env: process.env,
   orca: criarOrcaCli(),
   fetch,
+  busca: () => caminhoDeBusca(process.env),
   cwd: process.cwd(),
   agora: Date.now,
   stdin: async () => {

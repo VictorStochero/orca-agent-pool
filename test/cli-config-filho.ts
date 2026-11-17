@@ -9,6 +9,7 @@ process.exitCode = await executar(['config', 'set', 'fila.vagas=7'], {
   cwd: home,
   agora: Date.now,
   fetch,
+  busca: async () => '',
   orca: {
     run: async () => {
       throw new Error('Orca não é necessário')
