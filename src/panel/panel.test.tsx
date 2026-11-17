@@ -19,6 +19,15 @@ const mount = (modulo: Parameters<typeof montar>[0], opcoes: Parameters<typeof m
 let view: TestPanel | undefined
 afterEach(() => view?.unmount())
 
+/** Espera pela condição (e não por um tick fixo): sob carga o press demora a chegar ao estado intermediário. */
+const esperar = async (condicao: () => unknown, mensagem: string, prazoMs = 2000) => {
+  const limite = Date.now() + prazoMs
+  while (!condicao()) {
+    if (Date.now() > limite) assert.fail(`esperar: ${mensagem} (prazo de ${prazoMs} ms)`)
+    await new Promise(r => setTimeout(r, 5))
+  }
+}
+
 const POOL = lista('Contas do pool')
 /** `codex` cadastrada à mão: só conta manual tem "Remover do pool". */
 const codexManual: Estado = {
@@ -562,6 +571,7 @@ test('instalar durante uma coleta em curso relê os requisitos ao fim dela e mos
   let liberarVelha: (r: Requisitos) => void = () => {}
   const forcadas: (boolean | undefined)[] = []
   let chamadas = 0
+  let instalou = 0
   view = await mount(panel, {
     host: mockHost({
       requests: {
@@ -572,7 +582,10 @@ test('instalar durante uma coleta em curso relê os requisitos ao fim dela e mos
           if (chamadas === 2) return new Promise<Requisitos>(resolve => (liberarVelha = resolve))
           return tudoOk
         },
-        'requisitos.instalar': () => tudoOk,
+        'requisitos.instalar': () => {
+          instalou++
+          return tudoOk
+        },
         'estado.ler': () => estadoExemplo,
       },
     }),
@@ -580,11 +593,15 @@ test('instalar durante uma coleta em curso relê os requisitos ao fim dela e mos
   await abrirReq(view, 'skill')
   // Sem await: a leitura presa segura o press até ser liberada.
   const atualizando = view.press({ text: 'Atualizar' })
-  await new Promise(r => setTimeout(r, 0))
-  const instalando = view.press({ type: 'Button', text: 'Instalar' })
-  await new Promise(r => setTimeout(r, 0))
-  liberarVelha(pendencia) // a coleta antiga termina com a leitura de antes da instalação
-  await Promise.all([atualizando, instalando])
+  let instalando: Promise<unknown> | undefined
+  try {
+    await esperar(() => chamadas >= 2, 'a leitura presa de requisitos.ler não foi pedida')
+    instalando = view.press({ type: 'Button', text: 'Instalar' })
+    await esperar(() => instalou > 0, 'requisitos.instalar não foi chamado')
+  } finally {
+    liberarVelha(pendencia) // a coleta antiga termina com a leitura de antes da instalação
+    await Promise.all([atualizando, instalando])
+  }
   assert.ok(view.find(POOL))
   assert.equal(forcadas.at(-1), true)
 })
@@ -806,11 +823,13 @@ test('pool: Verificar cotas pede a medição sem cache e mostra a cota nova; tim
   assert.equal(celula(view, 'codex', 'h5'), '24%')
   // Sem await: a medição presa segura o press; enquanto isso o Spinner fica no lugar do botão.
   const medindo = view.press({ type: 'Button', text: 'Verificar cotas' })
-  await new Promise(r => setTimeout(r, 0))
-  assert.ok(view.find({ type: 'Spinner', label: 'Verificando…' }))
-  assert.equal(view.find({ type: 'Button', text: 'Verificar cotas' }), null)
-  soltar()
-  await medindo
+  try {
+    await esperar(() => view!.find({ type: 'Spinner', label: 'Verificando…' }), 'Spinner "Verificando…" não apareceu')
+    assert.equal(view.find({ type: 'Button', text: 'Verificar cotas' }), null)
+  } finally {
+    soltar()
+    await medindo
+  }
   assert.equal(celula(view, 'codex', 'h5'), '77%')
   // Timeout: o worker segue medindo e o resultado chega pelo estado.mudou; nada de "Coletor falhou".
   falha = 'timeout'
@@ -835,11 +854,13 @@ test('Atualizar dá lugar ao Spinner enquanto relê o estado', async () => {
   })
   presa = true
   const atualizando = view.press({ type: 'Button', text: 'Atualizar' })
-  await new Promise(r => setTimeout(r, 0))
-  assert.ok(view.find({ type: 'Spinner', label: 'Atualizando…' }))
-  assert.equal(view.find({ type: 'Button', text: 'Atualizar' }), null)
-  soltar()
-  await atualizando
+  try {
+    await esperar(() => view!.find({ type: 'Spinner', label: 'Atualizando…' }), 'Spinner "Atualizando…" não apareceu')
+    assert.equal(view.find({ type: 'Button', text: 'Atualizar' }), null)
+  } finally {
+    soltar()
+    await atualizando
+  }
   assert.ok(view.find({ type: 'Button', text: 'Atualizar' }))
 })
 
@@ -1376,11 +1397,13 @@ test('Instalação: Verificar agora chama requisitos.ler com forcar; leitura for
   const antes = leiturasHooks
   // Sem await: a leitura presa segura o press; enquanto isso o Spinner fica no lugar do botão.
   const verificando = view.press({ type: 'Button', text: t.requisitos.verificar })
-  await new Promise(r => setTimeout(r, 0))
-  assert.ok(view.find({ type: 'Spinner', label: t.requisitos.verificando }))
-  assert.equal(view.find({ type: 'Button', text: t.requisitos.verificar }), null)
-  soltar()
-  await verificando
+  try {
+    await esperar(() => view!.find({ type: 'Spinner', label: t.requisitos.verificando }), 'Spinner de verificação não apareceu')
+    assert.equal(view.find({ type: 'Button', text: t.requisitos.verificar }), null)
+  } finally {
+    soltar()
+    await verificando
+  }
   assert.deepEqual(entradas.at(1), { forcar: true })
   assert.ok(leiturasHooks > antes, 'Verificar agora relê os hooks')
   assert.deepEqual(idsReq(view), ['orca', 'orchestration', 'lancador'])
