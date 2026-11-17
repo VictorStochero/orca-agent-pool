@@ -88,6 +88,37 @@ test('pt-BR: os mesmos alertas saem em português', async () => {
     assert.ok(view.find({ type: 'Callout', text: trecho }), String(trecho))
 })
 
+for (const [locale, alerta, linha, comum] of [
+  [
+    'pt-BR',
+    /agy: sem login, e o Orca parou de medir esta conta\. Confira o login no CLI da conta e depois atualize a cota no Orca \(ou reinicie o Orca\)\./,
+    /Problema.*sem login · o Orca parou de medir: confira o login e atualize a cota no Orca/,
+    /alfa: sem login(?!,)/,
+  ],
+  [
+    'en',
+    /agy: not signed in, and Orca stopped measuring this account\. Check the sign-in in the account's CLI, then refresh usage in Orca \(or restart Orca\)\./,
+    /Problem.*not signed in · Orca stopped measuring: check the sign-in, then refresh usage in Orca/,
+    /alfa: not signed in(?!,)/,
+  ],
+] as const) {
+  test(`${locale}: conta congelada pelo Orca tem alerta e linha próprios; sem_login comum não muda`, async () => {
+    const e = await estadoReal({
+      contas: [conta('agy', { agente: 'antigravity' }), conta('alfa')],
+      medidas: [
+        medida('agy', { estado: 'sem_login', erro: 'orca_congelada', acao: 'agy models' }),
+        medida('alfa', { estado: 'sem_login' }),
+      ],
+    })
+    view = await mount(panel, { locale, host: hostCom(e) })
+    assert.ok(view.find({ type: 'Callout', text: alerta }))
+    assert.ok(view.find({ type: 'Callout', text: comum }))
+    assert.ok(view.find({ text: 'agy models' }))
+    await abrir(view, 'agy')
+    assert.ok(tem(view, lista(locale === 'en' ? 'Pool accounts' : 'Contas do pool'), linha))
+  })
+}
+
 test('Orca ainda não verificado: rodapé "verificando"/"checking" e sem alerta', async () => {
   const e = await estadoReal({ orca: { rodando: null, versao: null } })
   view = await mount(panel, { locale: 'pt-BR', host: hostCom(e) })

@@ -36,7 +36,13 @@ export function SecaoPool({ e }: { e: Estado }) {
         ...se(t.pool.situacao, naoConfigurada(c) && situacaoNaoConfigurada(c.cota?.motivo)),
         ...se(
           t.pool.problema,
-          comProblema(c) && c.cota && (c.cota.estado === 'sem_login' ? t.pool.semLogin : t.pool.erroMedida(c.cota.erro)),
+          comProblema(c) &&
+            c.cota &&
+            (c.cota.estado !== 'sem_login'
+              ? t.pool.erroMedida(c.cota.erro)
+              : c.cota.erro === 'orca_congelada'
+                ? t.pool.semLoginCongelada
+                : t.pool.semLogin),
         ),
         ...se(t.pool.acao, comProblema(c) && c.cota?.acao),
         ...se(t.pool.situacao, !c.ativo && t.pool.naoUtilizadaDetalhe),

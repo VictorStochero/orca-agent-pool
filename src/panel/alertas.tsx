@@ -12,7 +12,7 @@ function textoAlerta(a: Alerta): string {
     case 'orca_indisponivel':
       return t.alertas.orca_indisponivel
     case 'sem_login':
-      return t.alertas.sem_login(p.conta ?? '')
+      return t.alertas.sem_login(p.conta ?? '', p.detalhe)
     case 'erro_medida':
       return t.alertas.erro_medida(p.conta ?? '', p.detalhe)
     case 'teste_parado':

@@ -156,6 +156,42 @@ describe('status', () => {
     )
     assert.match((await rodar(home, ['measure'])).out, /team: não configurada nesta máquina: pasta .*\.claude-team não existe/)
   })
+  it('measure de conta congelada pelo Orca diz como destravar, com e sem comando, em pt e en', async () => {
+    const congelada = (provider: string) => ({
+      provider,
+      session: null,
+      weekly: null,
+      status: 'unavailable',
+      usageMetadata: { failureKind: 'missing-credentials', retryAtMs: Number.MAX_SAFE_INTEGER },
+    })
+    const orcaCom = (provider: string): OrcaCli => ({
+      async run(args) {
+        if (args[0] === 'account')
+          return { code: 0, stdout: JSON.stringify({ ok: true, result: { rateLimits: { [provider]: congelada(provider) } } }), stderr: '' }
+        return orcaFalso.run(args)
+      },
+    })
+    const en = { LANG: 'en', LC_ALL: '' }
+    // Comando apontando para o node: sem ele, a máquina sem `agy` (CI) rebaixa a conta para nao_configurada.
+    const agy = comConfig([conta('agy', { agente: 'antigravity', vagas: 1, comando: JSON.stringify(process.execPath) })])
+    assert.equal(
+      (await rodar(agy, ['measure'], { orca: orcaCom('antigravity') })).out,
+      'agy: sem login → agy models; depois atualize a cota no Orca (o Orca parou de medir esta conta)',
+    )
+    assert.equal(
+      (await rodar(agy, ['measure'], { orca: orcaCom('antigravity'), env: en })).out,
+      'agy: not logged in → agy models; then refresh usage in Orca (Orca stopped measuring this account)',
+    )
+    const cur = comConfig([conta('cur', { agente: 'kimi', vagas: 1, papeis: [], comando: JSON.stringify(process.execPath) })])
+    assert.equal(
+      (await rodar(cur, ['measure'], { orca: orcaCom('kimi') })).out,
+      'cur: sem login → atualize a cota no Orca (o Orca parou de medir esta conta)',
+    )
+    assert.equal(
+      (await rodar(cur, ['measure'], { orca: orcaCom('kimi'), env: en })).out,
+      'cur: not logged in → refresh usage in Orca (Orca stopped measuring this account)',
+    )
+  })
   it('--json mostra a medida do limite seguido (agy sem modelo segue Gemini Models, não o geral do Argon)', async () => {
     const home = comConfig([conta('agy', { agente: 'antigravity', vagas: 1 })])
     const buckets = [

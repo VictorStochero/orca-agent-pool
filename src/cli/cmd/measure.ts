@@ -33,6 +33,7 @@ export async function measure(ctx: Ctx, args: string[]): Promise<number> {
       case 'nao_configurada':
         return `${m.conta}: ${t.naoConfigurada}${motivo(m.erro)}`
       case 'sem_login':
+        if (m.erro === 'orca_congelada') return `${m.conta}: ${t.semLoginCongelada(m.acao)}`
         return `${m.conta}: ${t.semLogin}${m.acao ? ` → ${m.acao}` : ''}`
       case 'erro':
         return `${m.conta}: ${t.erro}${detalhe}`

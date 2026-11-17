@@ -68,6 +68,52 @@ test('Orca sem login não oferece cota mesmo com percentuais velhos', async () =
   assert.deepEqual(medidas.get('claude'), { curta: null, longa: null, resetLongaTs: null, estado: 'sem_login' })
 })
 
+const MAX = Number.MAX_SAFE_INTEGER
+const orcaCache = (rateLimits: Record<string, unknown>) => ({
+  run: async () => ({ code: 0, stderr: '', stdout: JSON.stringify({ ok: true, result: { rateLimits } }) }),
+})
+const indisponivel = (provider: string, retryAtMs?: number, status = 'unavailable') => ({
+  provider,
+  session: null,
+  weekly: null,
+  status,
+  error: 'Antigravity usage is not available. Sign in with `agy`, then refresh usage.',
+  usageMetadata: {
+    source: 'cli',
+    failureKind: 'missing-credentials',
+    ...(retryAtMs === undefined ? {} : { retryAtMs }),
+  },
+})
+
+test('entrada congelada do Orca (retryAtMs máximo): sem_login, orca_congelada e comando para conferir o login', async () => {
+  const medidas = await medirOrca(orcaCache({ antigravity: indisponivel('antigravity', MAX) }))
+  const m = medidas.get('antigravity')
+  assert.deepEqual([m?.estado, m?.erro, m?.acao], ['sem_login', 'orca_congelada', 'agy models'])
+})
+
+test('provedor congelado sem comando conhecido: orca_congelada sem acao', async () => {
+  const m = (await medirOrca(orcaCache({ cursor: indisponivel('cursor', MAX) }))).get('cursor')
+  assert.deepEqual([m?.estado, m?.erro], ['sem_login', 'orca_congelada'])
+  assert.equal('acao' in (m ?? {}), false)
+})
+
+test('missing-credentials com retryAtMs finito ou ausente não é congelada', async () => {
+  for (const retry of [Date.now() + 60_000, undefined]) {
+    const m = (await medirOrca(orcaCache({ antigravity: indisponivel('antigravity', retry) }))).get('antigravity')
+    assert.equal(m?.estado, 'sem_login')
+    assert.equal('erro' in (m ?? {}), false)
+    assert.equal('acao' in (m ?? {}), false)
+  }
+})
+
+test('status ok com retryAtMs grande não marca orca_congelada', async () => {
+  const m = (await medirOrca(orcaCache({ antigravity: { ...indisponivel('antigravity', MAX, 'ok'), session: { usedPercent: 5 } } }))).get(
+    'antigravity',
+  )
+  assert.equal(m?.estado, 'ok')
+  assert.equal('erro' in (m ?? {}), false)
+})
+
 test('falhas do CLI e JSON inválido não viram medidas antigas', async () => {
   for (const stdout of ['invalid', '{"ok":false}']) {
     await assert.rejects(medirOrca({ run: async () => ({ code: 0, stdout, stderr: 'SECRET' }) }), /orca/)
