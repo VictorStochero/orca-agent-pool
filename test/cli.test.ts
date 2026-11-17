@@ -172,7 +172,8 @@ describe('status', () => {
       },
     })
     const en = { LANG: 'en', LC_ALL: '' }
-    const agy = comConfig([conta('agy', { agente: 'antigravity', vagas: 1 })])
+    // Comando apontando para o node: sem ele, a máquina sem `agy` (CI) rebaixa a conta para nao_configurada.
+    const agy = comConfig([conta('agy', { agente: 'antigravity', vagas: 1, comando: JSON.stringify(process.execPath) })])
     assert.equal(
       (await rodar(agy, ['measure'], { orca: orcaCom('antigravity') })).out,
       'agy: sem login → agy models; depois atualize a cota no Orca (o Orca parou de medir esta conta)',
