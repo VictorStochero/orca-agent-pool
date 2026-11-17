@@ -36,8 +36,8 @@ afterEach(() => {
   if (casa) rmSync(casa, { recursive: true, force: true })
 })
 
-async function ate(condicao: () => boolean): Promise<void> {
-  for (let i = 0; i < 100 && !condicao(); i++) await new Promise(r => setTimeout(r, 50))
+async function ate(condicao: () => boolean | Promise<boolean>): Promise<void> {
+  for (let i = 0; i < 100 && !(await condicao()); i++) await new Promise(r => setTimeout(r, 50))
 }
 
 // A ativação termina com um estado.mudou, depois da config e da primeira coleta.
@@ -154,13 +154,10 @@ test('cotas.medir mede de novo mesmo com a medida da ativação ainda no cache',
   try {
     const w = await mountWorker(main)
     assert.equal(api.mock.callCount(), 1)
-    // O 1º post pode sair antes de a medida da ativação ser gravada: espera a cota aparecer.
-    let lido = await w.request('estado.ler')
-    for (let i = 0; i < 100 && lido.pool.contas[0].cota?.curta === undefined; i++) {
-      await new Promise(r => setTimeout(r, 50))
-      lido = await w.request('estado.ler')
-    }
-    assert.equal(lido.pool.contas[0].cota?.curta, 1)
+    // O estado.mudou do observador (gravação do cache de medidas) pode chegar antes de a ativação pôr a medida no estado.
+    const curta = async () => (await w.request('estado.ler')).pool.contas[0].cota?.curta
+    await ate(async () => (await curta()) !== undefined)
+    assert.equal(await curta(), 1)
     const e = await w.request('cotas.medir')
     assert.equal(api.mock.callCount(), 2)
     assert.equal(e.pool.contas[0].cota?.curta, 2)
