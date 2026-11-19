@@ -548,6 +548,23 @@ test('a gravação pendente da saída chega à trava com o filho vivo e calado',
   )
 })
 
+test('compacto: a trava recebe a última linha com os pontos das linhas completas e da linha em andamento', async () => {
+  const p = paths(tmp())
+  const vistos: { fila: string; saida: { linha: string; linhas: number; ts: number } }[] = []
+  const espia = espiarSaida(p, vistos)
+  const script =
+    "process.stdout.write('Running\\n  ' + '.'.repeat(120) + '\\n'); setTimeout(() => process.stdout.write('  ' + '.'.repeat(37)), 200); setTimeout(() => {}, 1600)"
+  try {
+    await rodarNaFila({ dir: tmp(), comando: [process.execPath, '-e', script], config: cfg(), p, env: {} })
+  } finally {
+    clearInterval(espia)
+  }
+  assert.ok(
+    vistos.some(v => v.saida.linha === '.'.repeat(157)),
+    JSON.stringify(vistos.map(v => v.saida.linha?.length)),
+  )
+})
+
 test('terminal lento (contrapressão): a folga do exit espera o drain e o resumo final chega', async () => {
   const p = paths(tmp())
   const script = "let i=0;const t=setInterval(()=>{console.log('linha '+i);if(++i===10){clearInterval(t);console.log('RESUMO FINAL')}},10)"

@@ -1,11 +1,27 @@
 // Entry do painel. O painel só acessa a máquina pelo contrato do worker em src/protocol.ts.
 // Só leitura nas tabelas (Fila e Pool, próprias: List + Box); toda a edição fica em Configurações, no fim.
-import { Button, EmptyState, Heading, Link, type PanelContext, plugin, RelativeTime, Row, read, Spinner, Stack, Text } from 'orca'
+import {
+  atom,
+  Box,
+  Button,
+  EmptyState,
+  Heading,
+  Link,
+  type PanelContext,
+  plugin,
+  RelativeTime,
+  Row,
+  read,
+  Spinner,
+  Stack,
+  set,
+  Text,
+} from 'orca'
 import { Atencao } from './alertas'
 import { manterAtualizando } from './atualizacao'
 import { Secao } from './comum'
 import { carregarIntervalo, SecaoConfiguracoes } from './configuracoes'
-import { atualizar, carregando, concluido, erro, estado, requisitos } from './estado'
+import { atualizar, concluido, erro, estado, requisitos } from './estado'
 import { SecaoFila } from './fila'
 import { SecaoPool } from './pool'
 import { CorpoDesinstalar, SecaoRequisitos } from './requisitos'
@@ -13,7 +29,24 @@ import { t } from './textos'
 
 const REPO = 'https://github.com/VictorStochero/orca-agent-pool'
 
+/** Só o clique em Atualizar troca o botão pelo Spinner; a coleta automática não mexe nele. */
+const clicado = atom(false)
+/** Sinal da execução aberta do painel: o timer de um clique não mexe na execução seguinte. */
+let aberto: AbortSignal | undefined
+
+async function atualizarAgora(): Promise<void> {
+  const sinal = aberto
+  set(clicado, true)
+  try {
+    // Ao menos 1 s: uma coleta rápida faria o "Atualizando…" só piscar.
+    await Promise.all([atualizar(), new Promise(r => setTimeout(r, 1000))])
+  } finally {
+    if (!sinal?.aborted) set(clicado, false)
+  }
+}
+
 export function setup(ctx: PanelContext): void {
+  aberto = ctx.signal
   ctx.subscriptions.push(plugin.on('estado.mudou', () => void atualizar()))
   carregarIntervalo()
   void manterAtualizando(ctx.signal)
@@ -33,13 +66,16 @@ export default function Painel() {
     <Stack gap="md">
       <Row justify="between" align="center">
         <Heading>{t.titulo}</Heading>
-        {read(carregando) ? (
-          <Spinner label={t.atualizando} />
-        ) : (
-          <Button icon="refresh" size="sm" onPress={() => void atualizar()}>
-            {t.atualizar}
-          </Button>
-        )}
+        {/* 32 px = altura do Button sm do Orca: o Spinner, mais baixo, encolhia a linha e o painel pulava na troca. */}
+        <Box height={32} justify="center">
+          {read(clicado) ? (
+            <Spinner label={t.atualizando} />
+          ) : (
+            <Button icon="refresh" size="sm" onPress={() => void atualizarAgora()}>
+              {t.atualizar}
+            </Button>
+          )}
+        </Box>
       </Row>
       {x ? (
         <Stack gap="xs">

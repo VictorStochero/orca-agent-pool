@@ -48,19 +48,23 @@ export function acompanharSaida(agora: () => number) {
   let acc = VAZIA
   let visto = false
   let totalListado: number | null = null
+  /** Compacto: as linhas seguidas só de símbolos juntas, para a última linha mostrar todos os pontos e não só a última quebra. */
+  let pontos = ''
 
   const linha = (bruta: string) => {
     const l = bruta.replace(ANSI, '').trim()
     s.linhas++
     if (!l) return
-    s.linha = l.slice(0, MAX_LINHA)
     const ph = PHPUNIT.exec(l)
     const py = PYTEST.exec(l)
+    const simbolos = ph || py ? null : contarSimbolos(l)
+    pontos = simbolos ? pontos + l : ''
+    s.linha = simbolos ? pontos : l.slice(0, MAX_LINHA)
     if (ph) {
       ;[s.feitos, s.total, s.pct] = [Number(ph[1]), Number(ph[2]), Number(ph[3])]
       acc = somar(acc, contarSimbolos(l.slice(0, ph.index)))
     } else if (py) s.pct = Number(py[1])
-    else acc = somar(acc, contarSimbolos(l) ?? contarMarca(l))
+    else acc = somar(acc, simbolos ?? contarMarca(l))
     if (s.total === null && acc.feitos) s.feitos = acc.feitos
   }
 
@@ -81,8 +85,11 @@ export function acompanharSaida(agora: () => number) {
       if (!visto && totalListado === null) return null
       // O compacto imprime os pontos na mesma linha, sem \n: o pedaço pendente só de símbolos conta (uma vez, até a linha fechar).
       const c = somar(somar(acc, contarSimbolos(resto.out)), contarSimbolos(resto.err))
+      const pendente = contarSimbolos(resto.out) ? resto.out.replace(ANSI, '').trim() : ''
       const r: SaidaTeste = {
         ...s,
+        // Com contador impresso (PHPUnit padrão ou pytest), a última linha completa traz o progresso: o pendente não a troca.
+        linha: pendente && s.pct === null ? pontos + pendente : s.linha,
         feitos: s.total === null && c.feitos ? c.feitos : s.feitos,
         passou: c.feitos ? c.passou : null,
         falhou: c.feitos ? c.falhou : null,
