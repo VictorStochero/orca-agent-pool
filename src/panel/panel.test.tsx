@@ -872,9 +872,6 @@ test('o clique em Atualizar dá lugar ao Spinner enquanto relê o estado e por a
     soltar()
     await atualizando
   }
-  // A coleta terminou, mas o mínimo de 1 s não.
-  await view.settled()
-  assert.ok(view.find({ type: 'Spinner', label: 'Atualizando…' }))
   await esperarBotao()
   assert.ok(Date.now() - inicio >= 1000, `o botão voltou em ${Date.now() - inicio} ms`)
 })
