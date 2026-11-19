@@ -88,8 +88,8 @@ export function acompanharSaida(agora: () => number) {
       const pendente = contarSimbolos(resto.out) ? resto.out.replace(ANSI, '').trim() : ''
       const r: SaidaTeste = {
         ...s,
-        // Com contador impresso (PHPUnit padrão), a última linha completa traz o progresso: o pendente não a troca.
-        linha: pendente && s.total === null ? pontos + pendente : s.linha,
+        // Com contador impresso (PHPUnit padrão ou pytest), a última linha completa traz o progresso: o pendente não a troca.
+        linha: pendente && s.pct === null ? pontos + pendente : s.linha,
         feitos: s.total === null && c.feitos ? c.feitos : s.feitos,
         passou: c.feitos ? c.passou : null,
         falhou: c.feitos ? c.falhou : null,

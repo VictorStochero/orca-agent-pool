@@ -108,8 +108,9 @@ test('compacto: a última linha junta os pontos das linhas seguidas e do pendent
   assert.equal(a.estado()?.linha, 'Tests: 304 passed')
 })
 
-test('PHPUnit padrão: os pontos pendentes não trocam a última linha com o contador', () => {
+test('PHPUnit padrão e pytest: os pontos pendentes não trocam a última linha com o contador', () => {
   assert.equal(alimentar('....  4 / 10 ( 40%)\n', '..')?.linha, '....  4 / 10 ( 40%)')
+  assert.equal(alimentar('........ [ 45%]\n', '....')?.linha, '........ [ 45%]')
 })
 
 test('compacto misturado com o PHPUnit padrão: o total vence', () => {
