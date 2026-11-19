@@ -15,7 +15,6 @@ export const concluido = atom(false)
 /** A releitura dos requisitos veio vazia ou inválida; `Mensagem` mostra a frase no idioma atual. */
 export const releituraFalhou = atom(false)
 export const erro = atom<Erro | null>(null)
-export const carregando = atom(false)
 export const medindo = atom(false)
 /** Edições pendentes por chave de configuração (ex.: `conta.main.vagas`). */
 export const edicoes = atom<Record<string, string>>({})
@@ -103,7 +102,6 @@ export function atualizar(forcar = false): Promise<void> {
 }
 
 async function coletar(forcar: boolean): Promise<void> {
-  set(carregando, true)
   set(concluido, false)
   try {
     const ficaNaLista = aplicarLeitura(await lerRequisitos(forcar))
@@ -113,8 +111,6 @@ async function coletar(forcar: boolean): Promise<void> {
     set(erro, null)
   } catch (e) {
     falhou(e)
-  } finally {
-    set(carregando, false)
   }
 }
 

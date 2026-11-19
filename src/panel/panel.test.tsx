@@ -28,6 +28,16 @@ const esperar = async (condicao: () => unknown, mensagem: string, prazoMs = 2000
   }
 }
 
+/** O Spinner do clique em Atualizar fica ao menos 1 s; o fim do timer não é um ato, então só o settled() redesenha. */
+const esperarBotao = async () => {
+  const limite = Date.now() + 3000
+  while (!view!.find({ type: 'Button', text: 'Atualizar' })) {
+    if (Date.now() > limite) assert.fail('esperarBotao: Button "Atualizar" não voltou em 3 s')
+    await new Promise(r => setTimeout(r, 50))
+    await view!.settled()
+  }
+}
+
 const POOL = lista('Contas do pool')
 /** `codex` cadastrada à mão: só conta manual tem "Remover do pool". */
 const codexManual: Estado = {
@@ -842,7 +852,7 @@ test('pool: Verificar cotas pede a medição sem cache e mostra a cota nova; tim
   assert.equal(celula(view, 'codex', 'h5'), '77%')
 })
 
-test('Atualizar dá lugar ao Spinner enquanto relê o estado', async () => {
+test('o clique em Atualizar dá lugar ao Spinner enquanto relê o estado e por ao menos 1 s', async () => {
   let soltar = () => {}
   let presa = false
   view = await mount(panel, {
@@ -853,6 +863,7 @@ test('Atualizar dá lugar ao Spinner enquanto relê o estado', async () => {
     }),
   })
   presa = true
+  const inicio = Date.now()
   const atualizando = view.press({ type: 'Button', text: 'Atualizar' })
   try {
     await esperar(() => view!.find({ type: 'Spinner', label: 'Atualizando…' }), 'Spinner "Atualizando…" não apareceu')
@@ -861,7 +872,32 @@ test('Atualizar dá lugar ao Spinner enquanto relê o estado', async () => {
     soltar()
     await atualizando
   }
-  assert.ok(view.find({ type: 'Button', text: 'Atualizar' }))
+  // A coleta terminou, mas o mínimo de 1 s não.
+  await view.settled()
+  assert.ok(view.find({ type: 'Spinner', label: 'Atualizando…' }))
+  await esperarBotao()
+  assert.ok(Date.now() - inicio >= 1000, `o botão voltou em ${Date.now() - inicio} ms`)
+})
+
+test('a coleta automática (estado.mudou) não troca o botão Atualizar pelo Spinner', async () => {
+  let soltar = () => {}
+  let lidas = 0
+  view = await mount(panel, {
+    host: mockHost({
+      requests: {
+        'estado.ler': () => (++lidas > 1 ? new Promise<Estado>(r => (soltar = () => r(estadoExemplo))) : estadoExemplo),
+      },
+    }),
+  })
+  const coleta = view.post('estado.mudou', { em: 1 })
+  try {
+    await esperar(() => lidas > 1, 'estado.ler não foi pedido de novo')
+    assert.equal(view.find({ type: 'Spinner', label: 'Atualizando…' }), null)
+    assert.ok(view.find({ type: 'Button', text: 'Atualizar' }))
+  } finally {
+    soltar()
+    await coleta
+  }
 })
 
 test('configurações: pendente vira aviso "de → para" com contagem no assunto e no título; voltar ao salvo ou Descartar limpa', async () => {
@@ -1505,6 +1541,7 @@ test('aviso de releitura que falhou some quando chega uma leitura válida, ainda
   view = await mount(panel, { host })
   await view.press(view.find({ type: 'Button', text: 'Atualizar' })!)
   assert.ok(view.find({ text: /Não consegui reler os requisitos/ }))
+  await esperarBotao()
   await view.press(view.find({ type: 'Button', text: 'Atualizar' })!)
   assert.equal(view.find({ text: /Não consegui reler os requisitos/ }), null)
   assert.deepEqual(idsReq(view), ['orchestration', 'skill', 'hooks'])
