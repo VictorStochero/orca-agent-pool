@@ -100,6 +100,18 @@ test('compacto em pedaços e sem quebra: conta a linha ainda não terminada, sem
   assert.equal(a.estado()?.feitos, 9)
 })
 
+test('compacto: a última linha junta os pontos das linhas seguidas e do pendente, sem o corte de 200; texto recomeça', () => {
+  const a = acompanharSaida(() => 1)
+  a.receber('out', Buffer.from(`Running\n  ${'.'.repeat(150)}\n  \n  ..F${'.'.repeat(150)}\n  ..`))
+  assert.equal(a.estado()?.linha, `${'.'.repeat(152)}F${'.'.repeat(152)}`)
+  a.receber('out', Buffer.from('\nTests: 304 passed\n'))
+  assert.equal(a.estado()?.linha, 'Tests: 304 passed')
+})
+
+test('PHPUnit padrão: os pontos pendentes não trocam a última linha com o contador', () => {
+  assert.equal(alimentar('....  4 / 10 ( 40%)\n', '..')?.linha, '....  4 / 10 ( 40%)')
+})
+
 test('compacto misturado com o PHPUnit padrão: o total vence', () => {
   const s = alimentar('....\n', '.....  63 / 120 ( 52%)\n', '..\n')
   assert.deepEqual([s?.feitos, s?.total, s?.pct], [63, 120, 52])
